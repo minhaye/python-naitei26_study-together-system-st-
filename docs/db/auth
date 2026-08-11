@@ -1,0 +1,4196 @@
+{
+    "enums": [
+        {
+            "enum_name": "aal_level",
+            "enum_schema": "auth",
+            "enum_values": [
+                "aal1",
+                "aal2",
+                "aal3"
+            ]
+        },
+        {
+            "enum_name": "code_challenge_method",
+            "enum_schema": "auth",
+            "enum_values": [
+                "s256",
+                "plain"
+            ]
+        },
+        {
+            "enum_name": "factor_status",
+            "enum_schema": "auth",
+            "enum_values": [
+                "unverified",
+                "verified"
+            ]
+        },
+        {
+            "enum_name": "factor_type",
+            "enum_schema": "auth",
+            "enum_values": [
+                "totp",
+                "webauthn",
+                "phone"
+            ]
+        },
+        {
+            "enum_name": "oauth_authorization_status",
+            "enum_schema": "auth",
+            "enum_values": [
+                "pending",
+                "approved",
+                "denied",
+                "expired"
+            ]
+        },
+        {
+            "enum_name": "oauth_client_type",
+            "enum_schema": "auth",
+            "enum_values": [
+                "public",
+                "confidential"
+            ]
+        },
+        {
+            "enum_name": "oauth_registration_type",
+            "enum_schema": "auth",
+            "enum_values": [
+                "dynamic",
+                "manual"
+            ]
+        },
+        {
+            "enum_name": "oauth_response_type",
+            "enum_schema": "auth",
+            "enum_values": [
+                "code"
+            ]
+        },
+        {
+            "enum_name": "one_time_token_type",
+            "enum_schema": "auth",
+            "enum_values": [
+                "confirmation_token",
+                "reauthentication_token",
+                "recovery_token",
+                "email_change_token_new",
+                "email_change_token_current",
+                "phone_change_token"
+            ]
+        }
+    ],
+    "views": [
+    ],
+    "schema": "auth",
+    "tables": [
+        {
+            "table_name": "audit_log_entries",
+            "table_type": "BASE TABLE"
+        },
+        {
+            "table_name": "custom_oauth_providers",
+            "table_type": "BASE TABLE"
+        },
+        {
+            "table_name": "flow_state",
+            "table_type": "BASE TABLE"
+        },
+        {
+            "table_name": "identities",
+            "table_type": "BASE TABLE"
+        },
+        {
+            "table_name": "instances",
+            "table_type": "BASE TABLE"
+        },
+        {
+            "table_name": "mfa_amr_claims",
+            "table_type": "BASE TABLE"
+        },
+        {
+            "table_name": "mfa_challenges",
+            "table_type": "BASE TABLE"
+        },
+        {
+            "table_name": "mfa_factors",
+            "table_type": "BASE TABLE"
+        },
+        {
+            "table_name": "oauth_authorizations",
+            "table_type": "BASE TABLE"
+        },
+        {
+            "table_name": "oauth_client_states",
+            "table_type": "BASE TABLE"
+        },
+        {
+            "table_name": "oauth_clients",
+            "table_type": "BASE TABLE"
+        },
+        {
+            "table_name": "oauth_consents",
+            "table_type": "BASE TABLE"
+        },
+        {
+            "table_name": "one_time_tokens",
+            "table_type": "BASE TABLE"
+        },
+        {
+            "table_name": "refresh_tokens",
+            "table_type": "BASE TABLE"
+        },
+        {
+            "table_name": "saml_providers",
+            "table_type": "BASE TABLE"
+        },
+        {
+            "table_name": "saml_relay_states",
+            "table_type": "BASE TABLE"
+        },
+        {
+            "table_name": "schema_migrations",
+            "table_type": "BASE TABLE"
+        },
+        {
+            "table_name": "sessions",
+            "table_type": "BASE TABLE"
+        },
+        {
+            "table_name": "sso_domains",
+            "table_type": "BASE TABLE"
+        },
+        {
+            "table_name": "sso_providers",
+            "table_type": "BASE TABLE"
+        },
+        {
+            "table_name": "users",
+            "table_type": "BASE TABLE"
+        },
+        {
+            "table_name": "webauthn_challenges",
+            "table_type": "BASE TABLE"
+        },
+        {
+            "table_name": "webauthn_credentials",
+            "table_type": "BASE TABLE"
+        }
+    ],
+    "columns": [
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "audit_log_entries",
+            "udt_schema": "pg_catalog",
+            "column_name": "instance_id",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 1,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "audit_log_entries",
+            "udt_schema": "pg_catalog",
+            "column_name": "id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 2,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "json",
+            "data_type": "json",
+            "table_name": "audit_log_entries",
+            "udt_schema": "pg_catalog",
+            "column_name": "payload",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 3,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "audit_log_entries",
+            "udt_schema": "pg_catalog",
+            "column_name": "created_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 4,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "varchar",
+            "data_type": "character varying",
+            "table_name": "audit_log_entries",
+            "udt_schema": "pg_catalog",
+            "column_name": "ip_address",
+            "is_nullable": "NO",
+            "column_default": "''::character varying",
+            "ordinal_position": 5,
+            "character_maximum_length": 64
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "id",
+            "is_nullable": "NO",
+            "column_default": "gen_random_uuid()",
+            "ordinal_position": 1,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "provider_type",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 2,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "identifier",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 3,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "name",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 4,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "client_id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 5,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "client_secret",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 6,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "_text",
+            "data_type": "ARRAY",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "acceptable_client_ids",
+            "is_nullable": "NO",
+            "column_default": "'{}'::text[]",
+            "ordinal_position": 7,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "_text",
+            "data_type": "ARRAY",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "scopes",
+            "is_nullable": "NO",
+            "column_default": "'{}'::text[]",
+            "ordinal_position": 8,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "bool",
+            "data_type": "boolean",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "pkce_enabled",
+            "is_nullable": "NO",
+            "column_default": "true",
+            "ordinal_position": 9,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "jsonb",
+            "data_type": "jsonb",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "attribute_mapping",
+            "is_nullable": "NO",
+            "column_default": "'{}'::jsonb",
+            "ordinal_position": 10,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "jsonb",
+            "data_type": "jsonb",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "authorization_params",
+            "is_nullable": "NO",
+            "column_default": "'{}'::jsonb",
+            "ordinal_position": 11,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "bool",
+            "data_type": "boolean",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "enabled",
+            "is_nullable": "NO",
+            "column_default": "true",
+            "ordinal_position": 12,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "bool",
+            "data_type": "boolean",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "email_optional",
+            "is_nullable": "NO",
+            "column_default": "false",
+            "ordinal_position": 13,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "issuer",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 14,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "discovery_url",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 15,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "bool",
+            "data_type": "boolean",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "skip_nonce_check",
+            "is_nullable": "NO",
+            "column_default": "false",
+            "ordinal_position": 16,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "jsonb",
+            "data_type": "jsonb",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "cached_discovery",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 17,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "discovery_cached_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 18,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "authorization_url",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 19,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "token_url",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 20,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "userinfo_url",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 21,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "jwks_uri",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 22,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "created_at",
+            "is_nullable": "NO",
+            "column_default": "now()",
+            "ordinal_position": 23,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "updated_at",
+            "is_nullable": "NO",
+            "column_default": "now()",
+            "ordinal_position": 24,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "_text",
+            "data_type": "ARRAY",
+            "table_name": "custom_oauth_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "custom_claims_allowlist",
+            "is_nullable": "NO",
+            "column_default": "'{}'::text[]",
+            "ordinal_position": 25,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "flow_state",
+            "udt_schema": "pg_catalog",
+            "column_name": "id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 1,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "flow_state",
+            "udt_schema": "pg_catalog",
+            "column_name": "user_id",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 2,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "flow_state",
+            "udt_schema": "pg_catalog",
+            "column_name": "auth_code",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 3,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "code_challenge_method",
+            "data_type": "USER-DEFINED",
+            "table_name": "flow_state",
+            "udt_schema": "auth",
+            "column_name": "code_challenge_method",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 4,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "flow_state",
+            "udt_schema": "pg_catalog",
+            "column_name": "code_challenge",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 5,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "flow_state",
+            "udt_schema": "pg_catalog",
+            "column_name": "provider_type",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 6,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "flow_state",
+            "udt_schema": "pg_catalog",
+            "column_name": "provider_access_token",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 7,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "flow_state",
+            "udt_schema": "pg_catalog",
+            "column_name": "provider_refresh_token",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 8,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "flow_state",
+            "udt_schema": "pg_catalog",
+            "column_name": "created_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 9,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "flow_state",
+            "udt_schema": "pg_catalog",
+            "column_name": "updated_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 10,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "flow_state",
+            "udt_schema": "pg_catalog",
+            "column_name": "authentication_method",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 11,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "flow_state",
+            "udt_schema": "pg_catalog",
+            "column_name": "auth_code_issued_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 12,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "flow_state",
+            "udt_schema": "pg_catalog",
+            "column_name": "invite_token",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 13,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "flow_state",
+            "udt_schema": "pg_catalog",
+            "column_name": "referrer",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 14,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "flow_state",
+            "udt_schema": "pg_catalog",
+            "column_name": "oauth_client_state_id",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 15,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "flow_state",
+            "udt_schema": "pg_catalog",
+            "column_name": "linking_target_id",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 16,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "bool",
+            "data_type": "boolean",
+            "table_name": "flow_state",
+            "udt_schema": "pg_catalog",
+            "column_name": "email_optional",
+            "is_nullable": "NO",
+            "column_default": "false",
+            "ordinal_position": 17,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "identities",
+            "udt_schema": "pg_catalog",
+            "column_name": "provider_id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 1,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "identities",
+            "udt_schema": "pg_catalog",
+            "column_name": "user_id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 2,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "jsonb",
+            "data_type": "jsonb",
+            "table_name": "identities",
+            "udt_schema": "pg_catalog",
+            "column_name": "identity_data",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 3,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "identities",
+            "udt_schema": "pg_catalog",
+            "column_name": "provider",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 4,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "identities",
+            "udt_schema": "pg_catalog",
+            "column_name": "last_sign_in_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 5,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "identities",
+            "udt_schema": "pg_catalog",
+            "column_name": "created_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 6,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "identities",
+            "udt_schema": "pg_catalog",
+            "column_name": "updated_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 7,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "identities",
+            "udt_schema": "pg_catalog",
+            "column_name": "email",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 8,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "identities",
+            "udt_schema": "pg_catalog",
+            "column_name": "id",
+            "is_nullable": "NO",
+            "column_default": "gen_random_uuid()",
+            "ordinal_position": 9,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "instances",
+            "udt_schema": "pg_catalog",
+            "column_name": "id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 1,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "instances",
+            "udt_schema": "pg_catalog",
+            "column_name": "uuid",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 2,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "instances",
+            "udt_schema": "pg_catalog",
+            "column_name": "raw_base_config",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 3,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "instances",
+            "udt_schema": "pg_catalog",
+            "column_name": "created_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 4,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "instances",
+            "udt_schema": "pg_catalog",
+            "column_name": "updated_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 5,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "mfa_amr_claims",
+            "udt_schema": "pg_catalog",
+            "column_name": "session_id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 1,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "mfa_amr_claims",
+            "udt_schema": "pg_catalog",
+            "column_name": "created_at",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 2,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "mfa_amr_claims",
+            "udt_schema": "pg_catalog",
+            "column_name": "updated_at",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 3,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "mfa_amr_claims",
+            "udt_schema": "pg_catalog",
+            "column_name": "authentication_method",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 4,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "mfa_amr_claims",
+            "udt_schema": "pg_catalog",
+            "column_name": "id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 5,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "mfa_challenges",
+            "udt_schema": "pg_catalog",
+            "column_name": "id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 1,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "mfa_challenges",
+            "udt_schema": "pg_catalog",
+            "column_name": "factor_id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 2,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "mfa_challenges",
+            "udt_schema": "pg_catalog",
+            "column_name": "created_at",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 3,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "mfa_challenges",
+            "udt_schema": "pg_catalog",
+            "column_name": "verified_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 4,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "inet",
+            "data_type": "inet",
+            "table_name": "mfa_challenges",
+            "udt_schema": "pg_catalog",
+            "column_name": "ip_address",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 5,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "mfa_challenges",
+            "udt_schema": "pg_catalog",
+            "column_name": "otp_code",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 6,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "jsonb",
+            "data_type": "jsonb",
+            "table_name": "mfa_challenges",
+            "udt_schema": "pg_catalog",
+            "column_name": "web_authn_session_data",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 7,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "mfa_factors",
+            "udt_schema": "pg_catalog",
+            "column_name": "id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 1,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "mfa_factors",
+            "udt_schema": "pg_catalog",
+            "column_name": "user_id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 2,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "mfa_factors",
+            "udt_schema": "pg_catalog",
+            "column_name": "friendly_name",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 3,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "factor_type",
+            "data_type": "USER-DEFINED",
+            "table_name": "mfa_factors",
+            "udt_schema": "auth",
+            "column_name": "factor_type",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 4,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "factor_status",
+            "data_type": "USER-DEFINED",
+            "table_name": "mfa_factors",
+            "udt_schema": "auth",
+            "column_name": "status",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 5,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "mfa_factors",
+            "udt_schema": "pg_catalog",
+            "column_name": "created_at",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 6,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "mfa_factors",
+            "udt_schema": "pg_catalog",
+            "column_name": "updated_at",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 7,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "mfa_factors",
+            "udt_schema": "pg_catalog",
+            "column_name": "secret",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 8,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "mfa_factors",
+            "udt_schema": "pg_catalog",
+            "column_name": "phone",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 9,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "mfa_factors",
+            "udt_schema": "pg_catalog",
+            "column_name": "last_challenged_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 10,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "jsonb",
+            "data_type": "jsonb",
+            "table_name": "mfa_factors",
+            "udt_schema": "pg_catalog",
+            "column_name": "web_authn_credential",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 11,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "mfa_factors",
+            "udt_schema": "pg_catalog",
+            "column_name": "web_authn_aaguid",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 12,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "jsonb",
+            "data_type": "jsonb",
+            "table_name": "mfa_factors",
+            "udt_schema": "pg_catalog",
+            "column_name": "last_webauthn_challenge_data",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 13,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "oauth_authorizations",
+            "udt_schema": "pg_catalog",
+            "column_name": "id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 1,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "oauth_authorizations",
+            "udt_schema": "pg_catalog",
+            "column_name": "authorization_id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 2,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "oauth_authorizations",
+            "udt_schema": "pg_catalog",
+            "column_name": "client_id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 3,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "oauth_authorizations",
+            "udt_schema": "pg_catalog",
+            "column_name": "user_id",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 4,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "oauth_authorizations",
+            "udt_schema": "pg_catalog",
+            "column_name": "redirect_uri",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 5,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "oauth_authorizations",
+            "udt_schema": "pg_catalog",
+            "column_name": "scope",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 6,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "oauth_authorizations",
+            "udt_schema": "pg_catalog",
+            "column_name": "state",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 7,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "oauth_authorizations",
+            "udt_schema": "pg_catalog",
+            "column_name": "resource",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 8,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "oauth_authorizations",
+            "udt_schema": "pg_catalog",
+            "column_name": "code_challenge",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 9,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "code_challenge_method",
+            "data_type": "USER-DEFINED",
+            "table_name": "oauth_authorizations",
+            "udt_schema": "auth",
+            "column_name": "code_challenge_method",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 10,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "oauth_response_type",
+            "data_type": "USER-DEFINED",
+            "table_name": "oauth_authorizations",
+            "udt_schema": "auth",
+            "column_name": "response_type",
+            "is_nullable": "NO",
+            "column_default": "'code'::auth.oauth_response_type",
+            "ordinal_position": 11,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "oauth_authorization_status",
+            "data_type": "USER-DEFINED",
+            "table_name": "oauth_authorizations",
+            "udt_schema": "auth",
+            "column_name": "status",
+            "is_nullable": "NO",
+            "column_default": "'pending'::auth.oauth_authorization_status",
+            "ordinal_position": 12,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "oauth_authorizations",
+            "udt_schema": "pg_catalog",
+            "column_name": "authorization_code",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 13,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "oauth_authorizations",
+            "udt_schema": "pg_catalog",
+            "column_name": "created_at",
+            "is_nullable": "NO",
+            "column_default": "now()",
+            "ordinal_position": 14,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "oauth_authorizations",
+            "udt_schema": "pg_catalog",
+            "column_name": "expires_at",
+            "is_nullable": "NO",
+            "column_default": "(now() + '00:03:00'::interval)",
+            "ordinal_position": 15,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "oauth_authorizations",
+            "udt_schema": "pg_catalog",
+            "column_name": "approved_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 16,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "oauth_authorizations",
+            "udt_schema": "pg_catalog",
+            "column_name": "nonce",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 17,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "oauth_client_states",
+            "udt_schema": "pg_catalog",
+            "column_name": "id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 1,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "oauth_client_states",
+            "udt_schema": "pg_catalog",
+            "column_name": "provider_type",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 2,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "oauth_client_states",
+            "udt_schema": "pg_catalog",
+            "column_name": "code_verifier",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 3,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "oauth_client_states",
+            "udt_schema": "pg_catalog",
+            "column_name": "created_at",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 4,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "oauth_clients",
+            "udt_schema": "pg_catalog",
+            "column_name": "id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 1,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "oauth_clients",
+            "udt_schema": "pg_catalog",
+            "column_name": "client_secret_hash",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 3,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "oauth_registration_type",
+            "data_type": "USER-DEFINED",
+            "table_name": "oauth_clients",
+            "udt_schema": "auth",
+            "column_name": "registration_type",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 4,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "oauth_clients",
+            "udt_schema": "pg_catalog",
+            "column_name": "redirect_uris",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 5,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "oauth_clients",
+            "udt_schema": "pg_catalog",
+            "column_name": "grant_types",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 6,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "oauth_clients",
+            "udt_schema": "pg_catalog",
+            "column_name": "client_name",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 7,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "oauth_clients",
+            "udt_schema": "pg_catalog",
+            "column_name": "client_uri",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 8,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "oauth_clients",
+            "udt_schema": "pg_catalog",
+            "column_name": "logo_uri",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 9,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "oauth_clients",
+            "udt_schema": "pg_catalog",
+            "column_name": "created_at",
+            "is_nullable": "NO",
+            "column_default": "now()",
+            "ordinal_position": 10,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "oauth_clients",
+            "udt_schema": "pg_catalog",
+            "column_name": "updated_at",
+            "is_nullable": "NO",
+            "column_default": "now()",
+            "ordinal_position": 11,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "oauth_clients",
+            "udt_schema": "pg_catalog",
+            "column_name": "deleted_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 12,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "oauth_client_type",
+            "data_type": "USER-DEFINED",
+            "table_name": "oauth_clients",
+            "udt_schema": "auth",
+            "column_name": "client_type",
+            "is_nullable": "NO",
+            "column_default": "'confidential'::auth.oauth_client_type",
+            "ordinal_position": 13,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "oauth_clients",
+            "udt_schema": "pg_catalog",
+            "column_name": "token_endpoint_auth_method",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 14,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "oauth_consents",
+            "udt_schema": "pg_catalog",
+            "column_name": "id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 1,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "oauth_consents",
+            "udt_schema": "pg_catalog",
+            "column_name": "user_id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 2,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "oauth_consents",
+            "udt_schema": "pg_catalog",
+            "column_name": "client_id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 3,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "oauth_consents",
+            "udt_schema": "pg_catalog",
+            "column_name": "scopes",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 4,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "oauth_consents",
+            "udt_schema": "pg_catalog",
+            "column_name": "granted_at",
+            "is_nullable": "NO",
+            "column_default": "now()",
+            "ordinal_position": 5,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "oauth_consents",
+            "udt_schema": "pg_catalog",
+            "column_name": "revoked_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 6,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "one_time_tokens",
+            "udt_schema": "pg_catalog",
+            "column_name": "id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 1,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "one_time_tokens",
+            "udt_schema": "pg_catalog",
+            "column_name": "user_id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 2,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "one_time_token_type",
+            "data_type": "USER-DEFINED",
+            "table_name": "one_time_tokens",
+            "udt_schema": "auth",
+            "column_name": "token_type",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 3,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "one_time_tokens",
+            "udt_schema": "pg_catalog",
+            "column_name": "token_hash",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 4,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "one_time_tokens",
+            "udt_schema": "pg_catalog",
+            "column_name": "relates_to",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 5,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamp",
+            "data_type": "timestamp without time zone",
+            "table_name": "one_time_tokens",
+            "udt_schema": "pg_catalog",
+            "column_name": "created_at",
+            "is_nullable": "NO",
+            "column_default": "now()",
+            "ordinal_position": 6,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamp",
+            "data_type": "timestamp without time zone",
+            "table_name": "one_time_tokens",
+            "udt_schema": "pg_catalog",
+            "column_name": "updated_at",
+            "is_nullable": "NO",
+            "column_default": "now()",
+            "ordinal_position": 7,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "refresh_tokens",
+            "udt_schema": "pg_catalog",
+            "column_name": "instance_id",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 1,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "int8",
+            "data_type": "bigint",
+            "table_name": "refresh_tokens",
+            "udt_schema": "pg_catalog",
+            "column_name": "id",
+            "is_nullable": "NO",
+            "column_default": "nextval('auth.refresh_tokens_id_seq'::regclass)",
+            "ordinal_position": 2,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "varchar",
+            "data_type": "character varying",
+            "table_name": "refresh_tokens",
+            "udt_schema": "pg_catalog",
+            "column_name": "token",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 3,
+            "character_maximum_length": 255
+        },
+        {
+            "udt_name": "varchar",
+            "data_type": "character varying",
+            "table_name": "refresh_tokens",
+            "udt_schema": "pg_catalog",
+            "column_name": "user_id",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 4,
+            "character_maximum_length": 255
+        },
+        {
+            "udt_name": "bool",
+            "data_type": "boolean",
+            "table_name": "refresh_tokens",
+            "udt_schema": "pg_catalog",
+            "column_name": "revoked",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 5,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "refresh_tokens",
+            "udt_schema": "pg_catalog",
+            "column_name": "created_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 6,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "refresh_tokens",
+            "udt_schema": "pg_catalog",
+            "column_name": "updated_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 7,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "varchar",
+            "data_type": "character varying",
+            "table_name": "refresh_tokens",
+            "udt_schema": "pg_catalog",
+            "column_name": "parent",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 8,
+            "character_maximum_length": 255
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "refresh_tokens",
+            "udt_schema": "pg_catalog",
+            "column_name": "session_id",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 9,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "saml_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 1,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "saml_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "sso_provider_id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 2,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "saml_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "entity_id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 3,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "saml_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "metadata_xml",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 4,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "saml_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "metadata_url",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 5,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "jsonb",
+            "data_type": "jsonb",
+            "table_name": "saml_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "attribute_mapping",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 6,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "saml_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "created_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 7,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "saml_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "updated_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 8,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "saml_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "name_id_format",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 9,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "saml_relay_states",
+            "udt_schema": "pg_catalog",
+            "column_name": "id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 1,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "saml_relay_states",
+            "udt_schema": "pg_catalog",
+            "column_name": "sso_provider_id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 2,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "saml_relay_states",
+            "udt_schema": "pg_catalog",
+            "column_name": "request_id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 3,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "saml_relay_states",
+            "udt_schema": "pg_catalog",
+            "column_name": "for_email",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 4,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "saml_relay_states",
+            "udt_schema": "pg_catalog",
+            "column_name": "redirect_to",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 5,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "saml_relay_states",
+            "udt_schema": "pg_catalog",
+            "column_name": "created_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 7,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "saml_relay_states",
+            "udt_schema": "pg_catalog",
+            "column_name": "updated_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 8,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "saml_relay_states",
+            "udt_schema": "pg_catalog",
+            "column_name": "flow_state_id",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 9,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "varchar",
+            "data_type": "character varying",
+            "table_name": "schema_migrations",
+            "udt_schema": "pg_catalog",
+            "column_name": "version",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 1,
+            "character_maximum_length": 255
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "sessions",
+            "udt_schema": "pg_catalog",
+            "column_name": "id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 1,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "sessions",
+            "udt_schema": "pg_catalog",
+            "column_name": "user_id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 2,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "sessions",
+            "udt_schema": "pg_catalog",
+            "column_name": "created_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 3,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "sessions",
+            "udt_schema": "pg_catalog",
+            "column_name": "updated_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 4,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "sessions",
+            "udt_schema": "pg_catalog",
+            "column_name": "factor_id",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 5,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "aal_level",
+            "data_type": "USER-DEFINED",
+            "table_name": "sessions",
+            "udt_schema": "auth",
+            "column_name": "aal",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 6,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "sessions",
+            "udt_schema": "pg_catalog",
+            "column_name": "not_after",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 7,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamp",
+            "data_type": "timestamp without time zone",
+            "table_name": "sessions",
+            "udt_schema": "pg_catalog",
+            "column_name": "refreshed_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 8,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "sessions",
+            "udt_schema": "pg_catalog",
+            "column_name": "user_agent",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 9,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "inet",
+            "data_type": "inet",
+            "table_name": "sessions",
+            "udt_schema": "pg_catalog",
+            "column_name": "ip",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 10,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "sessions",
+            "udt_schema": "pg_catalog",
+            "column_name": "tag",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 11,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "sessions",
+            "udt_schema": "pg_catalog",
+            "column_name": "oauth_client_id",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 12,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "sessions",
+            "udt_schema": "pg_catalog",
+            "column_name": "refresh_token_hmac_key",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 13,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "int8",
+            "data_type": "bigint",
+            "table_name": "sessions",
+            "udt_schema": "pg_catalog",
+            "column_name": "refresh_token_counter",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 14,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "sessions",
+            "udt_schema": "pg_catalog",
+            "column_name": "scopes",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 15,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "sso_domains",
+            "udt_schema": "pg_catalog",
+            "column_name": "id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 1,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "sso_domains",
+            "udt_schema": "pg_catalog",
+            "column_name": "sso_provider_id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 2,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "sso_domains",
+            "udt_schema": "pg_catalog",
+            "column_name": "domain",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 3,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "sso_domains",
+            "udt_schema": "pg_catalog",
+            "column_name": "created_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 4,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "sso_domains",
+            "udt_schema": "pg_catalog",
+            "column_name": "updated_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 5,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "sso_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 1,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "sso_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "resource_id",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 2,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "sso_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "created_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 3,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "sso_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "updated_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 4,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "bool",
+            "data_type": "boolean",
+            "table_name": "sso_providers",
+            "udt_schema": "pg_catalog",
+            "column_name": "disabled",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 5,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "instance_id",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 1,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 2,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "varchar",
+            "data_type": "character varying",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "aud",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 3,
+            "character_maximum_length": 255
+        },
+        {
+            "udt_name": "varchar",
+            "data_type": "character varying",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "role",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 4,
+            "character_maximum_length": 255
+        },
+        {
+            "udt_name": "varchar",
+            "data_type": "character varying",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "email",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 5,
+            "character_maximum_length": 255
+        },
+        {
+            "udt_name": "varchar",
+            "data_type": "character varying",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "encrypted_password",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 6,
+            "character_maximum_length": 255
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "email_confirmed_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 7,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "invited_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 8,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "varchar",
+            "data_type": "character varying",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "confirmation_token",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 9,
+            "character_maximum_length": 255
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "confirmation_sent_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 10,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "varchar",
+            "data_type": "character varying",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "recovery_token",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 11,
+            "character_maximum_length": 255
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "recovery_sent_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 12,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "varchar",
+            "data_type": "character varying",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "email_change_token_new",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 13,
+            "character_maximum_length": 255
+        },
+        {
+            "udt_name": "varchar",
+            "data_type": "character varying",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "email_change",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 14,
+            "character_maximum_length": 255
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "email_change_sent_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 15,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "last_sign_in_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 16,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "jsonb",
+            "data_type": "jsonb",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "raw_app_meta_data",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 17,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "jsonb",
+            "data_type": "jsonb",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "raw_user_meta_data",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 18,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "bool",
+            "data_type": "boolean",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "is_super_admin",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 19,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "created_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 20,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "updated_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 21,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "phone",
+            "is_nullable": "YES",
+            "column_default": "NULL::character varying",
+            "ordinal_position": 22,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "phone_confirmed_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 23,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "phone_change",
+            "is_nullable": "YES",
+            "column_default": "''::character varying",
+            "ordinal_position": 24,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "varchar",
+            "data_type": "character varying",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "phone_change_token",
+            "is_nullable": "YES",
+            "column_default": "''::character varying",
+            "ordinal_position": 25,
+            "character_maximum_length": 255
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "phone_change_sent_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 26,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "confirmed_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 27,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "varchar",
+            "data_type": "character varying",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "email_change_token_current",
+            "is_nullable": "YES",
+            "column_default": "''::character varying",
+            "ordinal_position": 28,
+            "character_maximum_length": 255
+        },
+        {
+            "udt_name": "int2",
+            "data_type": "smallint",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "email_change_confirm_status",
+            "is_nullable": "YES",
+            "column_default": "0",
+            "ordinal_position": 29,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "banned_until",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 30,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "varchar",
+            "data_type": "character varying",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "reauthentication_token",
+            "is_nullable": "YES",
+            "column_default": "''::character varying",
+            "ordinal_position": 31,
+            "character_maximum_length": 255
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "reauthentication_sent_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 32,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "bool",
+            "data_type": "boolean",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "is_sso_user",
+            "is_nullable": "NO",
+            "column_default": "false",
+            "ordinal_position": 33,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "deleted_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 34,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "bool",
+            "data_type": "boolean",
+            "table_name": "users",
+            "udt_schema": "pg_catalog",
+            "column_name": "is_anonymous",
+            "is_nullable": "NO",
+            "column_default": "false",
+            "ordinal_position": 35,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "webauthn_challenges",
+            "udt_schema": "pg_catalog",
+            "column_name": "id",
+            "is_nullable": "NO",
+            "column_default": "gen_random_uuid()",
+            "ordinal_position": 1,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "webauthn_challenges",
+            "udt_schema": "pg_catalog",
+            "column_name": "user_id",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 2,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "webauthn_challenges",
+            "udt_schema": "pg_catalog",
+            "column_name": "challenge_type",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 3,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "jsonb",
+            "data_type": "jsonb",
+            "table_name": "webauthn_challenges",
+            "udt_schema": "pg_catalog",
+            "column_name": "session_data",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 4,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "webauthn_challenges",
+            "udt_schema": "pg_catalog",
+            "column_name": "created_at",
+            "is_nullable": "NO",
+            "column_default": "now()",
+            "ordinal_position": 5,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "webauthn_challenges",
+            "udt_schema": "pg_catalog",
+            "column_name": "expires_at",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 6,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "webauthn_credentials",
+            "udt_schema": "pg_catalog",
+            "column_name": "id",
+            "is_nullable": "NO",
+            "column_default": "gen_random_uuid()",
+            "ordinal_position": 1,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "webauthn_credentials",
+            "udt_schema": "pg_catalog",
+            "column_name": "user_id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 2,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "bytea",
+            "data_type": "bytea",
+            "table_name": "webauthn_credentials",
+            "udt_schema": "pg_catalog",
+            "column_name": "credential_id",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 3,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "bytea",
+            "data_type": "bytea",
+            "table_name": "webauthn_credentials",
+            "udt_schema": "pg_catalog",
+            "column_name": "public_key",
+            "is_nullable": "NO",
+            "column_default": null,
+            "ordinal_position": 4,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "webauthn_credentials",
+            "udt_schema": "pg_catalog",
+            "column_name": "attestation_type",
+            "is_nullable": "NO",
+            "column_default": "''::text",
+            "ordinal_position": 5,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "uuid",
+            "data_type": "uuid",
+            "table_name": "webauthn_credentials",
+            "udt_schema": "pg_catalog",
+            "column_name": "aaguid",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 6,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "int8",
+            "data_type": "bigint",
+            "table_name": "webauthn_credentials",
+            "udt_schema": "pg_catalog",
+            "column_name": "sign_count",
+            "is_nullable": "NO",
+            "column_default": "0",
+            "ordinal_position": 7,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "jsonb",
+            "data_type": "jsonb",
+            "table_name": "webauthn_credentials",
+            "udt_schema": "pg_catalog",
+            "column_name": "transports",
+            "is_nullable": "NO",
+            "column_default": "'[]'::jsonb",
+            "ordinal_position": 8,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "bool",
+            "data_type": "boolean",
+            "table_name": "webauthn_credentials",
+            "udt_schema": "pg_catalog",
+            "column_name": "backup_eligible",
+            "is_nullable": "NO",
+            "column_default": "false",
+            "ordinal_position": 9,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "bool",
+            "data_type": "boolean",
+            "table_name": "webauthn_credentials",
+            "udt_schema": "pg_catalog",
+            "column_name": "backed_up",
+            "is_nullable": "NO",
+            "column_default": "false",
+            "ordinal_position": 10,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "text",
+            "data_type": "text",
+            "table_name": "webauthn_credentials",
+            "udt_schema": "pg_catalog",
+            "column_name": "friendly_name",
+            "is_nullable": "NO",
+            "column_default": "''::text",
+            "ordinal_position": 11,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "webauthn_credentials",
+            "udt_schema": "pg_catalog",
+            "column_name": "created_at",
+            "is_nullable": "NO",
+            "column_default": "now()",
+            "ordinal_position": 12,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "webauthn_credentials",
+            "udt_schema": "pg_catalog",
+            "column_name": "updated_at",
+            "is_nullable": "NO",
+            "column_default": "now()",
+            "ordinal_position": 13,
+            "character_maximum_length": null
+        },
+        {
+            "udt_name": "timestamptz",
+            "data_type": "timestamp with time zone",
+            "table_name": "webauthn_credentials",
+            "udt_schema": "pg_catalog",
+            "column_name": "last_used_at",
+            "is_nullable": "YES",
+            "column_default": null,
+            "ordinal_position": 14,
+            "character_maximum_length": null
+        }
+    ],
+    "indexes": [
+        {
+            "indexdef": "CREATE UNIQUE INDEX audit_log_entries_pkey ON auth.audit_log_entries USING btree (id)",
+            "indexname": "audit_log_entries_pkey",
+            "tablename": "audit_log_entries",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX audit_logs_instance_id_idx ON auth.audit_log_entries USING btree (instance_id)",
+            "indexname": "audit_logs_instance_id_idx",
+            "tablename": "audit_log_entries",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX custom_oauth_providers_created_at_idx ON auth.custom_oauth_providers USING btree (created_at)",
+            "indexname": "custom_oauth_providers_created_at_idx",
+            "tablename": "custom_oauth_providers",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX custom_oauth_providers_enabled_idx ON auth.custom_oauth_providers USING btree (enabled)",
+            "indexname": "custom_oauth_providers_enabled_idx",
+            "tablename": "custom_oauth_providers",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX custom_oauth_providers_identifier_idx ON auth.custom_oauth_providers USING btree (identifier)",
+            "indexname": "custom_oauth_providers_identifier_idx",
+            "tablename": "custom_oauth_providers",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX custom_oauth_providers_identifier_key ON auth.custom_oauth_providers USING btree (identifier)",
+            "indexname": "custom_oauth_providers_identifier_key",
+            "tablename": "custom_oauth_providers",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX custom_oauth_providers_pkey ON auth.custom_oauth_providers USING btree (id)",
+            "indexname": "custom_oauth_providers_pkey",
+            "tablename": "custom_oauth_providers",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX custom_oauth_providers_provider_type_idx ON auth.custom_oauth_providers USING btree (provider_type)",
+            "indexname": "custom_oauth_providers_provider_type_idx",
+            "tablename": "custom_oauth_providers",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX flow_state_created_at_idx ON auth.flow_state USING btree (created_at DESC)",
+            "indexname": "flow_state_created_at_idx",
+            "tablename": "flow_state",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX flow_state_pkey ON auth.flow_state USING btree (id)",
+            "indexname": "flow_state_pkey",
+            "tablename": "flow_state",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX idx_auth_code ON auth.flow_state USING btree (auth_code)",
+            "indexname": "idx_auth_code",
+            "tablename": "flow_state",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX idx_user_id_auth_method ON auth.flow_state USING btree (user_id, authentication_method)",
+            "indexname": "idx_user_id_auth_method",
+            "tablename": "flow_state",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX identities_email_idx ON auth.identities USING btree (email text_pattern_ops)",
+            "indexname": "identities_email_idx",
+            "tablename": "identities",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX identities_pkey ON auth.identities USING btree (id)",
+            "indexname": "identities_pkey",
+            "tablename": "identities",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX identities_provider_id_provider_unique ON auth.identities USING btree (provider_id, provider)",
+            "indexname": "identities_provider_id_provider_unique",
+            "tablename": "identities",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX identities_user_id_idx ON auth.identities USING btree (user_id)",
+            "indexname": "identities_user_id_idx",
+            "tablename": "identities",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX instances_pkey ON auth.instances USING btree (id)",
+            "indexname": "instances_pkey",
+            "tablename": "instances",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX amr_id_pk ON auth.mfa_amr_claims USING btree (id)",
+            "indexname": "amr_id_pk",
+            "tablename": "mfa_amr_claims",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX mfa_amr_claims_session_id_authentication_method_pkey ON auth.mfa_amr_claims USING btree (session_id, authentication_method)",
+            "indexname": "mfa_amr_claims_session_id_authentication_method_pkey",
+            "tablename": "mfa_amr_claims",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX mfa_challenge_created_at_idx ON auth.mfa_challenges USING btree (created_at DESC)",
+            "indexname": "mfa_challenge_created_at_idx",
+            "tablename": "mfa_challenges",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX mfa_challenges_pkey ON auth.mfa_challenges USING btree (id)",
+            "indexname": "mfa_challenges_pkey",
+            "tablename": "mfa_challenges",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX factor_id_created_at_idx ON auth.mfa_factors USING btree (user_id, created_at)",
+            "indexname": "factor_id_created_at_idx",
+            "tablename": "mfa_factors",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX mfa_factors_last_challenged_at_key ON auth.mfa_factors USING btree (last_challenged_at)",
+            "indexname": "mfa_factors_last_challenged_at_key",
+            "tablename": "mfa_factors",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX mfa_factors_pkey ON auth.mfa_factors USING btree (id)",
+            "indexname": "mfa_factors_pkey",
+            "tablename": "mfa_factors",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX mfa_factors_user_friendly_name_unique ON auth.mfa_factors USING btree (friendly_name, user_id) WHERE (TRIM(BOTH FROM friendly_name) <> ''::text)",
+            "indexname": "mfa_factors_user_friendly_name_unique",
+            "tablename": "mfa_factors",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX mfa_factors_user_id_idx ON auth.mfa_factors USING btree (user_id)",
+            "indexname": "mfa_factors_user_id_idx",
+            "tablename": "mfa_factors",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX unique_phone_factor_per_user ON auth.mfa_factors USING btree (user_id, phone)",
+            "indexname": "unique_phone_factor_per_user",
+            "tablename": "mfa_factors",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX oauth_auth_pending_exp_idx ON auth.oauth_authorizations USING btree (expires_at) WHERE (status = 'pending'::auth.oauth_authorization_status)",
+            "indexname": "oauth_auth_pending_exp_idx",
+            "tablename": "oauth_authorizations",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX oauth_authorizations_authorization_code_key ON auth.oauth_authorizations USING btree (authorization_code)",
+            "indexname": "oauth_authorizations_authorization_code_key",
+            "tablename": "oauth_authorizations",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX oauth_authorizations_authorization_id_key ON auth.oauth_authorizations USING btree (authorization_id)",
+            "indexname": "oauth_authorizations_authorization_id_key",
+            "tablename": "oauth_authorizations",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX oauth_authorizations_pkey ON auth.oauth_authorizations USING btree (id)",
+            "indexname": "oauth_authorizations_pkey",
+            "tablename": "oauth_authorizations",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX idx_oauth_client_states_created_at ON auth.oauth_client_states USING btree (created_at)",
+            "indexname": "idx_oauth_client_states_created_at",
+            "tablename": "oauth_client_states",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX oauth_client_states_pkey ON auth.oauth_client_states USING btree (id)",
+            "indexname": "oauth_client_states_pkey",
+            "tablename": "oauth_client_states",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX oauth_clients_deleted_at_idx ON auth.oauth_clients USING btree (deleted_at)",
+            "indexname": "oauth_clients_deleted_at_idx",
+            "tablename": "oauth_clients",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX oauth_clients_pkey ON auth.oauth_clients USING btree (id)",
+            "indexname": "oauth_clients_pkey",
+            "tablename": "oauth_clients",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX oauth_consents_active_client_idx ON auth.oauth_consents USING btree (client_id) WHERE (revoked_at IS NULL)",
+            "indexname": "oauth_consents_active_client_idx",
+            "tablename": "oauth_consents",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX oauth_consents_active_user_client_idx ON auth.oauth_consents USING btree (user_id, client_id) WHERE (revoked_at IS NULL)",
+            "indexname": "oauth_consents_active_user_client_idx",
+            "tablename": "oauth_consents",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX oauth_consents_pkey ON auth.oauth_consents USING btree (id)",
+            "indexname": "oauth_consents_pkey",
+            "tablename": "oauth_consents",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX oauth_consents_user_client_unique ON auth.oauth_consents USING btree (user_id, client_id)",
+            "indexname": "oauth_consents_user_client_unique",
+            "tablename": "oauth_consents",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX oauth_consents_user_order_idx ON auth.oauth_consents USING btree (user_id, granted_at DESC)",
+            "indexname": "oauth_consents_user_order_idx",
+            "tablename": "oauth_consents",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX one_time_tokens_pkey ON auth.one_time_tokens USING btree (id)",
+            "indexname": "one_time_tokens_pkey",
+            "tablename": "one_time_tokens",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX one_time_tokens_relates_to_hash_idx ON auth.one_time_tokens USING hash (relates_to)",
+            "indexname": "one_time_tokens_relates_to_hash_idx",
+            "tablename": "one_time_tokens",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX one_time_tokens_token_hash_hash_idx ON auth.one_time_tokens USING hash (token_hash)",
+            "indexname": "one_time_tokens_token_hash_hash_idx",
+            "tablename": "one_time_tokens",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX one_time_tokens_user_id_token_type_key ON auth.one_time_tokens USING btree (user_id, token_type)",
+            "indexname": "one_time_tokens_user_id_token_type_key",
+            "tablename": "one_time_tokens",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX refresh_tokens_instance_id_idx ON auth.refresh_tokens USING btree (instance_id)",
+            "indexname": "refresh_tokens_instance_id_idx",
+            "tablename": "refresh_tokens",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX refresh_tokens_instance_id_user_id_idx ON auth.refresh_tokens USING btree (instance_id, user_id)",
+            "indexname": "refresh_tokens_instance_id_user_id_idx",
+            "tablename": "refresh_tokens",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX refresh_tokens_parent_idx ON auth.refresh_tokens USING btree (parent)",
+            "indexname": "refresh_tokens_parent_idx",
+            "tablename": "refresh_tokens",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX refresh_tokens_pkey ON auth.refresh_tokens USING btree (id)",
+            "indexname": "refresh_tokens_pkey",
+            "tablename": "refresh_tokens",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX refresh_tokens_session_id_revoked_idx ON auth.refresh_tokens USING btree (session_id, revoked)",
+            "indexname": "refresh_tokens_session_id_revoked_idx",
+            "tablename": "refresh_tokens",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX refresh_tokens_token_unique ON auth.refresh_tokens USING btree (token)",
+            "indexname": "refresh_tokens_token_unique",
+            "tablename": "refresh_tokens",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX refresh_tokens_updated_at_idx ON auth.refresh_tokens USING btree (updated_at DESC)",
+            "indexname": "refresh_tokens_updated_at_idx",
+            "tablename": "refresh_tokens",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX saml_providers_entity_id_key ON auth.saml_providers USING btree (entity_id)",
+            "indexname": "saml_providers_entity_id_key",
+            "tablename": "saml_providers",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX saml_providers_pkey ON auth.saml_providers USING btree (id)",
+            "indexname": "saml_providers_pkey",
+            "tablename": "saml_providers",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX saml_providers_sso_provider_id_idx ON auth.saml_providers USING btree (sso_provider_id)",
+            "indexname": "saml_providers_sso_provider_id_idx",
+            "tablename": "saml_providers",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX saml_relay_states_created_at_idx ON auth.saml_relay_states USING btree (created_at DESC)",
+            "indexname": "saml_relay_states_created_at_idx",
+            "tablename": "saml_relay_states",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX saml_relay_states_for_email_idx ON auth.saml_relay_states USING btree (for_email)",
+            "indexname": "saml_relay_states_for_email_idx",
+            "tablename": "saml_relay_states",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX saml_relay_states_pkey ON auth.saml_relay_states USING btree (id)",
+            "indexname": "saml_relay_states_pkey",
+            "tablename": "saml_relay_states",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX saml_relay_states_sso_provider_id_idx ON auth.saml_relay_states USING btree (sso_provider_id)",
+            "indexname": "saml_relay_states_sso_provider_id_idx",
+            "tablename": "saml_relay_states",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX schema_migrations_pkey ON auth.schema_migrations USING btree (version)",
+            "indexname": "schema_migrations_pkey",
+            "tablename": "schema_migrations",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX sessions_not_after_idx ON auth.sessions USING btree (not_after DESC)",
+            "indexname": "sessions_not_after_idx",
+            "tablename": "sessions",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX sessions_oauth_client_id_idx ON auth.sessions USING btree (oauth_client_id)",
+            "indexname": "sessions_oauth_client_id_idx",
+            "tablename": "sessions",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX sessions_pkey ON auth.sessions USING btree (id)",
+            "indexname": "sessions_pkey",
+            "tablename": "sessions",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX sessions_user_id_idx ON auth.sessions USING btree (user_id)",
+            "indexname": "sessions_user_id_idx",
+            "tablename": "sessions",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX user_id_created_at_idx ON auth.sessions USING btree (user_id, created_at)",
+            "indexname": "user_id_created_at_idx",
+            "tablename": "sessions",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX sso_domains_domain_idx ON auth.sso_domains USING btree (lower(domain))",
+            "indexname": "sso_domains_domain_idx",
+            "tablename": "sso_domains",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX sso_domains_pkey ON auth.sso_domains USING btree (id)",
+            "indexname": "sso_domains_pkey",
+            "tablename": "sso_domains",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX sso_domains_sso_provider_id_idx ON auth.sso_domains USING btree (sso_provider_id)",
+            "indexname": "sso_domains_sso_provider_id_idx",
+            "tablename": "sso_domains",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX sso_providers_pkey ON auth.sso_providers USING btree (id)",
+            "indexname": "sso_providers_pkey",
+            "tablename": "sso_providers",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX sso_providers_resource_id_idx ON auth.sso_providers USING btree (lower(resource_id))",
+            "indexname": "sso_providers_resource_id_idx",
+            "tablename": "sso_providers",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX sso_providers_resource_id_pattern_idx ON auth.sso_providers USING btree (resource_id text_pattern_ops)",
+            "indexname": "sso_providers_resource_id_pattern_idx",
+            "tablename": "sso_providers",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX confirmation_token_idx ON auth.users USING btree (confirmation_token) WHERE ((confirmation_token)::text !~ '^[0-9 ]*$'::text)",
+            "indexname": "confirmation_token_idx",
+            "tablename": "users",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX email_change_token_current_idx ON auth.users USING btree (email_change_token_current) WHERE ((email_change_token_current)::text !~ '^[0-9 ]*$'::text)",
+            "indexname": "email_change_token_current_idx",
+            "tablename": "users",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX email_change_token_new_idx ON auth.users USING btree (email_change_token_new) WHERE ((email_change_token_new)::text !~ '^[0-9 ]*$'::text)",
+            "indexname": "email_change_token_new_idx",
+            "tablename": "users",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX idx_users_created_at_desc ON auth.users USING btree (created_at DESC)",
+            "indexname": "idx_users_created_at_desc",
+            "tablename": "users",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX idx_users_email ON auth.users USING btree (email)",
+            "indexname": "idx_users_email",
+            "tablename": "users",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX idx_users_last_sign_in_at_desc ON auth.users USING btree (last_sign_in_at DESC)",
+            "indexname": "idx_users_last_sign_in_at_desc",
+            "tablename": "users",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX idx_users_name ON auth.users USING btree (((raw_user_meta_data ->> 'name'::text))) WHERE ((raw_user_meta_data ->> 'name'::text) IS NOT NULL)",
+            "indexname": "idx_users_name",
+            "tablename": "users",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX reauthentication_token_idx ON auth.users USING btree (reauthentication_token) WHERE ((reauthentication_token)::text !~ '^[0-9 ]*$'::text)",
+            "indexname": "reauthentication_token_idx",
+            "tablename": "users",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX recovery_token_idx ON auth.users USING btree (recovery_token) WHERE ((recovery_token)::text !~ '^[0-9 ]*$'::text)",
+            "indexname": "recovery_token_idx",
+            "tablename": "users",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX users_email_partial_key ON auth.users USING btree (email) WHERE (is_sso_user = false)",
+            "indexname": "users_email_partial_key",
+            "tablename": "users",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX users_instance_id_email_idx ON auth.users USING btree (instance_id, lower((email)::text))",
+            "indexname": "users_instance_id_email_idx",
+            "tablename": "users",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX users_instance_id_idx ON auth.users USING btree (instance_id)",
+            "indexname": "users_instance_id_idx",
+            "tablename": "users",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX users_is_anonymous_idx ON auth.users USING btree (is_anonymous)",
+            "indexname": "users_is_anonymous_idx",
+            "tablename": "users",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX users_phone_key ON auth.users USING btree (phone)",
+            "indexname": "users_phone_key",
+            "tablename": "users",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX users_pkey ON auth.users USING btree (id)",
+            "indexname": "users_pkey",
+            "tablename": "users",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX webauthn_challenges_expires_at_idx ON auth.webauthn_challenges USING btree (expires_at)",
+            "indexname": "webauthn_challenges_expires_at_idx",
+            "tablename": "webauthn_challenges",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX webauthn_challenges_pkey ON auth.webauthn_challenges USING btree (id)",
+            "indexname": "webauthn_challenges_pkey",
+            "tablename": "webauthn_challenges",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX webauthn_challenges_user_id_idx ON auth.webauthn_challenges USING btree (user_id)",
+            "indexname": "webauthn_challenges_user_id_idx",
+            "tablename": "webauthn_challenges",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX webauthn_credentials_credential_id_key ON auth.webauthn_credentials USING btree (credential_id)",
+            "indexname": "webauthn_credentials_credential_id_key",
+            "tablename": "webauthn_credentials",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE UNIQUE INDEX webauthn_credentials_pkey ON auth.webauthn_credentials USING btree (id)",
+            "indexname": "webauthn_credentials_pkey",
+            "tablename": "webauthn_credentials",
+            "schemaname": "auth"
+        },
+        {
+            "indexdef": "CREATE INDEX webauthn_credentials_user_id_idx ON auth.webauthn_credentials USING btree (user_id)",
+            "indexname": "webauthn_credentials_user_id_idx",
+            "tablename": "webauthn_credentials",
+            "schemaname": "auth"
+        }
+    ],
+    "triggers": [
+        {
+            "definition": "CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION handle_new_user()",
+            "table_name": "users",
+            "trigger_name": "on_auth_user_created"
+        }
+    ],
+    "functions": [
+        {
+            "language": "sql",
+            "arguments": "",
+            "return_type": "text",
+            "function_name": "email",
+            "security_definer": false
+        },
+        {
+            "language": "sql",
+            "arguments": "",
+            "return_type": "jsonb",
+            "function_name": "jwt",
+            "security_definer": false
+        },
+        {
+            "language": "sql",
+            "arguments": "",
+            "return_type": "text",
+            "function_name": "role",
+            "security_definer": false
+        },
+        {
+            "language": "sql",
+            "arguments": "",
+            "return_type": "uuid",
+            "function_name": "uid",
+            "security_definer": false
+        }
+    ],
+    "sequences": [
+        {
+            "data_type": "bigint",
+            "increment": "1",
+            "start_value": "1",
+            "maximum_value": "9223372036854775807",
+            "minimum_value": "1",
+            "sequence_name": "refresh_tokens_id_seq"
+        }
+    ],
+    "rls_tables": [
+        {
+            "rls_forced": false,
+            "table_name": "audit_log_entries",
+            "rls_enabled": true
+        },
+        {
+            "rls_forced": false,
+            "table_name": "custom_oauth_providers",
+            "rls_enabled": false
+        },
+        {
+            "rls_forced": false,
+            "table_name": "flow_state",
+            "rls_enabled": true
+        },
+        {
+            "rls_forced": false,
+            "table_name": "identities",
+            "rls_enabled": true
+        },
+        {
+            "rls_forced": false,
+            "table_name": "instances",
+            "rls_enabled": true
+        },
+        {
+            "rls_forced": false,
+            "table_name": "mfa_amr_claims",
+            "rls_enabled": true
+        },
+        {
+            "rls_forced": false,
+            "table_name": "mfa_challenges",
+            "rls_enabled": true
+        },
+        {
+            "rls_forced": false,
+            "table_name": "mfa_factors",
+            "rls_enabled": true
+        },
+        {
+            "rls_forced": false,
+            "table_name": "oauth_authorizations",
+            "rls_enabled": false
+        },
+        {
+            "rls_forced": false,
+            "table_name": "oauth_client_states",
+            "rls_enabled": false
+        },
+        {
+            "rls_forced": false,
+            "table_name": "oauth_clients",
+            "rls_enabled": false
+        },
+        {
+            "rls_forced": false,
+            "table_name": "oauth_consents",
+            "rls_enabled": false
+        },
+        {
+            "rls_forced": false,
+            "table_name": "one_time_tokens",
+            "rls_enabled": true
+        },
+        {
+            "rls_forced": false,
+            "table_name": "refresh_tokens",
+            "rls_enabled": true
+        },
+        {
+            "rls_forced": false,
+            "table_name": "saml_providers",
+            "rls_enabled": true
+        },
+        {
+            "rls_forced": false,
+            "table_name": "saml_relay_states",
+            "rls_enabled": true
+        },
+        {
+            "rls_forced": false,
+            "table_name": "schema_migrations",
+            "rls_enabled": true
+        },
+        {
+            "rls_forced": false,
+            "table_name": "sessions",
+            "rls_enabled": true
+        },
+        {
+            "rls_forced": false,
+            "table_name": "sso_domains",
+            "rls_enabled": true
+        },
+        {
+            "rls_forced": false,
+            "table_name": "sso_providers",
+            "rls_enabled": true
+        },
+        {
+            "rls_forced": false,
+            "table_name": "users",
+            "rls_enabled": true
+        },
+        {
+            "rls_forced": false,
+            "table_name": "webauthn_challenges",
+            "rls_enabled": false
+        },
+        {
+            "rls_forced": false,
+            "table_name": "webauthn_credentials",
+            "rls_enabled": false
+        }
+    ],
+    "constraints": [
+        {
+            "definition": "PRIMARY KEY (id)",
+            "table_name": "audit_log_entries",
+            "table_schema": "auth",
+            "constraint_name": "audit_log_entries_pkey",
+            "constraint_type": "PRIMARY KEY"
+        },
+        {
+            "definition": "CHECK (authorization_url IS NULL OR authorization_url ~~ 'https://%'::text)",
+            "table_name": "custom_oauth_providers",
+            "table_schema": "auth",
+            "constraint_name": "custom_oauth_providers_authorization_url_https",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (authorization_url IS NULL OR char_length(authorization_url) <= 2048)",
+            "table_name": "custom_oauth_providers",
+            "table_schema": "auth",
+            "constraint_name": "custom_oauth_providers_authorization_url_length",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (char_length(client_id) >= 1 AND char_length(client_id) <= 512)",
+            "table_name": "custom_oauth_providers",
+            "table_schema": "auth",
+            "constraint_name": "custom_oauth_providers_client_id_length",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (discovery_url IS NULL OR char_length(discovery_url) <= 2048)",
+            "table_name": "custom_oauth_providers",
+            "table_schema": "auth",
+            "constraint_name": "custom_oauth_providers_discovery_url_length",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (identifier ~ '^[a-z0-9][a-z0-9:-]{0,48}[a-z0-9]$'::text)",
+            "table_name": "custom_oauth_providers",
+            "table_schema": "auth",
+            "constraint_name": "custom_oauth_providers_identifier_format",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "UNIQUE (identifier)",
+            "table_name": "custom_oauth_providers",
+            "table_schema": "auth",
+            "constraint_name": "custom_oauth_providers_identifier_key",
+            "constraint_type": "UNIQUE"
+        },
+        {
+            "definition": "CHECK (issuer IS NULL OR char_length(issuer) >= 1 AND char_length(issuer) <= 2048)",
+            "table_name": "custom_oauth_providers",
+            "table_schema": "auth",
+            "constraint_name": "custom_oauth_providers_issuer_length",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (jwks_uri IS NULL OR jwks_uri ~~ 'https://%'::text)",
+            "table_name": "custom_oauth_providers",
+            "table_schema": "auth",
+            "constraint_name": "custom_oauth_providers_jwks_uri_https",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (jwks_uri IS NULL OR char_length(jwks_uri) <= 2048)",
+            "table_name": "custom_oauth_providers",
+            "table_schema": "auth",
+            "constraint_name": "custom_oauth_providers_jwks_uri_length",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (char_length(name) >= 1 AND char_length(name) <= 100)",
+            "table_name": "custom_oauth_providers",
+            "table_schema": "auth",
+            "constraint_name": "custom_oauth_providers_name_length",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (provider_type <> 'oauth2'::text OR authorization_url IS NOT NULL AND token_url IS NOT NULL AND userinfo_url IS NOT NULL)",
+            "table_name": "custom_oauth_providers",
+            "table_schema": "auth",
+            "constraint_name": "custom_oauth_providers_oauth2_requires_endpoints",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (provider_type <> 'oidc'::text OR discovery_url IS NULL OR discovery_url ~~ 'https://%'::text)",
+            "table_name": "custom_oauth_providers",
+            "table_schema": "auth",
+            "constraint_name": "custom_oauth_providers_oidc_discovery_url_https",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (provider_type <> 'oidc'::text OR issuer IS NULL OR issuer ~~ 'https://%'::text)",
+            "table_name": "custom_oauth_providers",
+            "table_schema": "auth",
+            "constraint_name": "custom_oauth_providers_oidc_issuer_https",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (provider_type <> 'oidc'::text OR issuer IS NOT NULL)",
+            "table_name": "custom_oauth_providers",
+            "table_schema": "auth",
+            "constraint_name": "custom_oauth_providers_oidc_requires_issuer",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "PRIMARY KEY (id)",
+            "table_name": "custom_oauth_providers",
+            "table_schema": "auth",
+            "constraint_name": "custom_oauth_providers_pkey",
+            "constraint_type": "PRIMARY KEY"
+        },
+        {
+            "definition": "CHECK (provider_type = ANY (ARRAY['oauth2'::text, 'oidc'::text]))",
+            "table_name": "custom_oauth_providers",
+            "table_schema": "auth",
+            "constraint_name": "custom_oauth_providers_provider_type_check",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (token_url IS NULL OR token_url ~~ 'https://%'::text)",
+            "table_name": "custom_oauth_providers",
+            "table_schema": "auth",
+            "constraint_name": "custom_oauth_providers_token_url_https",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (token_url IS NULL OR char_length(token_url) <= 2048)",
+            "table_name": "custom_oauth_providers",
+            "table_schema": "auth",
+            "constraint_name": "custom_oauth_providers_token_url_length",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (userinfo_url IS NULL OR userinfo_url ~~ 'https://%'::text)",
+            "table_name": "custom_oauth_providers",
+            "table_schema": "auth",
+            "constraint_name": "custom_oauth_providers_userinfo_url_https",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (userinfo_url IS NULL OR char_length(userinfo_url) <= 2048)",
+            "table_name": "custom_oauth_providers",
+            "table_schema": "auth",
+            "constraint_name": "custom_oauth_providers_userinfo_url_length",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "PRIMARY KEY (id)",
+            "table_name": "flow_state",
+            "table_schema": "auth",
+            "constraint_name": "flow_state_pkey",
+            "constraint_type": "PRIMARY KEY"
+        },
+        {
+            "definition": "PRIMARY KEY (id)",
+            "table_name": "identities",
+            "table_schema": "auth",
+            "constraint_name": "identities_pkey",
+            "constraint_type": "PRIMARY KEY"
+        },
+        {
+            "definition": "UNIQUE (provider_id, provider)",
+            "table_name": "identities",
+            "table_schema": "auth",
+            "constraint_name": "identities_provider_id_provider_unique",
+            "constraint_type": "UNIQUE"
+        },
+        {
+            "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE",
+            "table_name": "identities",
+            "table_schema": "auth",
+            "constraint_name": "identities_user_id_fkey",
+            "constraint_type": "FOREIGN KEY"
+        },
+        {
+            "definition": "PRIMARY KEY (id)",
+            "table_name": "instances",
+            "table_schema": "auth",
+            "constraint_name": "instances_pkey",
+            "constraint_type": "PRIMARY KEY"
+        },
+        {
+            "definition": "PRIMARY KEY (id)",
+            "table_name": "mfa_amr_claims",
+            "table_schema": "auth",
+            "constraint_name": "amr_id_pk",
+            "constraint_type": "PRIMARY KEY"
+        },
+        {
+            "definition": "UNIQUE (session_id, authentication_method)",
+            "table_name": "mfa_amr_claims",
+            "table_schema": "auth",
+            "constraint_name": "mfa_amr_claims_session_id_authentication_method_pkey",
+            "constraint_type": "UNIQUE"
+        },
+        {
+            "definition": "FOREIGN KEY (session_id) REFERENCES auth.sessions(id) ON DELETE CASCADE",
+            "table_name": "mfa_amr_claims",
+            "table_schema": "auth",
+            "constraint_name": "mfa_amr_claims_session_id_fkey",
+            "constraint_type": "FOREIGN KEY"
+        },
+        {
+            "definition": "FOREIGN KEY (factor_id) REFERENCES auth.mfa_factors(id) ON DELETE CASCADE",
+            "table_name": "mfa_challenges",
+            "table_schema": "auth",
+            "constraint_name": "mfa_challenges_auth_factor_id_fkey",
+            "constraint_type": "FOREIGN KEY"
+        },
+        {
+            "definition": "PRIMARY KEY (id)",
+            "table_name": "mfa_challenges",
+            "table_schema": "auth",
+            "constraint_name": "mfa_challenges_pkey",
+            "constraint_type": "PRIMARY KEY"
+        },
+        {
+            "definition": "UNIQUE (last_challenged_at)",
+            "table_name": "mfa_factors",
+            "table_schema": "auth",
+            "constraint_name": "mfa_factors_last_challenged_at_key",
+            "constraint_type": "UNIQUE"
+        },
+        {
+            "definition": "PRIMARY KEY (id)",
+            "table_name": "mfa_factors",
+            "table_schema": "auth",
+            "constraint_name": "mfa_factors_pkey",
+            "constraint_type": "PRIMARY KEY"
+        },
+        {
+            "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE",
+            "table_name": "mfa_factors",
+            "table_schema": "auth",
+            "constraint_name": "mfa_factors_user_id_fkey",
+            "constraint_type": "FOREIGN KEY"
+        },
+        {
+            "definition": "UNIQUE (authorization_code)",
+            "table_name": "oauth_authorizations",
+            "table_schema": "auth",
+            "constraint_name": "oauth_authorizations_authorization_code_key",
+            "constraint_type": "UNIQUE"
+        },
+        {
+            "definition": "CHECK (char_length(authorization_code) <= 255)",
+            "table_name": "oauth_authorizations",
+            "table_schema": "auth",
+            "constraint_name": "oauth_authorizations_authorization_code_length",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "UNIQUE (authorization_id)",
+            "table_name": "oauth_authorizations",
+            "table_schema": "auth",
+            "constraint_name": "oauth_authorizations_authorization_id_key",
+            "constraint_type": "UNIQUE"
+        },
+        {
+            "definition": "FOREIGN KEY (client_id) REFERENCES auth.oauth_clients(id) ON DELETE CASCADE",
+            "table_name": "oauth_authorizations",
+            "table_schema": "auth",
+            "constraint_name": "oauth_authorizations_client_id_fkey",
+            "constraint_type": "FOREIGN KEY"
+        },
+        {
+            "definition": "CHECK (char_length(code_challenge) <= 128)",
+            "table_name": "oauth_authorizations",
+            "table_schema": "auth",
+            "constraint_name": "oauth_authorizations_code_challenge_length",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (expires_at > created_at)",
+            "table_name": "oauth_authorizations",
+            "table_schema": "auth",
+            "constraint_name": "oauth_authorizations_expires_at_future",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (char_length(nonce) <= 255)",
+            "table_name": "oauth_authorizations",
+            "table_schema": "auth",
+            "constraint_name": "oauth_authorizations_nonce_length",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "PRIMARY KEY (id)",
+            "table_name": "oauth_authorizations",
+            "table_schema": "auth",
+            "constraint_name": "oauth_authorizations_pkey",
+            "constraint_type": "PRIMARY KEY"
+        },
+        {
+            "definition": "CHECK (char_length(redirect_uri) <= 2048)",
+            "table_name": "oauth_authorizations",
+            "table_schema": "auth",
+            "constraint_name": "oauth_authorizations_redirect_uri_length",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (char_length(resource) <= 2048)",
+            "table_name": "oauth_authorizations",
+            "table_schema": "auth",
+            "constraint_name": "oauth_authorizations_resource_length",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (char_length(scope) <= 4096)",
+            "table_name": "oauth_authorizations",
+            "table_schema": "auth",
+            "constraint_name": "oauth_authorizations_scope_length",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (char_length(state) <= 4096)",
+            "table_name": "oauth_authorizations",
+            "table_schema": "auth",
+            "constraint_name": "oauth_authorizations_state_length",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE",
+            "table_name": "oauth_authorizations",
+            "table_schema": "auth",
+            "constraint_name": "oauth_authorizations_user_id_fkey",
+            "constraint_type": "FOREIGN KEY"
+        },
+        {
+            "definition": "PRIMARY KEY (id)",
+            "table_name": "oauth_client_states",
+            "table_schema": "auth",
+            "constraint_name": "oauth_client_states_pkey",
+            "constraint_type": "PRIMARY KEY"
+        },
+        {
+            "definition": "CHECK (char_length(client_name) <= 1024)",
+            "table_name": "oauth_clients",
+            "table_schema": "auth",
+            "constraint_name": "oauth_clients_client_name_length",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (char_length(client_uri) <= 2048)",
+            "table_name": "oauth_clients",
+            "table_schema": "auth",
+            "constraint_name": "oauth_clients_client_uri_length",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (char_length(logo_uri) <= 2048)",
+            "table_name": "oauth_clients",
+            "table_schema": "auth",
+            "constraint_name": "oauth_clients_logo_uri_length",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "PRIMARY KEY (id)",
+            "table_name": "oauth_clients",
+            "table_schema": "auth",
+            "constraint_name": "oauth_clients_pkey",
+            "constraint_type": "PRIMARY KEY"
+        },
+        {
+            "definition": "CHECK (token_endpoint_auth_method = ANY (ARRAY['client_secret_basic'::text, 'client_secret_post'::text, 'none'::text]))",
+            "table_name": "oauth_clients",
+            "table_schema": "auth",
+            "constraint_name": "oauth_clients_token_endpoint_auth_method_check",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "FOREIGN KEY (client_id) REFERENCES auth.oauth_clients(id) ON DELETE CASCADE",
+            "table_name": "oauth_consents",
+            "table_schema": "auth",
+            "constraint_name": "oauth_consents_client_id_fkey",
+            "constraint_type": "FOREIGN KEY"
+        },
+        {
+            "definition": "PRIMARY KEY (id)",
+            "table_name": "oauth_consents",
+            "table_schema": "auth",
+            "constraint_name": "oauth_consents_pkey",
+            "constraint_type": "PRIMARY KEY"
+        },
+        {
+            "definition": "CHECK (revoked_at IS NULL OR revoked_at >= granted_at)",
+            "table_name": "oauth_consents",
+            "table_schema": "auth",
+            "constraint_name": "oauth_consents_revoked_after_granted",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (char_length(scopes) <= 2048)",
+            "table_name": "oauth_consents",
+            "table_schema": "auth",
+            "constraint_name": "oauth_consents_scopes_length",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (char_length(TRIM(BOTH FROM scopes)) > 0)",
+            "table_name": "oauth_consents",
+            "table_schema": "auth",
+            "constraint_name": "oauth_consents_scopes_not_empty",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "UNIQUE (user_id, client_id)",
+            "table_name": "oauth_consents",
+            "table_schema": "auth",
+            "constraint_name": "oauth_consents_user_client_unique",
+            "constraint_type": "UNIQUE"
+        },
+        {
+            "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE",
+            "table_name": "oauth_consents",
+            "table_schema": "auth",
+            "constraint_name": "oauth_consents_user_id_fkey",
+            "constraint_type": "FOREIGN KEY"
+        },
+        {
+            "definition": "PRIMARY KEY (id)",
+            "table_name": "one_time_tokens",
+            "table_schema": "auth",
+            "constraint_name": "one_time_tokens_pkey",
+            "constraint_type": "PRIMARY KEY"
+        },
+        {
+            "definition": "CHECK (char_length(token_hash) > 0)",
+            "table_name": "one_time_tokens",
+            "table_schema": "auth",
+            "constraint_name": "one_time_tokens_token_hash_check",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE",
+            "table_name": "one_time_tokens",
+            "table_schema": "auth",
+            "constraint_name": "one_time_tokens_user_id_fkey",
+            "constraint_type": "FOREIGN KEY"
+        },
+        {
+            "definition": "PRIMARY KEY (id)",
+            "table_name": "refresh_tokens",
+            "table_schema": "auth",
+            "constraint_name": "refresh_tokens_pkey",
+            "constraint_type": "PRIMARY KEY"
+        },
+        {
+            "definition": "FOREIGN KEY (session_id) REFERENCES auth.sessions(id) ON DELETE CASCADE",
+            "table_name": "refresh_tokens",
+            "table_schema": "auth",
+            "constraint_name": "refresh_tokens_session_id_fkey",
+            "constraint_type": "FOREIGN KEY"
+        },
+        {
+            "definition": "UNIQUE (token)",
+            "table_name": "refresh_tokens",
+            "table_schema": "auth",
+            "constraint_name": "refresh_tokens_token_unique",
+            "constraint_type": "UNIQUE"
+        },
+        {
+            "definition": "CHECK (char_length(entity_id) > 0)",
+            "table_name": "saml_providers",
+            "table_schema": "auth",
+            "constraint_name": "entity_id not empty",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (metadata_url = NULL::text OR char_length(metadata_url) > 0)",
+            "table_name": "saml_providers",
+            "table_schema": "auth",
+            "constraint_name": "metadata_url not empty",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "CHECK (char_length(metadata_xml) > 0)",
+            "table_name": "saml_providers",
+            "table_schema": "auth",
+            "constraint_name": "metadata_xml not empty",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "UNIQUE (entity_id)",
+            "table_name": "saml_providers",
+            "table_schema": "auth",
+            "constraint_name": "saml_providers_entity_id_key",
+            "constraint_type": "UNIQUE"
+        },
+        {
+            "definition": "PRIMARY KEY (id)",
+            "table_name": "saml_providers",
+            "table_schema": "auth",
+            "constraint_name": "saml_providers_pkey",
+            "constraint_type": "PRIMARY KEY"
+        },
+        {
+            "definition": "FOREIGN KEY (sso_provider_id) REFERENCES auth.sso_providers(id) ON DELETE CASCADE",
+            "table_name": "saml_providers",
+            "table_schema": "auth",
+            "constraint_name": "saml_providers_sso_provider_id_fkey",
+            "constraint_type": "FOREIGN KEY"
+        },
+        {
+            "definition": "CHECK (char_length(request_id) > 0)",
+            "table_name": "saml_relay_states",
+            "table_schema": "auth",
+            "constraint_name": "request_id not empty",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "FOREIGN KEY (flow_state_id) REFERENCES auth.flow_state(id) ON DELETE CASCADE",
+            "table_name": "saml_relay_states",
+            "table_schema": "auth",
+            "constraint_name": "saml_relay_states_flow_state_id_fkey",
+            "constraint_type": "FOREIGN KEY"
+        },
+        {
+            "definition": "PRIMARY KEY (id)",
+            "table_name": "saml_relay_states",
+            "table_schema": "auth",
+            "constraint_name": "saml_relay_states_pkey",
+            "constraint_type": "PRIMARY KEY"
+        },
+        {
+            "definition": "FOREIGN KEY (sso_provider_id) REFERENCES auth.sso_providers(id) ON DELETE CASCADE",
+            "table_name": "saml_relay_states",
+            "table_schema": "auth",
+            "constraint_name": "saml_relay_states_sso_provider_id_fkey",
+            "constraint_type": "FOREIGN KEY"
+        },
+        {
+            "definition": "PRIMARY KEY (version)",
+            "table_name": "schema_migrations",
+            "table_schema": "auth",
+            "constraint_name": "schema_migrations_pkey",
+            "constraint_type": "PRIMARY KEY"
+        },
+        {
+            "definition": "FOREIGN KEY (oauth_client_id) REFERENCES auth.oauth_clients(id) ON DELETE CASCADE",
+            "table_name": "sessions",
+            "table_schema": "auth",
+            "constraint_name": "sessions_oauth_client_id_fkey",
+            "constraint_type": "FOREIGN KEY"
+        },
+        {
+            "definition": "PRIMARY KEY (id)",
+            "table_name": "sessions",
+            "table_schema": "auth",
+            "constraint_name": "sessions_pkey",
+            "constraint_type": "PRIMARY KEY"
+        },
+        {
+            "definition": "CHECK (char_length(scopes) <= 4096)",
+            "table_name": "sessions",
+            "table_schema": "auth",
+            "constraint_name": "sessions_scopes_length",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE",
+            "table_name": "sessions",
+            "table_schema": "auth",
+            "constraint_name": "sessions_user_id_fkey",
+            "constraint_type": "FOREIGN KEY"
+        },
+        {
+            "definition": "CHECK (char_length(domain) > 0)",
+            "table_name": "sso_domains",
+            "table_schema": "auth",
+            "constraint_name": "domain not empty",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "PRIMARY KEY (id)",
+            "table_name": "sso_domains",
+            "table_schema": "auth",
+            "constraint_name": "sso_domains_pkey",
+            "constraint_type": "PRIMARY KEY"
+        },
+        {
+            "definition": "FOREIGN KEY (sso_provider_id) REFERENCES auth.sso_providers(id) ON DELETE CASCADE",
+            "table_name": "sso_domains",
+            "table_schema": "auth",
+            "constraint_name": "sso_domains_sso_provider_id_fkey",
+            "constraint_type": "FOREIGN KEY"
+        },
+        {
+            "definition": "CHECK (resource_id = NULL::text OR char_length(resource_id) > 0)",
+            "table_name": "sso_providers",
+            "table_schema": "auth",
+            "constraint_name": "resource_id not empty",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "PRIMARY KEY (id)",
+            "table_name": "sso_providers",
+            "table_schema": "auth",
+            "constraint_name": "sso_providers_pkey",
+            "constraint_type": "PRIMARY KEY"
+        },
+        {
+            "definition": "CHECK (email_change_confirm_status >= 0 AND email_change_confirm_status <= 2)",
+            "table_name": "users",
+            "table_schema": "auth",
+            "constraint_name": "users_email_change_confirm_status_check",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "UNIQUE (phone)",
+            "table_name": "users",
+            "table_schema": "auth",
+            "constraint_name": "users_phone_key",
+            "constraint_type": "UNIQUE"
+        },
+        {
+            "definition": "PRIMARY KEY (id)",
+            "table_name": "users",
+            "table_schema": "auth",
+            "constraint_name": "users_pkey",
+            "constraint_type": "PRIMARY KEY"
+        },
+        {
+            "definition": "CHECK (challenge_type = ANY (ARRAY['signup'::text, 'registration'::text, 'authentication'::text]))",
+            "table_name": "webauthn_challenges",
+            "table_schema": "auth",
+            "constraint_name": "webauthn_challenges_challenge_type_check",
+            "constraint_type": "CHECK"
+        },
+        {
+            "definition": "PRIMARY KEY (id)",
+            "table_name": "webauthn_challenges",
+            "table_schema": "auth",
+            "constraint_name": "webauthn_challenges_pkey",
+            "constraint_type": "PRIMARY KEY"
+        },
+        {
+            "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE",
+            "table_name": "webauthn_challenges",
+            "table_schema": "auth",
+            "constraint_name": "webauthn_challenges_user_id_fkey",
+            "constraint_type": "FOREIGN KEY"
+        },
+        {
+            "definition": "PRIMARY KEY (id)",
+            "table_name": "webauthn_credentials",
+            "table_schema": "auth",
+            "constraint_name": "webauthn_credentials_pkey",
+            "constraint_type": "PRIMARY KEY"
+        },
+        {
+            "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE",
+            "table_name": "webauthn_credentials",
+            "table_schema": "auth",
+            "constraint_name": "webauthn_credentials_user_id_fkey",
+            "constraint_type": "FOREIGN KEY"
+        }
+    ],
+    "rls_policies": [
+    ]
+}

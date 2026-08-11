@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from app.auth.routers.auth_router import router as auth_router
 from app.profiles.routers.profile_router import router as profiles_router
 from app.groups.routers.group_router import router as groups_router
 from app.channels.routers.channel_router import router as channels_router
@@ -11,6 +12,7 @@ from app.notifications.routers.notification_router import router as notification
 
 app = FastAPI(title="Study Platform API", version="1.0.0")
 
+app.include_router(auth_router)
 app.include_router(profiles_router)
 app.include_router(groups_router)
 app.include_router(channels_router)
