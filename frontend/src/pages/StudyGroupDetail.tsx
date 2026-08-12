@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { 
     Hash, 
     Video, 
@@ -11,7 +12,16 @@ import {
     MoreVertical,
     Phone
 } from 'lucide-react';
+
 export function StudyGroupDetail() {
+  const navigate = useNavigate();
+
+  const handleJoinRoom = () => {
+    if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+    navigate('/room/101');
+  };
   return (
     <div style={{display: 'flex', flexDirection: 'column', flex: 1, width: '100%', overflow: 'hidden'}}>
         {/* Main Content - Discord-like 3-pane layout */}
@@ -47,7 +57,10 @@ export function StudyGroupDetail() {
                                     </div>
                                     <div style={{background: '#10B981', color: 'white', fontSize: 10, fontWeight: '700', padding: '2px 6px', borderRadius: 4}}>LIVE</div>
                                 </div>
-                                <div style={{padding: '6px 0', background: 'white', borderRadius: 4, textAlign: 'center', color: '#4338CA', fontSize: 12, fontWeight: '600', border: '1px solid #C7D2FE'}}>
+                                <div 
+                                  onClick={handleJoinRoom}
+                                  style={{padding: '6px 0', background: 'white', borderRadius: 4, textAlign: 'center', color: '#4338CA', fontSize: 12, fontWeight: '600', border: '1px solid #C7D2FE', cursor: 'pointer'}}
+                                >
                                     Tham gia ngay
                                 </div>
                             </div>
