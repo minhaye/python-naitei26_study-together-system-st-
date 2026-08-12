@@ -1,20 +1,39 @@
 import { Search, Bell } from 'lucide-react';
+import { NavLink, Link } from 'react-router-dom';
 
 export function Header() {
   return (
-    <div style={{width: '100%', background: 'white', borderBottom: '1px #E2E8F0 solid', display: 'flex', justifyContent: 'center', zIndex: 10, position: 'relative'}}>
+    <div style={{width: '100%', background: 'white', borderBottom: '1px #E2E8F0 solid', display: 'flex', justifyContent: 'center', zIndex: 10, position: 'sticky', top: 0}}>
         <div style={{width: '100%', maxWidth: '100%', paddingLeft: 32, paddingRight: 32, height: 64, justifyContent: 'space-between', alignItems: 'center', display: 'flex'}}>
             <div style={{justifyContent: 'flex-start', alignItems: 'center', gap: 24, display: 'flex'}}>
                 <div style={{flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'flex'}}>
-                    <div style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#00236F', fontSize: 20, fontFamily: 'Inter', fontWeight: '700', lineHeight: '28px'}}>StudyTogether</div>
+                    <Link to="/" style={{textDecoration: 'none'}}>
+                        <div style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#00236F', fontSize: 20, fontFamily: 'Inter', fontWeight: '700', lineHeight: '28px'}}>StudyTogether</div>
+                    </Link>
                 </div>
                 <div style={{justifyContent: 'flex-start', alignItems: 'flex-start', gap: 24, display: 'flex', marginLeft: 16}}>
-                    <div style={{flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'flex', cursor: 'pointer'}}>
-                        <div style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#444651', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', lineHeight: '24px'}}>Trang chủ</div>
-                    </div>
-                    <div style={{paddingBottom: 4, borderBottom: '2px #00236F solid', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'flex', cursor: 'pointer'}}>
-                        <div style={{justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#00236F', fontSize: 16, fontFamily: 'Inter', fontWeight: '600', lineHeight: '24px'}}>Phòng học</div>
-                    </div>
+                    <NavLink to="/" style={({isActive}) => ({
+                        paddingBottom: 4, 
+                        borderBottom: isActive ? '2px #00236F solid' : '2px transparent solid',
+                        justifyContent: 'center', display: 'flex', flexDirection: 'column', 
+                        color: isActive ? '#00236F' : '#444651', 
+                        fontSize: 16, fontFamily: 'Inter', fontWeight: isActive ? '600' : '400', 
+                        lineHeight: '24px', textDecoration: 'none', cursor: 'pointer',
+                        transition: 'all 0.2s'
+                    })}>
+                        Diễn đàn
+                    </NavLink>
+                    <NavLink to="/groups" style={({isActive}) => ({
+                        paddingBottom: 4, 
+                        borderBottom: isActive ? '2px #00236F solid' : '2px transparent solid',
+                        justifyContent: 'center', display: 'flex', flexDirection: 'column', 
+                        color: isActive ? '#00236F' : '#444651', 
+                        fontSize: 16, fontFamily: 'Inter', fontWeight: isActive ? '600' : '400', 
+                        lineHeight: '24px', textDecoration: 'none', cursor: 'pointer',
+                        transition: 'all 0.2s'
+                    })}>
+                        Nhóm học
+                    </NavLink>
                 </div>
             </div>
             <div style={{justifyContent: 'flex-start', alignItems: 'center', gap: 24, display: 'flex'}}>
@@ -26,10 +45,31 @@ export function Header() {
                         <Search size={18} color="#757682" />
                     </div>
                 </div>
-                <div style={{display: 'flex', alignItems: 'center', cursor: 'pointer'}}>
-                    <Bell size={20} color="#444651" />
-                </div>
-                <img style={{width: 32, height: 32, borderRadius: 12, border: '1px #E2E8F0 solid', cursor: 'pointer'}} src="https://i.pravatar.cc/150?img=11" alt="Avatar" />
+                
+                {localStorage.getItem('auth') === 'true' ? (
+                  <>
+                    <div style={{display: 'flex', alignItems: 'center', cursor: 'pointer'}}>
+                        <Bell size={20} color="#444651" />
+                    </div>
+                    <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
+                        <img style={{width: 32, height: 32, borderRadius: 12, border: '1px #E2E8F0 solid', cursor: 'pointer'}} src="https://i.pravatar.cc/150?img=11" alt="Avatar" />
+                        <div 
+                          onClick={() => {
+                            localStorage.removeItem('auth');
+                            window.location.reload();
+                          }}
+                          style={{color: '#EF4444', fontSize: 14, fontWeight: '600', cursor: 'pointer'}}
+                        >
+                          Đăng xuất
+                        </div>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
+                    <NavLink to="/login" style={{color: '#0F172A', fontSize: 14, fontWeight: '600', textDecoration: 'none'}}>Đăng nhập</NavLink>
+                    <NavLink to="/register" style={{padding: '8px 16px', background: '#00236F', color: 'white', fontSize: 14, fontWeight: '600', borderRadius: 8, textDecoration: 'none'}}>Đăng ký</NavLink>
+                  </div>
+                )}
             </div>
         </div>
     </div>

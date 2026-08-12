@@ -1,4 +1,5 @@
 import { ChevronDown, Plus, Users } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 export function StudyRooms() {
   return (
@@ -48,9 +49,9 @@ export function StudyRooms() {
                                     <div style={{color: '#00236F', fontSize: 10, fontFamily: 'Inter', fontWeight: '600'}}>+45</div>
                                 </div>
                             </div>
-                            <div style={{color: '#00236F', fontSize: 14, fontFamily: 'Inter', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, borderBottom: '1.5px solid #00236F', paddingBottom: 2}}>
+                            <Link to="/groups/1" style={{color: '#00236F', fontSize: 14, fontFamily: 'Inter', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, borderBottom: '1.5px solid #00236F', paddingBottom: 2, textDecoration: 'none'}}>
                                 <Users size={16} /> Tham gia
-                            </div>
+                            </Link>
                         </div>
                     </div>
                 </div>
@@ -77,9 +78,9 @@ export function StudyRooms() {
                                     <div style={{color: '#00236F', fontSize: 10, fontFamily: 'Inter', fontWeight: '600'}}>+12</div>
                                 </div>
                             </div>
-                            <div style={{color: '#00236F', fontSize: 14, fontFamily: 'Inter', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, borderBottom: '1.5px solid #00236F', paddingBottom: 2}}>
+                            <Link to="/groups/2" style={{color: '#00236F', fontSize: 14, fontFamily: 'Inter', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, borderBottom: '1.5px solid #00236F', paddingBottom: 2, textDecoration: 'none'}}>
                                 <Users size={16} /> Tham gia
-                            </div>
+                            </Link>
                         </div>
                     </div>
                 </div>
@@ -106,9 +107,9 @@ export function StudyRooms() {
                                     <div style={{color: '#00236F', fontSize: 10, fontFamily: 'Inter', fontWeight: '600'}}>+8</div>
                                 </div>
                             </div>
-                            <div style={{color: '#00236F', fontSize: 14, fontFamily: 'Inter', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, borderBottom: '1.5px solid #00236F', paddingBottom: 2}}>
+                            <Link to="/groups/3" style={{color: '#00236F', fontSize: 14, fontFamily: 'Inter', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, borderBottom: '1.5px solid #00236F', paddingBottom: 2, textDecoration: 'none'}}>
                                 <Users size={16} /> Tham gia
-                            </div>
+                            </Link>
                         </div>
                     </div>
                 </div>
@@ -135,9 +136,9 @@ export function StudyRooms() {
                                     <div style={{color: '#00236F', fontSize: 10, fontFamily: 'Inter', fontWeight: '600'}}>+22</div>
                                 </div>
                             </div>
-                            <div style={{color: '#00236F', fontSize: 14, fontFamily: 'Inter', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, borderBottom: '1.5px solid #00236F', paddingBottom: 2}}>
+                            <Link to="/groups/4" style={{color: '#00236F', fontSize: 14, fontFamily: 'Inter', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, borderBottom: '1.5px solid #00236F', paddingBottom: 2, textDecoration: 'none'}}>
                                 <Users size={16} /> Tham gia
-                            </div>
+                            </Link>
                         </div>
                     </div>
                 </div>
