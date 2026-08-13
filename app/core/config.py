@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     database_url: str
     supabase_url: str
     supabase_publishable_key: str | None = None
+    supabase_service_role_key: str | None = None
+    attachment_download_url_expires_in: int = 300
 
     @property
     def supabase_jwks_url(self) -> str:
