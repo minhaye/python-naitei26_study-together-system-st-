@@ -93,6 +93,12 @@ async def chat_fixture(api_client, user_a, user_b):
     )
 
     try:
-        yield {"group": group, "channel": channel, "private_channel": private_channel}
+        yield {
+            "group": group,
+            "channel": channel,
+            "private_channel": private_channel,
+            "conversation_id": channel["conversation_id"],
+            "private_conversation_id": private_channel["conversation_id"],
+        }
     finally:
         await api_client.delete(f"/groups/{group['id']}")

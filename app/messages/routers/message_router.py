@@ -11,7 +11,10 @@ from app.attachments.services.attachment_service import (
 from app.auth.dependencies import get_current_user
 from app.auth.dto.auth_dto import CurrentUser
 from app.channels.services.channel_service import ChannelsService
-from app.core.permissions import can_access_channel, is_group_manager
+from app.conversations.entities.conversation_entity import Conversation
+from app.conversations.services.conversation_service import ConversationsService
+from app.core.permissions import can_access_conversation, is_group_manager
+from app.db.enums import ConversationType
 from app.db.session import get_db_session
 from app.messages.dto.message_dto import MessageCreate, MessageListResponse, MessageResponse, MessageUpdate
 from app.messages.services.message_service import MessagesService
@@ -21,46 +24,62 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Messages"])
 message_service = MessagesService()
 channel_service = ChannelsService()
+conversation_service = ConversationsService()
 attachments_service = AttachmentsService()
 
 
-@router.get("/channels/{channel_id}/messages", response_model=MessageListResponse)
+async def _load_conversation(session: AsyncSession, conversation_id: uuid.UUID) -> Conversation:
+    conversation = await conversation_service.get_by_id(session, conversation_id)
+    if not conversation:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found")
+    return conversation
+
+
+async def _authorize(session: AsyncSession, conversation: Conversation, user_id: uuid.UUID) -> None:
+    if not await can_access_conversation(session, conversation, user_id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have access to this conversation")
+
+
+@router.get("/conversations/{conversation_id}/messages", response_model=MessageListResponse)
 async def list_messages(
-    channel_id: uuid.UUID,
+    conversation_id: uuid.UUID,
     limit: int = Query(50, ge=1, le=100),
     before: str | None = None,
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
-    channel = await channel_service.get_by_id(session, channel_id)
-    if not channel:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Channel not found")
-    if not await can_access_channel(session, channel, current_user.id):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have access to this channel")
+    conversation = await _load_conversation(session, conversation_id)
+    await _authorize(session, conversation, current_user.id)
 
     try:
-        messages, next_cursor = await message_service.list_by_channel(session, channel_id, limit=limit, before=before)
+        messages, next_cursor = await message_service.list_by_conversation(
+            session, conversation_id, limit=limit, before=before
+        )
     except ValueError:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid cursor")
     return MessageListResponse(items=messages, next_cursor=next_cursor)
 
 
-@router.post("/channels/{channel_id}/messages", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/conversations/{conversation_id}/messages", response_model=MessageResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_message(
-    channel_id: uuid.UUID,
+    conversation_id: uuid.UUID,
     data: MessageCreate,
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
-    channel = await channel_service.get_by_id(session, channel_id)
-    if not channel:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Channel not found")
-    if not await can_access_channel(session, channel, current_user.id):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have access to this channel")
+    conversation = await _load_conversation(session, conversation_id)
+    await _authorize(session, conversation, current_user.id)
 
     if data.attachment_path:
+        if conversation.type != ConversationType.CHANNEL:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Attachments are only supported for channel conversations")
+        channel = await channel_service.get_by_id(session, conversation.channel_id)
+        if not channel:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Channel not found")
         if not attachments_service.validate_ownership(
-            data.attachment_path, channel.group_id, channel_id, current_user.id
+            data.attachment_path, channel.group_id, channel.id, current_user.id
         ):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid attachment reference")
         try:
@@ -73,7 +92,9 @@ async def create_message(
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Attachment was not found, upload it first")
 
     try:
-        message = await message_service.create(session, channel_id=channel_id, sender_id=current_user.id, data=data)
+        message = await message_service.create(
+            session, conversation_id=conversation_id, sender_id=current_user.id, data=data
+        )
         await session.commit()
         return message
     except Exception as e:
@@ -94,9 +115,8 @@ async def get_message(
     if not message:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
 
-    channel = await channel_service.get_by_id(session, message.channel_id)
-    if not channel or not await can_access_channel(session, channel, current_user.id):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have access to this message")
+    conversation = await _load_conversation(session, message.conversation_id)
+    await _authorize(session, conversation, current_user.id)
     return message
 
 
@@ -137,8 +157,10 @@ async def delete_message(
 
     allowed = message.sender_id == current_user.id
     if not allowed:
-        channel = await channel_service.get_by_id(session, message.channel_id)
-        allowed = channel is not None and await is_group_manager(session, channel.group_id, current_user.id)
+        conversation = await conversation_service.get_by_id(session, message.conversation_id)
+        if conversation is not None and conversation.type == ConversationType.CHANNEL:
+            channel = await channel_service.get_by_id(session, conversation.channel_id)
+            allowed = channel is not None and await is_group_manager(session, channel.group_id, current_user.id)
     if not allowed:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have permission to delete this message")
 

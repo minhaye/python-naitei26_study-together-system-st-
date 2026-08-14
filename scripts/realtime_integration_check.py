@@ -89,7 +89,7 @@ async def wait_until(predicate, timeout: float, interval: float = 0.25) -> bool:
     return False
 
 
-async def subscribe(ws_url: str, anon_key: str, access_token: str, channel_id: str, sink: list) -> AsyncRealtimeClient:
+async def subscribe(ws_url: str, anon_key: str, access_token: str, conversation_id: str, sink: list) -> AsyncRealtimeClient:
     socket = AsyncRealtimeClient(f"{ws_url}/realtime/v1", token=anon_key)
     await socket.connect()
     await socket.set_auth(access_token)
@@ -99,7 +99,7 @@ async def subscribe(ws_url: str, anon_key: str, access_token: str, channel_id: s
         "INSERT",
         schema="public",
         table="messages",
-        filter=f"channel_id=eq.{channel_id}",
+        filter=f"conversation_id=eq.{conversation_id}",
         callback=lambda payload: sink.append(payload),
     )
     await sub_channel.subscribe()
@@ -131,6 +131,7 @@ async def main() -> None:
         channel = (
             await api.post("/channels/", json={"group_id": group["id"], "name": "general", "created_by": user_a["user_id"]})
         ).json()
+        conversation_id = channel["conversation_id"]
         await api.post(f"/groups/{group['id']}/members", json={"group_id": group["id"], "user_id": user_b["user_id"]})
 
         ok = True
@@ -142,13 +143,13 @@ async def main() -> None:
             b_events: list = []
             outsider_events: list = []
 
-            socket_b = await subscribe(ws_url, anon_key, user_b["access_token"], channel["id"], b_events)
-            socket_outsider = await subscribe(ws_url, anon_key, outsider["access_token"], channel["id"], outsider_events)
+            socket_b = await subscribe(ws_url, anon_key, user_b["access_token"], conversation_id, b_events)
+            socket_outsider = await subscribe(ws_url, anon_key, outsider["access_token"], conversation_id, outsider_events)
 
             await asyncio.sleep(1.0)  # let both subscriptions settle before posting
 
             post_response = await api.post(
-                f"/channels/{channel['id']}/messages",
+                f"/conversations/{conversation_id}/messages",
                 json={"content": "realtime check"},
                 headers={"Authorization": f"Bearer {user_a['access_token']}"},
             )
@@ -158,7 +159,7 @@ async def main() -> None:
             b_received = await wait_until(lambda: bool(b_events), timeout=10.0)
             await asyncio.sleep(2.0)  # fair window for an outsider event that should never arrive
 
-            print(f"Posted message id={posted['id']} sender_id={posted['sender_id']} channel_id={posted['channel_id']}")
+            print(f"Posted message id={posted['id']} sender_id={posted['sender_id']} conversation_id={posted['conversation_id']}")
 
             if not b_received:
                 print("FAIL: User B did not receive the Realtime INSERT event within 10s")
@@ -168,8 +169,8 @@ async def main() -> None:
                 if record.get("id") != posted["id"]:
                     print(f"FAIL: User B's event has the wrong message id: {record.get('id')!r}")
                     ok = False
-                elif record.get("sender_id") != posted["sender_id"] or record.get("channel_id") != posted["channel_id"]:
-                    print("FAIL: User B's event has a mismatched sender_id/channel_id")
+                elif record.get("sender_id") != posted["sender_id"] or record.get("conversation_id") != posted["conversation_id"]:
+                    print("FAIL: User B's event has a mismatched sender_id/conversation_id")
                     ok = False
                 else:
                     print("PASS: User B received the correct Realtime INSERT event")

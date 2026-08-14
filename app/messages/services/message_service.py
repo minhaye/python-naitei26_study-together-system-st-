@@ -26,10 +26,14 @@ def _decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
 
 class MessagesService:
     async def create(
-        self, session: AsyncSession, channel_id: uuid.UUID, sender_id: uuid.UUID, data: MessageCreate
+        self, session: AsyncSession, conversation_id: uuid.UUID, sender_id: uuid.UUID, data: MessageCreate
     ) -> Message:
+        """Only sets conversation_id -- channel_id is resolved server-side by the
+        `messages_sync_conversation_id` BEFORE INSERT trigger (migration 004 §7), which is
+        the compatibility layer for the still-NOT-NULL legacy column. Do not set channel_id
+        here."""
         message = Message(
-            channel_id=channel_id,
+            conversation_id=conversation_id,
             sender_id=sender_id,
             content=data.content,
             attachment_path=data.attachment_path,
@@ -41,11 +45,11 @@ class MessagesService:
     async def get_by_id(self, session: AsyncSession, message_id: uuid.UUID) -> Message | None:
         return await session.get(Message, message_id)
 
-    async def list_by_channel(
-        self, session: AsyncSession, channel_id: uuid.UUID, limit: int = 50, before: str | None = None
+    async def list_by_conversation(
+        self, session: AsyncSession, conversation_id: uuid.UUID, limit: int = 50, before: str | None = None
     ) -> tuple[list[Message], str | None]:
         """Newest-first keyset pagination on (created_at, id) to avoid OFFSET and handle timestamp ties."""
-        query = select(Message).where(Message.channel_id == channel_id)
+        query = select(Message).where(Message.conversation_id == conversation_id)
         if before:
             cursor_created_at, cursor_id = _decode_cursor(before)
             query = query.where(tuple_(Message.created_at, Message.id) < tuple_(cursor_created_at, cursor_id))

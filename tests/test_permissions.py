@@ -2,8 +2,9 @@ import uuid
 from unittest.mock import AsyncMock
 
 from app.channels.entities.channel_entity import Channel, ChannelMember
+from app.conversations.entities.conversation_entity import Conversation
 from app.core import permissions
-from app.db.enums import GroupMemberRole, MemberStatus
+from app.db.enums import ConversationType, GroupMemberRole, MemberStatus
 from app.groups.entities.group_entity import GroupMember
 
 
@@ -76,3 +77,35 @@ async def test_can_access_channel_private_requires_channel_membership(monkeypatc
     monkeypatch.setattr(permissions.channels_service, "get_member", AsyncMock(return_value=channel_member))
 
     assert await permissions.can_access_channel(session=None, channel=channel, user_id=uuid.uuid4())
+
+
+# --- can_access_conversation ---
+
+
+async def test_can_access_conversation_channel_type_delegates_to_can_access_channel(monkeypatch):
+    channel = _channel(is_private=False)
+    conversation = Conversation(id=uuid.uuid4(), type=ConversationType.CHANNEL, channel_id=channel.id, created_by=uuid.uuid4())
+    member = _group_member(GroupMemberRole.MEMBER, MemberStatus.ACTIVE)
+    monkeypatch.setattr(permissions.channels_service, "get_by_id", AsyncMock(return_value=channel))
+    monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock(return_value=member))
+
+    assert await permissions.can_access_conversation(session=None, conversation=conversation, user_id=uuid.uuid4())
+
+
+async def test_can_access_conversation_channel_type_false_when_channel_missing(monkeypatch):
+    conversation = Conversation(id=uuid.uuid4(), type=ConversationType.CHANNEL, channel_id=uuid.uuid4(), created_by=uuid.uuid4())
+    monkeypatch.setattr(permissions.channels_service, "get_by_id", AsyncMock(return_value=None))
+
+    assert not await permissions.can_access_conversation(session=None, conversation=conversation, user_id=uuid.uuid4())
+
+
+async def test_can_access_conversation_room_type_denied_by_default():
+    conversation = Conversation(id=uuid.uuid4(), type=ConversationType.ROOM, room_id=uuid.uuid4(), created_by=uuid.uuid4())
+
+    assert not await permissions.can_access_conversation(session=None, conversation=conversation, user_id=uuid.uuid4())
+
+
+async def test_can_access_conversation_direct_type_denied_by_default():
+    conversation = Conversation(id=uuid.uuid4(), type=ConversationType.DIRECT, created_by=uuid.uuid4())
+
+    assert not await permissions.can_access_conversation(session=None, conversation=conversation, user_id=uuid.uuid4())
