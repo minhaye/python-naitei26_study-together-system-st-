@@ -7,6 +7,7 @@ import { StudyRoom } from '../pages/StudyGroup/StudyRoom';
 import { LoginPage } from '../pages/LoginPage';
 import { RegisterPage } from '../pages/RegisterPage';
 import { AimPage } from '../pages/Aim';
+import { AccountSettingsPage } from '../pages/AccountSettingsPage';
 import { Navigate, Outlet } from 'react-router-dom';
 
 const ProtectedRoute = ({ children }: { children?: React.ReactNode }) => {
@@ -31,6 +32,7 @@ export function AppRoutes() {
           <Route path="groups" element={<StudyRooms />} />
           <Route path="groups/:id" element={<StudyGroupDetail />} />
           <Route path="aim" element={<AimPage />} />
+          <Route path="settings" element={<AccountSettingsPage />} />
         </Route>
       </Route>
     </Routes>

@@ -1,4 +1,4 @@
-import { Search, Bell } from 'lucide-react';
+import { Search, Bell, Settings } from 'lucide-react';
 import { NavLink, Link } from 'react-router-dom';
 
 export function Header() {
@@ -62,8 +62,13 @@ export function Header() {
                     <div style={{display: 'flex', alignItems: 'center', cursor: 'pointer'}}>
                         <Bell size={20} color="#444651" />
                     </div>
+                    <Link to="/settings" aria-label="Cài đặt tài khoản" style={{display: 'flex', alignItems: 'center', color: '#00236F'}}>
+                        <Settings size={21} strokeWidth={2.4} />
+                    </Link>
                     <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
-                        <img style={{width: 32, height: 32, borderRadius: 12, border: '1px #E2E8F0 solid', cursor: 'pointer'}} src="https://i.pravatar.cc/150?img=11" alt="Avatar" />
+                        <Link to="/settings" aria-label="Trang cài đặt">
+                          <img style={{width: 32, height: 32, borderRadius: 12, border: '1px #E2E8F0 solid', cursor: 'pointer', display: 'block'}} src="https://i.pravatar.cc/150?img=11" alt="Ảnh đại diện" />
+                        </Link>
                         <div 
                           onClick={() => {
                             localStorage.removeItem('auth');
