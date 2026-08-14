@@ -117,6 +117,26 @@ forum không cần riêng tư, khác với chat/resource/avatar — cần quyế
 sản phẩm trước khi implement) + endpoint cấp signed/public upload URL theo
 đúng mẫu.
 
+## Lưu ý: object path của `message-attachments` sẽ đổi định dạng sau khi backend refactor sang Conversation
+
+Object path hiện tại (`groups/{group_id}/channels/{channel_id}/{user_id}/{uuid}/{filename}`)
+gắn cứng vào `channel_id`. Migration 004
+(`docs/db/migrations/004_refactor_chat_to_conversations.sql`, xem
+`docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` § 12) chỉ đổi schema DB, **chưa**
+đụng tới Storage — path hiện tại vẫn giữ nguyên cho tới khi backend
+(`build_object_path` trong `attachment_service.py`) được refactor ở phase
+sau. Mục tiêu path mới (chưa implement):
+
+```text
+conversations/{conversation_id}/{user_id}/{uuid}/{safe_filename}
+```
+
+để một object path dùng chung được cho cả channel/room/direct message thay
+vì chỉ channel. Không có object nào cần di chuyển ở lần đổi này —
+`storage.buckets`/`storage.objects` hiện vẫn rỗng (bucket `message-attachments`
+còn chưa được tạo, xem đầu file này). Khi backend refactor thật, cần một kế
+hoạch migrate riêng cho các object đã tồn tại lúc đó (nếu có).
+
 ## Cấu hình cần thiết khi thêm bucket mới
 
 Giống hệt yêu cầu đã ghi trong

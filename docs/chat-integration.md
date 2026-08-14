@@ -3,6 +3,22 @@
 Realtime group chat, scoped to `Channel`. No typing indicator, presence, read
 receipts, reactions, DMs, or voice/video in this version.
 
+> **Migration applied, backend refactor still pending (confirmed live
+> 2026-08-14):** the DB schema behind this feature has been refactored to a
+> `Conversation` abstraction that will eventually also back study-room chat
+> and 1-1 DMs — see `docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` § 12–15.
+> `docs/db/migrations/004_refactor_chat_to_conversations.sql` **is live**
+> (expand phase — see `docs/db/migrations/README.md`), but nothing on this
+> page changes as a result: `channel_id` is still on `messages`, and the
+> `channel_id=eq.<channel_id>` Realtime filter below still works exactly as
+> documented. The one thing that *did* change: direct INSERT/UPDATE/DELETE
+> against `messages` from the Supabase client — already against the rule
+> stated below — is now RLS-denied outright instead of just discouraged
+> (see the RLS section further down). This callout will be removed once the
+> backend (`MessageService`) is refactored to use `conversation_id` and this
+> doc reflects the new reality (`conversation_id`-based filter, room/DM
+> sections added).
+
 ## Open a channel
 
 ```text
@@ -21,6 +37,21 @@ subscription itself (`can_access_channel()` — active group membership, plus
 `channel_members` for private channels). A user who can't read a channel via
 the API will not receive Realtime events for it either. See
 [RLS verification](#rls-verification) below for exactly what's been checked.
+
+**Read-only for the Supabase client, enforced at the DB level (confirmed
+live 2026-08-14).** Before migration 004, live RLS on `messages` actually
+had `authenticated`-role INSERT/UPDATE/DELETE policies left over — a gap
+between this doc and reality, since the app-level rule "never insert
+directly into Supabase" was never enforced by RLS. 004 removed those
+policies and did not recreate them: `messages` is now SELECT-only for the
+Supabase client, full stop (verified: `messages_insert`,
+`messages_update_own`, `messages_delete_own_or_manager` no longer exist as
+policies). FastAPI is unaffected (it writes through a `postgres`-role
+connection that bypasses RLS entirely), so nothing changes for you as long
+as you were already following "send a message = call
+`POST /channels/{channel_id}/messages`, never insert directly." Any
+tooling/script that was relying on the old (undocumented, against-the-rules)
+direct-insert behavior now gets an RLS error.
 
 ## Pagination (`next_cursor`)
 
@@ -144,23 +175,26 @@ does not match an existing `messages.attachment_path` in Postgres.
 
 ## RLS verification
 
-Checked directly against the live Supabase project (read-only queries), not
-just the RLS policy dump in `docs/db/public`:
+Checked directly against the live Supabase project (read-only queries):
 
-- `messages`, `channels`, `channel_members`, `group_members` all have RLS
-  **enabled** (`pg_class.relrowsecurity = true`).
-- `public.messages` is **already** in the `supabase_realtime` publication —
-  Postgres Changes for INSERT already works today.
+- `messages`, `channels`, `channel_members`, `group_members`,
+  `conversations`, `conversation_members` all have RLS **enabled**
+  (`pg_class.relrowsecurity = true`).
+- `public.messages` is in the `supabase_realtime` publication — Postgres
+  Changes for INSERT works.
 - Fetched the live SQL body of `can_access_channel()`, `is_group_manager()`,
-  `is_group_member()`. Found that `can_access_channel()`'s private-channel
-  branch did not re-check `group_members.status = 'active'` for users found
-  via a `channel_members` row — a banned/left member with a stale
-  `channel_members` row would still pass. FastAPI's
-  `app/core/permissions.py` is unaffected (it checks active membership
-  first, unconditionally), but the direct Realtime subscription path uses
-  the DB function directly and was exposed. Fix prepared in
-  `docs/db/migrations/002_fix_can_access_channel_active_membership.sql`
-  (not yet applied — see that file's header).
+  `is_group_member()`. Found (before migration 004) that
+  `can_access_channel()`'s private-channel branch did not re-check
+  `group_members.status = 'active'` for users found via a `channel_members`
+  row — a banned/left member with a stale `channel_members` row would still
+  pass. FastAPI's `app/core/permissions.py` was unaffected (it checks active
+  membership first, unconditionally), but the direct Realtime subscription
+  path uses the DB function directly and was exposed. Fix prepared in
+  `docs/db/migrations/002_fix_can_access_channel_active_membership.sql`,
+  applied (as part of `004_refactor_chat_to_conversations.sql` §7) and
+  **confirmed fixed live** as of 2026-08-14 — re-read `can_access_channel()`'s
+  function body after 004 ran, `is_group_member()` is now an unconditional
+  `AND`, not nested inside the private-channel `OR` branch.
 
 ## Integration tests
 
@@ -201,27 +235,24 @@ script has not been run against a live project in this environment** — no
 test credentials were available — so treat it as prepared-but-unverified
 until someone runs it for real.
 
-## Pending manual actions
+## Manual DB migrations — all applied (confirmed live 2026-08-14)
 
-These require direct execution against production Supabase and were
-deliberately not run automatically:
+Direct execution against production Supabase, run manually (SQL Editor /
+`psql`), not by the app or CI. All four are now live — see
+`docs/db/migrations/README.md` for the authoritative status table and
+run-order notes:
 
 ```bash
-# Already verified live and already applied — running this again is a
-# no-op, kept for reference/idempotency.
-docs/db/migrations/001_enable_realtime_messages.sql
-
-# NOT yet applied. Fixes the can_access_channel() gap described above.
-docs/db/migrations/002_fix_can_access_channel_active_membership.sql
-
-# NOT yet applied. Creates the private message-attachments bucket
-# (storage.buckets is currently empty in this project).
-docs/db/migrations/003_create_message_attachments_bucket.sql
+docs/db/migrations/001_enable_realtime_messages.sql               # ✅ live
+docs/db/migrations/002_fix_can_access_channel_active_membership.sql # ✅ live (via 004 §7)
+docs/db/migrations/003_create_message_attachments_bucket.sql       # ✅ live
+docs/db/migrations/004_refactor_chat_to_conversations.sql          # ✅ live, verified (004_verify.sql: 33/33 OK)
 ```
 
-Run all three (in order, 002 and 003 are what actually change anything) in
-the Supabase SQL editor, or via `psql`/`supabase db query` pointed at the
-project's connection string.
+Next up (not yet started): backend refactor (SQLAlchemy models +
+`MessageService` → `conversation_id`), then migration 005 (drops
+`messages.channel_id`, not written yet). See
+`docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` § 12 for the full picture.
 
 Also required before attachments work end-to-end:
 

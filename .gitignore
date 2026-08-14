@@ -27,6 +27,9 @@ env/
 # Claude
 .claude/
 
+# cc
+docs/db/migrations
+
 # IDE
 .vscode/
 .idea/
