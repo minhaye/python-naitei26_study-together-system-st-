@@ -461,15 +461,14 @@ content = NULL
 attachment_path = NULL
 ```
 
-## Trạng thái hiện tại (xác nhận 2026-08-15) — expand xong, contract đã chuẩn bị nhưng chưa chạy
+## Trạng thái hiện tại (xác nhận 2026-08-15) — expand + contract đã xong, Direct Message (1-1) đã live
 
-`channel_id` ở trên là schema **mục tiêu sau khi migration hoàn tất**. Migration 004 **đã chạy thành công trên live database** (đã verify: 33/33 check OK, xem `docs/db/migrations/004_verify.sql`). Backend (SQLAlchemy models, `MessagesService`, routers, `app/core/permissions.py`) **đã refactor xong** sang `conversation_id` — full test suite pass (65 passed, 6 skipped). `messages` trên live DB hiện vẫn ở trạng thái **transitional** (expand phase — xem § 12), vì migration 005 (contract phase) **đã viết nhưng chưa chạy** trên Supabase:
+`channel_id` ở trên là schema mục tiêu, **và đây cũng là schema thật hiện tại** — migration 005 (contract phase) đã chạy live, `messages.channel_id` đã bị xóa hẳn khỏi database. Toàn bộ chuỗi 004 → 005 → 006 giờ đã áp dụng xong trên Supabase:
 
 ```text
 messages
 ├── id
-├── channel_id        ← vẫn NOT NULL, vẫn còn trên live DB (005 sẽ drop)
-├── conversation_id    ← NOT NULL, đã backfill đủ cho toàn bộ message hiện có; source of truth
+├── conversation_id    ← NOT NULL, FK -> conversations.id; source of truth duy nhất
 ├── sender_id
 ├── content
 ├── attachment_path
@@ -477,7 +476,9 @@ messages
 └── updated_at
 ```
 
-Cả hai cột cùng tồn tại trên live DB và được một trigger (`messages_sync_conversation_id`) tự đồng bộ hai chiều — nhưng backend đã refactor xong chỉ còn ghi `conversation_id`, trigger tự resolve `channel_id` phía DB (case 2, xem § 12). SQLAlchemy `Message` model đã bỏ mapping `channel_id`. `channel_id` sẽ bị xóa hẳn khỏi schema khi ai đó tự chạy `docs/db/migrations/005_contract_messages_to_conversations.sql` trên Supabase SQL Editor — xem `docs/db/migrations/README.md`. Chi tiết đầy đủ ở § 12–15.
+Backend (SQLAlchemy models, `MessagesService`, routers, `app/core/permissions.py`) đã refactor xong sang `conversation_id` từ trước (004 → 005). Trigger tương thích `messages_sync_conversation_id` và cột `messages.channel_id` đã bị 005 dọn sạch — không còn tồn tại trên live DB, không còn được backend tham chiếu.
+
+Tiếp theo, migration 006 (`006_direct_conversation_pair_uniqueness.sql`) **đã chạy live** (xác nhận bởi người vận hành database), thêm ràng buộc uniqueness ở tầng DB cho cặp user của Direct Message — xem § 15. Cùng với đó, tầng application (FastAPI) đã triển khai đầy đủ Direct Message 1-1: `POST /conversations/direct`, `GET /conversations/direct`, dùng chung `GET/POST /conversations/{conversation_id}/messages` với channel/room. Chi tiết đầy đủ ở § 12–15.
 
 ---
 
@@ -522,7 +523,7 @@ Contract (005) Xóa messages.channel_id, FK, index cũ, và trigger compatibilit
                Chỉ chạy SAU KHI backend refactor đã test xong.
 ```
 
-## Trạng thái migration (xác nhận live 2026-08-14)
+## Trạng thái migration (xác nhận live 2026-08-15)
 
 | File | Trạng thái | Ghi chú |
 |---|---|---|
@@ -530,9 +531,10 @@ Contract (005) Xóa messages.channel_id, FK, index cũ, và trigger compatibilit
 | `002_fix_can_access_channel_active_membership.sql` | ✅ Fix đã sống (qua 004 §7) | `can_access_channel()` live hiện đã re-check `group_members.status='active'` — xác nhận bằng cách đọc lại function body thật |
 | `003_create_message_attachments_bucket.sql` | ✅ Đã áp dụng live | `storage.buckets` xác nhận có `message-attachments` (`public=false`, giới hạn 10MB) |
 | `004_refactor_chat_to_conversations.sql` | ✅ Đã áp dụng live, đã verify | `004_verify.sql` chạy live: 33/33 check OK, 0 FAIL. `conversations`: 16 channel-type + 8 room-type = 24 rows, khớp đúng số `channels`/`study_rooms` hiện có |
-| `005_*` (contract phase) | ❌ Chưa viết | Chờ backend refactor xong (SQLAlchemy models + `MessageService` sang dùng `conversation_id`) |
+| `005_contract_messages_to_conversations.sql` | ✅ Đã áp dụng live | `messages.channel_id`, FK, index cũ, và trigger `messages_sync_conversation_id` đã bị xóa. `messages.conversation_id` là cột duy nhất còn lại, backend (SQLAlchemy + routers) đã refactor và test khớp trước khi chạy |
+| `006_direct_conversation_pair_uniqueness.sql` | ✅ Đã áp dụng live | Thêm `conversations.direct_user_min_id`/`direct_user_max_id` + CHECK + partial unique index, đảm bảo một cặp user chỉ có tối đa một `conversation` type=direct — xem § 15 |
 
-Các mục § 13–15 dưới đây mô tả schema **đã live thật** trên Supabase kể từ khi 004 chạy — không còn là "đích đến" nữa.
+Các mục § 13–15 dưới đây mô tả schema **đã live thật** trên Supabase kể từ khi 006 chạy — không còn là "đích đến" nữa.
 
 ## Quyền truy cập theo loại Conversation
 
@@ -570,10 +572,12 @@ Parent chung cho mọi loại chat: channel, room, direct. Mỗi `channels` hi�
 ```text
 conversations
 ├── id
-├── type          -- conversation_type
-├── channel_id    -- nullable, FK -> channels.id
-├── room_id       -- nullable, FK -> study_rooms.id
-├── created_by    -- FK -> profiles.id
+├── type                  -- conversation_type
+├── channel_id            -- nullable, FK -> channels.id
+├── room_id               -- nullable, FK -> study_rooms.id
+├── created_by            -- FK -> profiles.id
+├── direct_user_min_id    -- nullable, FK -> profiles.id (migration 006, chỉ set khi type=direct)
+├── direct_user_max_id    -- nullable, FK -> profiles.id (migration 006, chỉ set khi type=direct)
 ├── created_at
 └── updated_at
 ```
@@ -584,6 +588,7 @@ conversations
 | `channel_id` | Chỉ set khi `type = channel`, `NULL` với room/direct |
 | `room_id` | Chỉ set khi `type = room`, `NULL` với channel/direct |
 | `created_by` | Người tạo conversation (`ON DELETE RESTRICT`, giống `channels.created_by`) |
+| `direct_user_min_id` / `direct_user_max_id` | Cặp user id của cuộc DM, luôn được sort (`min < max`) để A→B và B→A cùng resolve về một row. Chỉ set khi `type = direct`, `NULL` với channel/room. Xem § 15 để biết lý do và cách dùng |
 
 ## Ràng buộc polymorphic bắt buộc
 
@@ -593,21 +598,33 @@ OR (type = 'room' AND room_id IS NOT NULL AND channel_id IS NULL)
 OR (type = 'direct' AND channel_id IS NULL AND room_id IS NULL)
 ```
 
+Migration 006 thêm một CHECK thứ hai, độc lập với CHECK trên (`conversations_direct_pair_check`):
+
+```sql
+(type = 'direct' AND direct_user_min_id IS NOT NULL AND direct_user_max_id IS NOT NULL
+   AND direct_user_min_id < direct_user_max_id)
+OR (type <> 'direct' AND direct_user_min_id IS NULL AND direct_user_max_id IS NULL)
+```
+
 ## Unique Rule
 
 ```text
-1 Channel  ↔ tối đa 1 Conversation   (partial unique index trên channel_id)
-1 Study Room ↔ tối đa 1 Conversation (partial unique index trên room_id)
+1 Channel    ↔ tối đa 1 Conversation          (partial unique index trên channel_id)
+1 Study Room ↔ tối đa 1 Conversation          (partial unique index trên room_id)
+1 cặp user   ↔ tối đa 1 Conversation type=direct (partial unique index trên
+                (direct_user_min_id, direct_user_max_id) where type='direct' — migration 006)
 ```
 
-Không cho phép hai `conversations` row cùng trỏ về một channel/room — tránh việc lịch sử tin nhắn bị chia làm hai nhánh.
+Không cho phép hai `conversations` row cùng trỏ về một channel/room, và (từ 006) không cho phép hai `conversations` row type=direct cùng một cặp user — tránh việc lịch sử tin nhắn bị chia làm hai nhánh.
 
 ## ON DELETE
 
 ```text
-channel_id  -> CASCADE   (xóa channel kéo theo xóa conversation + messages)
-room_id     -> CASCADE   (xóa room kéo theo xóa conversation + messages)
-created_by  -> RESTRICT  (không xóa được profile còn đứng tên tạo conversation)
+channel_id           -> CASCADE   (xóa channel kéo theo xóa conversation + messages)
+room_id              -> CASCADE   (xóa room kéo theo xóa conversation + messages)
+created_by           -> RESTRICT  (không xóa được profile còn đứng tên tạo conversation)
+direct_user_min_id   -> CASCADE   (xóa profile của 1 trong 2 người kéo theo xóa DM đó)
+direct_user_max_id   -> CASCADE   (tương tự, giống ON DELETE của conversation_members.user_id)
 ```
 
 ---
@@ -634,9 +651,29 @@ conversation_members
 UNIQUE(conversation_id, user_id)
 ```
 
-## Giới hạn đã biết (chưa giải quyết ở mức DB)
+## Chống trùng DM cho một cặp user — đã giải quyết (migration 006)
 
-Một cặp user A/B có thể vô tình có **nhiều hơn một** `conversation` type=direct nếu service layer không tự kiểm tra trước khi tạo — DB hiện **không** enforce uniqueness cho cặp DM (membership nằm ở bảng con, không thể declarative-constraint trực tiếp). Việc chống trùng DM phải xử lý ở tầng service (kèm xử lý concurrency, không chỉ `SELECT` rồi `INSERT` đơn giản) khi triển khai DM API — chưa nằm trong scope của migration 004.
+`conversation_members` tự thân không thể declarative-constraint "cặp user A/B chỉ có tối đa 1 conversation", vì đây là bảng con (membership nằm ở 2 row riêng biệt, không phải 1 row đại diện cho cặp). Giải pháp (migration 006, § 14): thêm `direct_user_min_id`/`direct_user_max_id` trực tiếp trên `conversations` (luôn sort để A→B và B→A cùng resolve về 1 row), ràng buộc bởi CHECK + một partial unique index trên `(direct_user_min_id, direct_user_max_id) WHERE type='direct'`.
+
+Race condition (A và B cùng mở DM gần như đồng thời) được xử lý ở tầng service bằng SAVEPOINT + retry, không phải `SELECT` rồi `INSERT` đơn giản: `ConversationsService.get_or_create_direct` (`app/conversations/services/conversation_service.py`) SELECT trước; nếu miss thì INSERT bên trong `session.begin_nested()` (SAVEPOINT thật); nếu insert thua race (`IntegrityError` từ unique index), SAVEPOINT tự rollback (không rollback cả transaction), rồi service SELECT lại để trả về row mà transaction thắng đã commit.
+
+## API layer đã triển khai
+
+```text
+POST /conversations/direct   body: {"user_id": "<uuid>"}   -- idempotent get-or-create, luôn 200
+GET  /conversations/direct                                  -- danh sách DM của current user
+```
+
+Sau khi có `conversation_id`, DM dùng chung API generic với channel/room — không có endpoint message riêng cho DM:
+
+```text
+GET/POST /conversations/{conversation_id}/messages
+GET/PATCH/DELETE /messages/{message_id}
+POST /conversations/{conversation_id}/attachments/upload-url
+GET  /messages/{message_id}/attachment-url
+```
+
+Authorization (`app/core/permissions.py::can_access_conversation`, nhánh `DIRECT`) delegate sang `ConversationsService.is_member` — cùng logic với hàm SQL `is_conversation_member()` dùng trong RLS (§ 37). Attachment của DM dùng namespace riêng trong Storage: `direct/{conversation_id}/{user_id}/{object_id}/{filename}` (song song với `groups/{group_id}/channels/{channel_id}/...` của channel và `study-rooms/{room_id}/{user_id}/...` của room).
 
 ---
 
@@ -1306,7 +1343,7 @@ study_rooms ───┼──► conversations ──► messages
                      (chỉ dùng khi type = direct)
 ```
 
-Đã áp dụng live 2026-08-14, đã verify (33/33 check OK) — xem § 12 để biết chi tiết trạng thái migration.
+Đã áp dụng live: 004 (2026-08-14), 005 và 006 (2026-08-15) — xem § 12 để biết chi tiết trạng thái migration.
 
 ---
 
@@ -1339,11 +1376,12 @@ channels
 ```text
 channels     ─┐
 study_rooms  ─┼─ 1:1 (partial unique) ─► conversations ── 1:N ──► messages
-(no table)   ─┘   (direct: không có parent bảng nào, danh tính
-                    tới hoàn toàn từ conversation_members)
+(profiles)   ─┘   (direct: cặp user identity nằm ở
+                    conversations.direct_user_min_id/max_id — § 14 —
+                    và được nhân đôi thành 2 row conversation_members)
 ```
 
-Quan hệ `channels → messages` trực tiếp (1:N) đã **thay thế** bằng quan hệ qua `conversations` ở trên — xem § 12. Trên live DB hiện tại, `messages` vẫn còn cả hai cột (`channel_id` trực tiếp lẫn `conversation_id`) cho tới khi migration 005 chạy.
+Quan hệ `channels → messages` trực tiếp (1:N) đã **thay thế** bằng quan hệ qua `conversations` ở trên — xem § 12. Migration 005 đã chạy live: `messages.channel_id` không còn tồn tại, `conversation_id` là FK duy nhất từ `messages` xuống `conversations`.
 
 ## Group — Study Room
 
@@ -1614,6 +1652,14 @@ UNIQUE(channel_id, user_id)
 study_room_members:
 UNIQUE(room_id, user_id)
 
+conversation_members:
+UNIQUE(conversation_id, user_id)
+
+conversations (chỉ khi type = direct, migration 006):
+UNIQUE(direct_user_min_id, direct_user_max_id) WHERE type = 'direct'
+-- đảm bảo 1 cặp user chỉ có tối đa 1 conversation type=direct, kể cả khi
+-- request A→B và B→A tới gần như đồng thời — xem § 15
+
 post_likes:
 UNIQUE(post_id, user_id)
 
@@ -1840,7 +1886,7 @@ luôn đồng bộ.
 15. comments
 16. comment_likes
 17. notifications
-18. conversations              -- migration 004, đã live — xem § 12
+18. conversations              -- migration 004, đã live — xem § 12; 2 cột direct_user_min_id/max_id thêm bởi migration 006 — xem § 14
 19. conversation_members       -- migration 004, đã live — xem § 12
 ```
 
@@ -1850,7 +1896,7 @@ Tổng cộng:
 19 tables
 ```
 
-`messages.channel_id` vẫn còn tồn tại song song với `messages.conversation_id` (expand phase, migration 005 sẽ dọn — xem § 12), nên không tính là bảng/cột riêng biệt ở đây.
+`messages.channel_id` đã bị migration 005 xóa hẳn khỏi schema (contract phase đã chạy live — xem § 12); `messages.conversation_id` là FK duy nhất còn lại.
 
 Ngoài ra database sử dụng các enum domain như:
 
@@ -1867,6 +1913,6 @@ conversation_type              -- migration 004, đã live — xem § 13
 
 ---
 
-**Document status:** Draft technical specification, đã cập nhật theo migration chat → conversation (004 đã áp dụng live — xem § 12–15)
+**Document status:** Draft technical specification, đã cập nhật theo migration chat → conversation + Direct Message (004, 005, 006 đều đã áp dụng live — xem § 12–15)
 **Purpose:** Shared understanding between Backend / Frontend / Database developers
-**Last verified against live Supabase project:** 2026-08-14, sau khi migration 004 chạy (`004_verify.sql`: 33/33 check OK — chi tiết các query đã chạy xem `docs/db/migrations/004_preflight.sql` / `004_verify.sql`)
+**Last verified against live Supabase project:** 2026-08-15, sau khi migration 006 chạy (`006_verify.sql` — chi tiết query xem `docs/db/migrations/006_preflight.sql` / `006_verify.sql`; 004/005 đã verify trước đó, xem `004_verify.sql`/`005_verify.sql`)
