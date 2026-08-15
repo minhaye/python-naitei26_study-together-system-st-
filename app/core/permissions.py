@@ -60,6 +60,19 @@ async def can_access_room(session: AsyncSession, room: StudyRoom, user_id: uuid.
     return await is_active_room_member(session, room.id, user_id)
 
 
+async def can_join_room_meeting(session: AsyncSession, room: StudyRoom, user_id: uuid.UUID) -> bool:
+    """Authorization for issuing a LiveKit meeting join token: same membership check as
+    `can_access_room`, plus a lifecycle gate. Deliberately kept separate from
+    `can_access_room` -- that helper is also used for historical/read access (e.g. chat
+    history), which must keep working after a room ends, whereas a meeting join token must
+    not be reissued once the room's live session is over. Mirrors how
+    `is_room_conversation_open_for_writes` layers a lifecycle check on top of
+    `can_access_conversation` for message writes."""
+    if not await can_access_room(session, room, user_id):
+        return False
+    return room.status != StudyRoomStatus.ENDED
+
+
 async def is_conversation_member(session: AsyncSession, conversation_id: uuid.UUID, user_id: uuid.UUID) -> bool:
     """Direct-conversation membership check. Mirrors the `is_conversation_member` RLS
     helper (migration 004) -- `conversation_members` is the sole source of truth for

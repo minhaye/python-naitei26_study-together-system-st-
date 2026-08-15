@@ -2,8 +2,15 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import get_current_user
+from app.auth.dto.auth_dto import CurrentUser
+from app.core.config import settings
+from app.core.permissions import can_join_room_meeting
 from app.db.session import get_db_session
 from app.db.enums import StudyRoomMemberRole
+from app.meetings.dto.meeting_dto import MeetingTokenResponse
+from app.meetings.services.livekit_service import LiveKitService
+from app.profiles.services.profile_service import ProfilesService
 from app.study_rooms.dto.study_room_dto import (
     RoomModerationActionCreate,
     RoomModerationActionResponse,
@@ -16,6 +23,8 @@ from app.study_rooms.services.study_room_service import StudyRoomsService
 
 router = APIRouter(prefix="/study-rooms", tags=["Study Rooms"])
 service = StudyRoomsService()
+profiles_service = ProfilesService()
+livekit_service = LiveKitService()
 
 
 @router.post("/", response_model=StudyRoomResponse, status_code=status.HTTP_201_CREATED)
@@ -248,3 +257,33 @@ async def list_moderation(room_id: uuid.UUID, session: AsyncSession = Depends(ge
             detail="Study room not found"
         )
     return await service.list_moderation_actions(session, room_id)
+
+
+# --- Meeting (LiveKit) ---
+
+
+@router.post("/{room_id}/meeting/token", response_model=MeetingTokenResponse)
+async def create_meeting_token(
+    room_id: uuid.UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
+    room = await service.get_by_id(session, room_id)
+    if not room:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Study room not found"
+        )
+    if not await can_join_room_meeting(session, room, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to this study room"
+        )
+
+    profile = await profiles_service.get_by_id(session, current_user.id)
+    participant_name = profile.display_name if profile and profile.display_name else None
+
+    token = livekit_service.create_participant_token(
+        room_id=room.id, identity=current_user.id, name=participant_name
+    )
+    return MeetingTokenResponse(server_url=settings.livekit_url, participant_token=token)

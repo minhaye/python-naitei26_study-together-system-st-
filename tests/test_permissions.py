@@ -202,6 +202,65 @@ async def test_can_access_room_false_for_kicked_member(monkeypatch):
     assert not await permissions.can_access_room(session=None, room=room, user_id=user_id)
 
 
+# --- can_join_room_meeting ---
+
+
+async def test_can_join_room_meeting_true_for_waiting_room_host(monkeypatch):
+    host_id = uuid.uuid4()
+    room = _room(status=StudyRoomStatus.WAITING, host_id=host_id)
+    get_member_mock = AsyncMock(return_value=None)
+    monkeypatch.setattr(permissions.study_rooms_service, "get_member", get_member_mock)
+
+    assert await permissions.can_join_room_meeting(session=None, room=room, user_id=host_id)
+    get_member_mock.assert_not_awaited()
+
+
+async def test_can_join_room_meeting_true_for_active_room_member(monkeypatch):
+    room = _room(status=StudyRoomStatus.ACTIVE)
+    user_id = uuid.uuid4()
+    monkeypatch.setattr(
+        permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, user_id))
+    )
+
+    assert await permissions.can_join_room_meeting(session=None, room=room, user_id=user_id)
+
+
+async def test_can_join_room_meeting_false_when_room_ended_even_for_member(monkeypatch):
+    room = _room(status=StudyRoomStatus.ENDED)
+    user_id = uuid.uuid4()
+    monkeypatch.setattr(
+        permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, user_id))
+    )
+
+    assert not await permissions.can_join_room_meeting(session=None, room=room, user_id=user_id)
+
+
+async def test_can_join_room_meeting_false_when_room_ended_even_for_host(monkeypatch):
+    host_id = uuid.uuid4()
+    room = _room(status=StudyRoomStatus.ENDED, host_id=host_id)
+    get_member_mock = AsyncMock()
+    monkeypatch.setattr(permissions.study_rooms_service, "get_member", get_member_mock)
+
+    assert not await permissions.can_join_room_meeting(session=None, room=room, user_id=host_id)
+    get_member_mock.assert_not_awaited()
+
+
+async def test_can_join_room_meeting_false_for_non_member(monkeypatch):
+    room = _room(status=StudyRoomStatus.ACTIVE)
+    monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
+
+    assert not await permissions.can_join_room_meeting(session=None, room=room, user_id=uuid.uuid4())
+
+
+async def test_can_join_room_meeting_false_for_left_member(monkeypatch):
+    room = _room(status=StudyRoomStatus.ACTIVE)
+    user_id = uuid.uuid4()
+    left_member = _room_member(room.id, user_id, left_at=datetime.now(timezone.utc))
+    monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=left_member))
+
+    assert not await permissions.can_join_room_meeting(session=None, room=room, user_id=user_id)
+
+
 async def test_can_access_conversation_room_type_true_for_host(monkeypatch):
     host_id = uuid.uuid4()
     room = _room(host_id=host_id)
