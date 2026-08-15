@@ -6,7 +6,7 @@ from app.channels.entities.channel_entity import Channel
 from app.channels.services.channel_service import ChannelsService
 from app.conversations.entities.conversation_entity import Conversation
 from app.conversations.services.conversation_service import ConversationsService
-from app.db.enums import ConversationType, GroupMemberRole, MemberStatus, StudyRoomStatus
+from app.db.enums import ConversationType, GroupMemberRole, MemberStatus, StudyRoomMemberRole, StudyRoomStatus
 from app.groups.services.group_service import GroupsService
 from app.study_rooms.entities.study_room_entity import StudyRoom
 from app.study_rooms.services.study_room_service import StudyRoomsService
@@ -47,6 +47,32 @@ async def is_active_room_member(session: AsyncSession, room_id: uuid.UUID, user_
     or were kicked (see `can_access_room`) -- is `left_at` being set."""
     member = await study_rooms_service.get_member(session, room_id, user_id)
     return member is not None and member.left_at is None
+
+
+def is_room_host(room: StudyRoom, user_id: uuid.UUID) -> bool:
+    return room.host_id == user_id
+
+
+async def is_room_moderator(session: AsyncSession, room_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+    member = await study_rooms_service.get_member(session, room_id, user_id)
+    return member is not None and member.left_at is None and member.role == StudyRoomMemberRole.MODERATOR
+
+
+async def can_manage_room(session: AsyncSession, room: StudyRoom, user_id: uuid.UUID) -> bool:
+    """Mirrors the documented `is_room_manager = host OR room moderator` concept
+    (STUDY_PLATFORM_DATABASE_SPEC.md §35): who may take moderator-level actions
+    (KICK/MUTE/UNMUTE) in a room. Deliberately narrower than `can_access_room` --
+    a plain participant has room access but not management authority."""
+    if is_room_host(room, user_id):
+        return True
+    return await is_room_moderator(session, room.id, user_id)
+
+
+def can_join_room(room: StudyRoom) -> bool:
+    """Lifecycle gate for joining: an ended room's session is over, so it must not
+    accept new/returning participants, even though it stays readable as history
+    (see `can_access_room` / `is_room_conversation_open_for_writes`)."""
+    return room.status != StudyRoomStatus.ENDED
 
 
 async def can_access_room(session: AsyncSession, room: StudyRoom, user_id: uuid.UUID) -> bool:
