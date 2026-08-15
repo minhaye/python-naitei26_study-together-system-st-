@@ -15,13 +15,21 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-body {
+/* ─── Hide Main Window Scrollbar ────────────────────────────────────────────── */
+
+html, body {
   margin: 0;
   display: flex;
   min-width: 320px;
   min-height: 100vh;
   color: #0B1C30;
   background-color: #f8fafc;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+html::-webkit-scrollbar, body::-webkit-scrollbar {
+  display: none;
 }
 
 #root {
@@ -36,4 +44,54 @@ body {
 
 h1, h2, h3, h4, h5, h6, p {
   margin: 0;
+}
+
+/* ─── Hover-To-Show Scrollbars (Pure CSS Best Practice) ───────────────────────
+ * Bình thường thanh cuộn ẨN 100%. Rê chuột vào vùng nào (sidebar, feed...)
+ * thì thanh cuộn của RIÊNG vùng đó mới hiện lên mượt mà.
+ */
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Mặc định thumb ẩn hoàn toàn */
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+  transition: background 0.25s ease;
+}
+
+/* Rê chuột vào vùng nào thì hiện thanh cuộn vùng đó */
+*:hover::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.45);
+}
+
+*:hover::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.85);
+}
+
+/* Firefox support */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover {
+  scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+}
+
+/* Spin animation cho icon loading */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }

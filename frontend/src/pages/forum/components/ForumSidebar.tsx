@@ -1,16 +1,12 @@
 /**
- * ForumSidebar — Danh sách danh mục môn học bên trái trang Forum.
+ * ForumSidebar — Sidebar danh mục bên trái trang Forum.
  *
- * Hiển thị:
- *   - Ô tìm kiếm (SearchInput)
- *   - "Tất cả môn học" (reset filter)
- *   - Danh sách ForumCategoryResponse nhóm theo tag (KHOA HỌC CƠ BẢN, CNTT, ...)
- *   - Item đang chọn được highlight bằng FORUM_COLORS.primaryLight
+ * Khôi phục kích thước 280px và style từ HomePage.tsx gốc.
+ * Danh mục hiển thị phẳng (flat list) trực tiếp từ Backend API.
  */
 
 import React, { useState, useEffect } from 'react';
-import { SearchInput } from '../../../components/ui/SearchInput';
-import { FORUM_COLORS } from '../constants/colors';
+import { Search } from 'lucide-react';
 import { forumApi } from '../lib/forum.api';
 import type { ForumCategoryResponse } from '../types/forum.types';
 
@@ -26,7 +22,6 @@ export const ForumSidebar: React.FC<ForumSidebarProps> = ({
   onSearchChange,
 }) => {
   const [categories, setCategories] = useState<ForumCategoryResponse[]>([]);
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   useEffect(() => {
     forumApi.getCategories().then(setCategories);
@@ -34,79 +29,75 @@ export const ForumSidebar: React.FC<ForumSidebarProps> = ({
 
   const isActive = (id: string | null) => selectedCategoryId === id;
 
-  const itemStyle = (id: string | null): React.CSSProperties => ({
-    padding: '9px 16px',
-    borderRadius: 8,
-    cursor: 'pointer',
-    fontSize: 14,
-    fontWeight: isActive(id) ? '600' : '400',
-    color: isActive(id) ? FORUM_COLORS.primaryText : FORUM_COLORS.textSecondary,
-    background: isActive(id)
-      ? FORUM_COLORS.primaryLight
-      : hoveredId === id
-      ? FORUM_COLORS.subtle
-      : 'transparent',
-    transition: 'background 0.15s ease, color 0.15s ease',
-  });
-
   return (
-    <aside
-      style={{
-        width: 260,
-        flexShrink: 0,
-        background: FORUM_COLORS.card,
-        borderRadius: 12,
-        padding: 20,
-        border: `1px solid ${FORUM_COLORS.border}`,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 16,
-        alignSelf: 'flex-start',
-        position: 'sticky',
-        top: 24,
-      }}
-    >
-      <SearchInput
-        placeholder="Tìm môn học..."
-        onChange={(e) => onSearchChange(e.target.value)}
-      />
-
-      {/* Tất cả */}
+    <aside style={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 24 }}>
       <div
-        style={itemStyle(null)}
-        onMouseEnter={() => setHoveredId('__all__')}
-        onMouseLeave={() => setHoveredId(null)}
-        onClick={() => onSelectCategory(null)}
+        style={{
+          background: 'white',
+          borderRadius: 12,
+          padding: 20,
+          outline: '1px solid #E2E8F0',
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+        }}
       >
-        📚 Tất cả môn học
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: '700',
-            color: FORUM_COLORS.textDisabled,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            padding: '0 8px',
-            marginBottom: 4,
-          }}
-        >
-          Danh mục
+        {/* Search Box */}
+        <div style={{ position: 'relative', marginBottom: 20 }}>
+          <Search size={16} color="#94A3B8" style={{ position: 'absolute', left: 12, top: 12 }} />
+          <input
+            type="text"
+            placeholder="Tìm môn học..."
+            onChange={(e) => onSearchChange(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '10px 10px 10px 36px',
+              background: '#F1F5F9',
+              border: '1px solid #E2E8F0',
+              borderRadius: 8,
+              outline: 'none',
+              fontSize: 14,
+              color: '#334155',
+            }}
+          />
         </div>
 
-        {categories.map((cat) => (
-          <div
-            key={cat.id}
-            style={itemStyle(cat.id)}
-            onMouseEnter={() => setHoveredId(cat.id)}
-            onMouseLeave={() => setHoveredId(null)}
-            onClick={() => onSelectCategory(cat.id)}
-          >
-            {cat.name}
-          </div>
-        ))}
+        {/* Tất cả môn học */}
+        <div
+          onClick={() => onSelectCategory(null)}
+          style={{
+            padding: '10px 16px',
+            background: isActive(null) ? '#EFF6FF' : 'transparent',
+            color: isActive(null) ? '#1D4ED8' : '#475569',
+            fontWeight: isActive(null) ? '600' : '400',
+            borderRadius: 8,
+            cursor: 'pointer',
+            marginBottom: 16,
+            transition: 'all 0.2s',
+          }}
+        >
+          Tất cả môn học
+        </div>
+
+        {/* Flat Category List */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {categories.map((cat) => (
+            <div
+              key={cat.id}
+              onClick={() => onSelectCategory(cat.id)}
+              style={{
+                padding: '8px 16px',
+                borderRadius: 8,
+                cursor: 'pointer',
+                color: isActive(cat.id) ? '#1D4ED8' : '#334155',
+                background: isActive(cat.id) ? '#EFF6FF' : 'transparent',
+                fontWeight: isActive(cat.id) ? '500' : '400',
+                fontSize: 14,
+                transition: 'all 0.2s',
+              }}
+            >
+              {cat.name}
+            </div>
+          ))}
+        </div>
       </div>
     </aside>
   );

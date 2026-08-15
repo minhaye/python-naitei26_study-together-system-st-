@@ -1,5 +1,4 @@
 // ─── DTOs — Mirror chính xác response từ Backend API ─────────────────────────
-// Các field dùng snake_case theo chuẩn Python/FastAPI
 
 export interface ForumCategoryResponse {
   id: string;                       // UUID
@@ -62,7 +61,6 @@ export interface CommentCreate {
 }
 
 // ─── UI Models — Biến đổi từ DTO để dùng trên giao diện React ────────────────
-// Dùng camelCase theo chuẩn JS. Thêm các field tính toán phía client.
 
 export interface Post {
   id: string;
@@ -74,7 +72,9 @@ export interface Post {
   imagePath: string | null;
   createdAt: string;
   timeAgo: string;           // Tính client-side: "2 giờ trước"
-  isLiked: boolean;          // Client-side toggle (không có từ BE)
+  likesCount: number;        // Số lượt thích
+  commentsCount: number;     // Số lượt bình luận
+  isLiked: boolean;          // Client-side toggle
 }
 
 export interface Comment {

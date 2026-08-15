@@ -1,10 +1,12 @@
 /**
  * ForumPage — Trang Diễn đàn chính.
  *
- * Lắp ghép các component:
- *   - Left: ForumSidebar (SearchInput + Danh mục)
- *   - Center: ForumFilterBar, Unauth Banner, Feed bài viết (PostCard + Infinite Scroll), CreatePostModal
- *   - Right: Right Sidebar (Chủ đề nổi bật + Widget trợ giúp)
+ * Giao diện 3 Cột Scroll Độc Lập (Independent 3-Column Scroll Area):
+ *   - Cột 1 (Trái): ForumSidebar (280px, scroll nội bộ)
+ *   - Cột 2 (Giữa): Main Feed bài viết (flex: 1, scroll nội bộ, kích hoạt infinite scroll)
+ *   - Cột 3 (Phải): ForumRightSidebar (300px, scroll nội bộ)
+ *
+ * Thanh cuộn chính của trang (window scrollbar) đã được ẩn hoàn toàn.
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -13,11 +15,11 @@ import { AlertCircle, Loader2 } from 'lucide-react';
 import { ForumSidebar } from './components/ForumSidebar';
 import { ForumFilterBar } from './components/ForumFilterBar';
 import { PostCard } from './components/PostCard';
+import { ForumRightSidebar } from './components/ForumRightSidebar';
 import { CreatePostModal } from './components/CreatePostModal';
 import { useForumPosts } from './hooks/useForumPosts';
 import { usePostActions } from './hooks/usePostActions';
 import { useAuth } from '../../hooks/useAuth';
-import { FORUM_COLORS } from './constants/colors';
 import { forumApi } from './lib/forum.api';
 import type { ForumCategoryResponse } from './types/forum.types';
 
@@ -38,7 +40,7 @@ export const ForumPage: React.FC = () => {
     forumApi.getCategories().then(setCategories);
   }, []);
 
-  // IntersectionObserver trigger
+  // IntersectionObserver trigger khi cuộn cột giữa
   useEffect(() => {
     if (!observerRef.current || !hasMore || isLoading) return;
 
@@ -58,25 +60,50 @@ export const ForumPage: React.FC = () => {
   const selectedCategoryName = categories.find((c) => c.id === selectedCategoryId)?.name ?? null;
 
   return (
-    <div style={{ width: '100%', flex: 1, background: FORUM_COLORS.bg, display: 'flex', justifyContent: 'center' }}>
+    <div
+      style={{
+        width: '100%',
+        height: 'calc(100vh - 64px)',
+        background: '#F8FAFC',
+        display: 'flex',
+        justifyContent: 'center',
+        overflow: 'hidden',
+      }}
+    >
       <div
         style={{
           width: '100%',
-          maxWidth: 1280,
-          padding: '28px 32px',
+          maxWidth: '100%',
+          height: '100%',
+          padding: '24px 48px',
           display: 'flex',
-          gap: 28,
+          gap: '32px',
+          boxSizing: 'border-box',
+          overflow: 'hidden',
         }}
       >
-        {/* Left Sidebar */}
-        <ForumSidebar
-          selectedCategoryId={selectedCategoryId}
-          onSelectCategory={setSelectedCategoryId}
-          onSearchChange={setSearch}
-        />
+        {/* CỘT 1: Left Sidebar (280px - Scroll độc lập) */}
+        <div style={{ width: 290, flexShrink: 0, height: '100%', overflowY: 'auto', paddingRight: 4 }}>
+          <ForumSidebar
+            selectedCategoryId={selectedCategoryId}
+            onSelectCategory={setSelectedCategoryId}
+            onSearchChange={setSearch}
+          />
+        </div>
 
-        {/* Main Content */}
-        <main style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
+        {/* CỘT 2: Feed Giữa (Flex 1 - Scroll độc lập + Infinite Scroll) */}
+        <main
+          style={{
+            flex: 1,
+            height: '100%',
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 24,
+            minWidth: 0,
+            paddingRight: 8,
+          }}
+        >
           {/* Header Filter Bar */}
           <ForumFilterBar
             categoryName={selectedCategoryName}
@@ -90,34 +117,34 @@ export const ForumPage: React.FC = () => {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 12,
-                padding: '14px 18px',
-                background: FORUM_COLORS.dangerBg,
-                border: `1px solid ${FORUM_COLORS.dangerBorder}`,
+                padding: '16px 20px',
+                background: '#FEF2F2',
+                border: '1px solid #FECACA',
                 borderRadius: 12,
               }}
             >
-              <AlertCircle color={FORUM_COLORS.danger} size={18} />
+              <AlertCircle color="#DC2626" size={20} />
               <div style={{ color: '#991B1B', fontSize: 14 }}>
                 Bạn chưa đăng nhập. Vui lòng{' '}
                 <Link to="/login" style={{ textDecoration: 'underline', fontWeight: '600', color: '#991B1B' }}>
                   đăng nhập
                 </Link>{' '}
-                để hỏi bài, thích và tham gia bình luận.
+                để hỏi bài và tham gia thảo luận.
               </div>
             </div>
           )}
 
-          {/* Feed Post List */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Posts List */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             {posts.length === 0 && !isLoading && (
               <div
                 style={{
-                  background: FORUM_COLORS.card,
-                  borderRadius: 14,
+                  background: 'white',
+                  borderRadius: 16,
                   padding: 40,
                   textAlign: 'center',
-                  color: FORUM_COLORS.textMuted,
-                  border: `1px solid ${FORUM_COLORS.border}`,
+                  color: '#64748B',
+                  border: '1px solid #E2E8F0',
                 }}
               >
                 Chưa có câu hỏi nào trong danh mục này. Hãy là người đầu tiên đặt câu hỏi!
@@ -130,94 +157,23 @@ export const ForumPage: React.FC = () => {
           </div>
 
           {/* Infinite Scroll Trigger & Loader */}
-          <div ref={observerRef} style={{ textAlign: 'center', padding: '16px 0', minHeight: 40 }}>
+          <div ref={observerRef} style={{ textAlign: 'center', padding: '24px 0', minHeight: 40 }}>
             {isLoading && (
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, color: FORUM_COLORS.textMuted }}>
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, color: '#64748B' }}>
                 <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
-                <span style={{ fontSize: 14 }}>Đang tải thêm...</span>
+                <span style={{ fontSize: 14, fontWeight: '500' }}>Tải thêm câu hỏi...</span>
               </div>
             )}
             {!hasMore && posts.length > 0 && (
-              <span style={{ fontSize: 13, color: FORUM_COLORS.textDisabled }}>Đã hiển thị tất cả câu hỏi</span>
+              <span style={{ fontSize: 14, color: '#64748B', fontWeight: '500' }}>Đã hiển thị tất cả câu hỏi</span>
             )}
           </div>
         </main>
 
-        {/* Right Sidebar */}
-        <aside
-          style={{
-            width: 280,
-            flexShrink: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 20,
-            alignSelf: 'flex-start',
-            position: 'sticky',
-            top: 24,
-          }}
-        >
-          {/* Chủ đề nổi bật */}
-          <div
-            style={{
-              background: FORUM_COLORS.card,
-              borderRadius: 14,
-              padding: 20,
-              border: `1px solid ${FORUM_COLORS.border}`,
-            }}
-          >
-            <h3 style={{ fontSize: 15, fontWeight: '700', color: FORUM_COLORS.textPrimary, margin: '0 0 14px' }}>
-              Chủ đề nổi bật
-            </h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {['#Toán12', '#GiảiTích', '#Java', '#IELTS', '#VậtLýĐạiCương'].map((tag) => (
-                <div
-                  key={tag}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    fontSize: 13,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <span style={{ color: FORUM_COLORS.primaryText, fontWeight: '500' }}>{tag}</span>
-                  <span style={{ color: FORUM_COLORS.textDisabled, fontSize: 12 }}>+120 bài</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Widget Trợ giúp */}
-          <div
-            style={{
-              background: `linear-gradient(135deg, ${FORUM_COLORS.primary} 0%, #1E40AF 100%)`,
-              borderRadius: 14,
-              padding: 20,
-              color: 'white',
-            }}
-          >
-            <h3 style={{ fontSize: 16, fontWeight: '700', margin: '0 0 8px' }}>Bạn cần trợ giúp?</h3>
-            <p style={{ fontSize: 13, color: FORUM_COLORS.primaryLighter, margin: '0 0 16px', lineHeight: 1.5 }}>
-              Tham gia ngay vào các nhóm học để được hướng dẫn trực tiếp từ các bạn cùng tiến.
-            </p>
-            <Link
-              to="/groups"
-              style={{
-                display: 'block',
-                textAlign: 'center',
-                padding: '9px 0',
-                background: 'white',
-                color: FORUM_COLORS.primary,
-                borderRadius: 8,
-                fontWeight: '600',
-                fontSize: 13,
-                textDecoration: 'none',
-              }}
-            >
-              Khám phá nhóm học
-            </Link>
-          </div>
-        </aside>
+        {/* CỘT 3: Right Sidebar (300px - Scroll độc lập) */}
+        <div style={{ width: 319, flexShrink: 0, height: '100%', overflowY: 'auto', paddingRight: 4 }}>
+          <ForumRightSidebar />
+        </div>
       </div>
 
       {/* Modal Đặt câu hỏi */}
