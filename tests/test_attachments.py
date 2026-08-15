@@ -99,6 +99,26 @@ def _wire_room_conversation(monkeypatch, room: StudyRoom, conversation: Conversa
     monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
 
 
+def _make_direct_conversation(user_a_id, user_b_id) -> Conversation:
+    min_id, max_id = sorted((user_a_id, user_b_id))
+    return Conversation(
+        id=uuid.uuid4(),
+        type=ConversationType.DIRECT,
+        created_by=user_a_id,
+        direct_user_min_id=min_id,
+        direct_user_max_id=max_id,
+    )
+
+
+def _wire_direct_conversation(monkeypatch, conversation: Conversation, member_ids: set):
+    monkeypatch.setattr(attachment_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
+    monkeypatch.setattr(
+        permissions.conversations_service,
+        "is_member",
+        AsyncMock(side_effect=lambda session, conversation_id, user_id: user_id in member_ids),
+    )
+
+
 def _wire_conversation(monkeypatch, channel: Channel, conversation: Conversation):
     """See tests/test_messages.py's _wire_conversation for why two ChannelsService
     instances are involved: attachment_router.channel_service (attachment path
@@ -228,6 +248,50 @@ def test_validate_room_ownership_rejects_malformed_path():
         f"study-rooms/{room_id}/{user_id}/not-a-uuid/lesson.pdf", room_id, user_id
     )
     assert not service.validate_room_ownership("private/another-room/secret.pdf", room_id, user_id)
+
+
+# --- AttachmentsService.validate_direct_ownership ---
+
+
+def test_build_direct_object_path_uses_direct_namespace():
+    service = AttachmentsService()
+    conversation_id, user_id = uuid.uuid4(), uuid.uuid4()
+    path = service.build_direct_object_path(conversation_id, user_id, "lesson.pdf")
+    assert path.startswith(f"direct/{conversation_id}/{user_id}/")
+
+
+def test_validate_direct_ownership_accepts_matching_path():
+    service = AttachmentsService()
+    conversation_id, user_id = uuid.uuid4(), uuid.uuid4()
+    path = service.build_direct_object_path(conversation_id, user_id, "lesson.pdf")
+    assert service.validate_direct_ownership(path, conversation_id, user_id)
+
+
+def test_validate_direct_ownership_rejects_foreign_conversation_or_user():
+    service = AttachmentsService()
+    conversation_id, user_id = uuid.uuid4(), uuid.uuid4()
+    path = service.build_direct_object_path(conversation_id, user_id, "lesson.pdf")
+
+    assert not service.validate_direct_ownership(path, uuid.uuid4(), user_id)
+    assert not service.validate_direct_ownership(path, conversation_id, uuid.uuid4())
+
+
+def test_validate_direct_ownership_rejects_room_shaped_path():
+    """Namespaces must be disjoint -- a room attachment path must never validate as a
+    direct-conversation attachment, and vice versa."""
+    service = AttachmentsService()
+    conversation_id, user_id = uuid.uuid4(), uuid.uuid4()
+    room_path = service.build_room_object_path(uuid.uuid4(), user_id, "lesson.pdf")
+    assert not service.validate_direct_ownership(room_path, conversation_id, user_id)
+
+
+def test_validate_direct_ownership_rejects_malformed_path():
+    service = AttachmentsService()
+    conversation_id, user_id = uuid.uuid4(), uuid.uuid4()
+    assert not service.validate_direct_ownership(
+        f"direct/{conversation_id}/{user_id}/not-a-uuid/lesson.pdf", conversation_id, user_id
+    )
+    assert not service.validate_direct_ownership("private/another-conversation/secret.pdf", conversation_id, user_id)
 
 
 # --- AttachmentsService HTTP calls (Storage REST API mocked) ---
@@ -588,6 +652,116 @@ async def test_room_attachment_url_unauthorized_user_denied(async_client, monkey
     monkeypatch.setattr(attachment_router.message_service, "get_by_id", AsyncMock(return_value=message))
     _wire_room_conversation(monkeypatch, room, conversation)
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
+
+    response = await async_client.get(f"/messages/{message.id}/attachment-url", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+# --- Upload-url endpoint: direct conversations ---
+
+
+async def test_direct_upload_url_member_a_success(async_client, monkeypatch, as_fake_user):
+    other_user = uuid.uuid4()
+    conversation = _make_direct_conversation(as_fake_user.id, other_user)
+    _wire_direct_conversation(monkeypatch, conversation, {as_fake_user.id, other_user})
+    monkeypatch.setattr(
+        attachment_router.attachments_service,
+        "create_signed_upload_url",
+        AsyncMock(
+            return_value={
+                "path": f"direct/{conversation.id}/{as_fake_user.id}/uuid/lesson.pdf",
+                "token": "tok",
+                "upload_url": "https://x/upload",
+            }
+        ),
+    )
+
+    response = await async_client.post(
+        f"/conversations/{conversation.id}/attachments/upload-url",
+        json={"file_name": "lesson.pdf", "content_type": "application/pdf", "file_size": 1024},
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 200
+    assert response.json()["token"] == "tok"
+
+
+async def test_direct_upload_url_member_b_success(async_client, monkeypatch, as_fake_user):
+    """Same pair, opposite constructor order -- must behave identically to member A."""
+    other_user = uuid.uuid4()
+    conversation = _make_direct_conversation(other_user, as_fake_user.id)
+    _wire_direct_conversation(monkeypatch, conversation, {as_fake_user.id, other_user})
+    monkeypatch.setattr(
+        attachment_router.attachments_service,
+        "create_signed_upload_url",
+        AsyncMock(
+            return_value={
+                "path": f"direct/{conversation.id}/{as_fake_user.id}/uuid/lesson.pdf",
+                "token": "tok",
+                "upload_url": "https://x/upload",
+            }
+        ),
+    )
+
+    response = await async_client.post(
+        f"/conversations/{conversation.id}/attachments/upload-url",
+        json={"file_name": "lesson.pdf", "content_type": "application/pdf", "file_size": 1024},
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 200
+
+
+async def test_direct_upload_url_third_user_denied(async_client, monkeypatch, as_fake_user):
+    user_a, user_b = uuid.uuid4(), uuid.uuid4()
+    conversation = _make_direct_conversation(user_a, user_b)
+    _wire_direct_conversation(monkeypatch, conversation, {user_a, user_b})
+
+    response = await async_client.post(
+        f"/conversations/{conversation.id}/attachments/upload-url",
+        json={"file_name": "lesson.pdf", "content_type": "application/pdf", "file_size": 1024},
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 403
+
+
+# --- Download-url endpoint: direct conversations ---
+
+
+async def test_direct_attachment_url_member_can_download(async_client, monkeypatch, as_fake_user):
+    from app.messages.entities.message_entity import Message
+
+    other_user = uuid.uuid4()
+    conversation = _make_direct_conversation(as_fake_user.id, other_user)
+    message = Message(
+        id=uuid.uuid4(),
+        conversation_id=conversation.id,
+        sender_id=other_user,
+        attachment_path=f"direct/{conversation.id}/{other_user}/uuid/f.pdf",
+    )
+    monkeypatch.setattr(attachment_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_direct_conversation(monkeypatch, conversation, {as_fake_user.id, other_user})
+    monkeypatch.setattr(
+        attachment_router.attachments_service,
+        "create_signed_download_url",
+        AsyncMock(return_value={"url": "https://x/download", "expires_in": 300}),
+    )
+
+    response = await async_client.get(f"/messages/{message.id}/attachment-url", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+
+
+async def test_direct_attachment_url_third_user_denied(async_client, monkeypatch, as_fake_user):
+    from app.messages.entities.message_entity import Message
+
+    user_a, user_b = uuid.uuid4(), uuid.uuid4()
+    conversation = _make_direct_conversation(user_a, user_b)
+    message = Message(
+        id=uuid.uuid4(),
+        conversation_id=conversation.id,
+        sender_id=user_a,
+        attachment_path=f"direct/{conversation.id}/{user_a}/uuid/f.pdf",
+    )
+    monkeypatch.setattr(attachment_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_direct_conversation(monkeypatch, conversation, {user_a, user_b})
 
     response = await async_client.get(f"/messages/{message.id}/attachment-url", headers=AUTH_HEADERS)
     assert response.status_code == 403

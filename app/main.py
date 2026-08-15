@@ -2,6 +2,7 @@ from fastapi import FastAPI
 
 from app.attachments.routers.attachment_router import router as attachments_router
 from app.auth.routers.auth_router import router as auth_router
+from app.conversations.routers.conversation_router import router as conversations_router
 from app.profiles.routers.profile_router import router as profiles_router
 from app.groups.routers.group_router import router as groups_router
 from app.channels.routers.channel_router import router as channels_router
@@ -17,6 +18,7 @@ app.include_router(auth_router)
 app.include_router(profiles_router)
 app.include_router(groups_router)
 app.include_router(channels_router)
+app.include_router(conversations_router)
 app.include_router(messages_router)
 app.include_router(attachments_router)
 app.include_router(study_rooms_router)
