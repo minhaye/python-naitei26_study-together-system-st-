@@ -26,7 +26,7 @@ export function AppRoutes() {
       <Route path="/room/:id" element={<StudyRoom />} />
       <Route path="/" element={<Layout />}>
         <Route index element={<HomePage />} />
-        
+
         {/* Protected Routes */}
         <Route element={<ProtectedRoute />}>
           <Route path="groups" element={<StudyRooms />} />
