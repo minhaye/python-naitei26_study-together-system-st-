@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.channels.entities.channel_entity import Channel
 from app.channels.services.channel_service import ChannelsService
 from app.conversations.entities.conversation_entity import Conversation
+from app.conversations.services.conversation_service import ConversationsService
 from app.db.enums import ConversationType, GroupMemberRole, MemberStatus, StudyRoomStatus
 from app.groups.services.group_service import GroupsService
 from app.study_rooms.entities.study_room_entity import StudyRoom
@@ -13,6 +14,7 @@ from app.study_rooms.services.study_room_service import StudyRoomsService
 channels_service = ChannelsService()
 groups_service = GroupsService()
 study_rooms_service = StudyRoomsService()
+conversations_service = ConversationsService()
 
 
 async def is_active_group_member(session: AsyncSession, group_id: uuid.UUID, user_id: uuid.UUID) -> bool:
@@ -58,11 +60,17 @@ async def can_access_room(session: AsyncSession, room: StudyRoom, user_id: uuid.
     return await is_active_room_member(session, room.id, user_id)
 
 
+async def is_conversation_member(session: AsyncSession, conversation_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+    """Direct-conversation membership check. Mirrors the `is_conversation_member` RLS
+    helper (migration 004) -- `conversation_members` is the sole source of truth for
+    DIRECT access; it is never consulted for CHANNEL/ROOM, which have their own
+    membership tables."""
+    return await conversations_service.is_member(session, conversation_id, user_id)
+
+
 async def can_access_conversation(session: AsyncSession, conversation: Conversation, user_id: uuid.UUID) -> bool:
     """Single entry point for read-time message/attachment authorization, dispatching on
-    conversation.type. Mirrors the `can_access_conversation` RLS helper. Direct
-    conversations are not implemented yet (see task scope) -- deny by default rather than
-    silently allowing access once that type starts appearing in the `conversations` table.
+    conversation.type. Mirrors the `can_access_conversation` RLS helper.
     """
     if conversation.type == ConversationType.CHANNEL:
         if conversation.channel_id is None:
@@ -74,6 +82,8 @@ async def can_access_conversation(session: AsyncSession, conversation: Conversat
             return False
         room = await study_rooms_service.get_by_id(session, conversation.room_id)
         return room is not None and await can_access_room(session, room, user_id)
+    if conversation.type == ConversationType.DIRECT:
+        return await is_conversation_member(session, conversation.id, user_id)
     return False
 
 

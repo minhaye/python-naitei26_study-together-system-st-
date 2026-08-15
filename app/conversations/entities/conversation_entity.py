@@ -30,12 +30,22 @@ class Conversation(Base):
         UUID(as_uuid=True), ForeignKey("study_rooms.id", ondelete="CASCADE")
     )
     created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="RESTRICT"))
+    # Only set (and only meaningful) for type=direct: the conversation's two participant
+    # ids, sorted so that opening a DM as A->B or B->A always resolves to the same pair.
+    # Enforced/validated at the DB level by migration 006 (CHECK + partial unique index) --
+    # see ConversationsService.get_or_create_direct for how the sort/race-safety works.
+    direct_user_min_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="CASCADE")
+    )
+    direct_user_max_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="CASCADE")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
 
     channel: Mapped["Channel | None"] = relationship(back_populates="conversation")
     room: Mapped["StudyRoom | None"] = relationship()
-    creator: Mapped["Profile"] = relationship()
+    creator: Mapped["Profile"] = relationship(foreign_keys=[created_by])
     members: Mapped[list["ConversationMember"]] = relationship(back_populates="conversation")
     messages: Mapped[list["Message"]] = relationship(back_populates="conversation")
 

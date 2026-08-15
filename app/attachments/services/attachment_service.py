@@ -39,6 +39,11 @@ class AttachmentsService:
         object_id = uuid.uuid4()
         return f"study-rooms/{room_id}/{user_id}/{object_id}/{safe_name}"
 
+    def build_direct_object_path(self, conversation_id: uuid.UUID, user_id: uuid.UUID, file_name: str) -> str:
+        safe_name = sanitize_filename(file_name)
+        object_id = uuid.uuid4()
+        return f"direct/{conversation_id}/{user_id}/{object_id}/{safe_name}"
+
     def _validate_prefixed_path(self, attachment_path: str, expected_prefix: str) -> bool:
         """Structural check that a client-supplied attachment_path was actually issued to this
         user under the given namespace (path format from `build_object_path`/
@@ -65,6 +70,9 @@ class AttachmentsService:
 
     def validate_room_ownership(self, attachment_path: str, room_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         return self._validate_prefixed_path(attachment_path, f"study-rooms/{room_id}/{user_id}/")
+
+    def validate_direct_ownership(self, attachment_path: str, conversation_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+        return self._validate_prefixed_path(attachment_path, f"direct/{conversation_id}/{user_id}/")
 
     async def create_signed_upload_url(self, path: str) -> dict[str, str]:
         async with httpx.AsyncClient(timeout=10.0) as client:

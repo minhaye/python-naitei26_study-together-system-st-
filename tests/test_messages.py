@@ -101,6 +101,26 @@ def _wire_room_conversation(monkeypatch, room: StudyRoom, conversation: Conversa
     monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
 
 
+def _make_direct_conversation(user_a_id, user_b_id) -> Conversation:
+    min_id, max_id = sorted((user_a_id, user_b_id))
+    return Conversation(
+        id=uuid.uuid4(),
+        type=ConversationType.DIRECT,
+        created_by=user_a_id,
+        direct_user_min_id=min_id,
+        direct_user_max_id=max_id,
+    )
+
+
+def _wire_direct_conversation(monkeypatch, conversation: Conversation, member_ids: set):
+    monkeypatch.setattr(message_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
+    monkeypatch.setattr(
+        permissions.conversations_service,
+        "is_member",
+        AsyncMock(side_effect=lambda session, conversation_id, user_id: user_id in member_ids),
+    )
+
+
 def _wire_conversation(monkeypatch, channel: Channel, conversation: Conversation):
     """Common wiring for conversation-centric endpoints: the router loads the conversation
     via message_router.conversation_service, while can_access_conversation (in
@@ -437,13 +457,15 @@ async def test_room_dangling_room_reference_denied_safely(async_client, monkeypa
 
 async def test_direct_conversation_type_cannot_bypass_via_room_id(async_client, monkeypatch, as_fake_user):
     """Dispatch must key off conversation.type, not the presence of a room_id -- a direct
-    conversation stays denied-by-default even if a room_id happens to be set."""
+    conversation resolves via conversation_members even if a (contradictory) room_id happens
+    to be set, never falling through to room logic."""
     conversation = Conversation(
         id=uuid.uuid4(), type=ConversationType.DIRECT, room_id=uuid.uuid4(), created_by=uuid.uuid4()
     )
     monkeypatch.setattr(message_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
     get_room_mock = AsyncMock()
     monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", get_room_mock)
+    monkeypatch.setattr(permissions.conversations_service, "is_member", AsyncMock(return_value=False))
 
     response = await async_client.get(f"/conversations/{conversation.id}/messages", headers=AUTH_HEADERS)
     assert response.status_code == 403
@@ -600,6 +622,144 @@ async def test_room_active_member_can_still_patch_own_message(async_client, monk
 
     response = await async_client.patch(f"/messages/{message.id}", json={"content": "edited"}, headers=AUTH_HEADERS)
     assert response.status_code == 200
+
+
+# --- Direct conversation: list / send ---
+
+
+async def test_direct_member_a_can_list_messages(async_client, monkeypatch, as_fake_user):
+    other_user = uuid.uuid4()
+    conversation = _make_direct_conversation(as_fake_user.id, other_user)
+    _wire_direct_conversation(monkeypatch, conversation, {as_fake_user.id, other_user})
+    monkeypatch.setattr(message_router.message_service, "list_by_conversation", AsyncMock(return_value=([], None)))
+
+    response = await async_client.get(f"/conversations/{conversation.id}/messages", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+
+
+async def test_direct_member_b_can_list_messages(async_client, monkeypatch, as_fake_user):
+    """Same pair, opposite constructor argument order -- membership must not depend on
+    which side of the pair the caller happens to be."""
+    other_user = uuid.uuid4()
+    conversation = _make_direct_conversation(other_user, as_fake_user.id)
+    _wire_direct_conversation(monkeypatch, conversation, {as_fake_user.id, other_user})
+    monkeypatch.setattr(message_router.message_service, "list_by_conversation", AsyncMock(return_value=([], None)))
+
+    response = await async_client.get(f"/conversations/{conversation.id}/messages", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+
+
+async def test_direct_member_can_send_message(async_client, monkeypatch, as_fake_user):
+    other_user = uuid.uuid4()
+    conversation = _make_direct_conversation(as_fake_user.id, other_user)
+    _wire_direct_conversation(monkeypatch, conversation, {as_fake_user.id, other_user})
+    created = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="hi")
+    monkeypatch.setattr(message_router.message_service, "create", AsyncMock(return_value=created))
+
+    response = await async_client.post(
+        f"/conversations/{conversation.id}/messages", json={"content": "hi"}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 201
+
+
+async def test_direct_third_user_cannot_list_messages(async_client, monkeypatch, as_fake_user):
+    user_a, user_b = uuid.uuid4(), uuid.uuid4()
+    conversation = _make_direct_conversation(user_a, user_b)
+    _wire_direct_conversation(monkeypatch, conversation, {user_a, user_b})
+
+    response = await async_client.get(f"/conversations/{conversation.id}/messages", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_direct_third_user_cannot_send_message(async_client, monkeypatch, as_fake_user):
+    user_a, user_b = uuid.uuid4(), uuid.uuid4()
+    conversation = _make_direct_conversation(user_a, user_b)
+    _wire_direct_conversation(monkeypatch, conversation, {user_a, user_b})
+
+    response = await async_client.post(
+        f"/conversations/{conversation.id}/messages", json={"content": "hi"}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 403
+
+
+async def test_direct_missing_membership_denied_safely(async_client, monkeypatch, as_fake_user):
+    """A direct conversation with no matching conversation_members row at all (e.g. data
+    corruption, or a conversation that lost its membership rows) must deny, not error out."""
+    conversation = Conversation(id=uuid.uuid4(), type=ConversationType.DIRECT, created_by=uuid.uuid4())
+    monkeypatch.setattr(message_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
+    monkeypatch.setattr(permissions.conversations_service, "is_member", AsyncMock(return_value=False))
+
+    response = await async_client.get(f"/conversations/{conversation.id}/messages", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+# --- Direct conversation: message-level ---
+
+
+async def test_direct_member_can_get_message(async_client, monkeypatch, as_fake_user):
+    other_user = uuid.uuid4()
+    conversation = _make_direct_conversation(as_fake_user.id, other_user)
+    message = _make_message(sender_id=other_user, conversation_id=conversation.id, content="hi")
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_direct_conversation(monkeypatch, conversation, {as_fake_user.id, other_user})
+
+    response = await async_client.get(f"/messages/{message.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+
+
+async def test_direct_third_user_cannot_get_message(async_client, monkeypatch, as_fake_user):
+    user_a, user_b = uuid.uuid4(), uuid.uuid4()
+    conversation = _make_direct_conversation(user_a, user_b)
+    message = _make_message(sender_id=user_a, conversation_id=conversation.id, content="hi")
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_direct_conversation(monkeypatch, conversation, {user_a, user_b})
+
+    response = await async_client.get(f"/messages/{message.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_direct_sender_can_patch_own_message(async_client, monkeypatch, as_fake_user):
+    message = _make_message(sender_id=as_fake_user.id, conversation_id=uuid.uuid4(), content="hi")
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    updated = _make_message(sender_id=as_fake_user.id, conversation_id=message.conversation_id, content="edited")
+    monkeypatch.setattr(message_router.message_service, "update", AsyncMock(return_value=updated))
+
+    response = await async_client.patch(f"/messages/{message.id}", json={"content": "edited"}, headers=AUTH_HEADERS)
+    assert response.status_code == 200
+
+
+async def test_direct_other_participant_cannot_patch_sender_message(async_client, monkeypatch, as_fake_user):
+    """The other DM participant has no special edit rights -- same sender-only rule as
+    channel/room messages; being 'in the conversation' does not grant edit access to someone
+    else's message."""
+    other_user = uuid.uuid4()
+    message = _make_message(sender_id=other_user, conversation_id=uuid.uuid4(), content="hi")
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+
+    response = await async_client.patch(f"/messages/{message.id}", json={"content": "edited"}, headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_direct_sender_can_delete_own_message(async_client, monkeypatch, as_fake_user):
+    message = _make_message(sender_id=as_fake_user.id, conversation_id=uuid.uuid4(), content="hi")
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    monkeypatch.setattr(message_router.message_service, "delete", AsyncMock(return_value=None))
+
+    response = await async_client.delete(f"/messages/{message.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 204
+
+
+async def test_direct_other_participant_cannot_delete_sender_message(async_client, monkeypatch, as_fake_user):
+    """Unlike channel messages, direct messages have no 'manager' override at all -- the
+    other participant can never delete a DM partner's message, full stop."""
+    other_user = uuid.uuid4()
+    conversation = _make_direct_conversation(as_fake_user.id, other_user)
+    message = _make_message(sender_id=other_user, conversation_id=conversation.id, content="hi")
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    monkeypatch.setattr(message_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
+
+    response = await async_client.delete(f"/messages/{message.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 403
 
 
 # --- Pagination (service-level) ---

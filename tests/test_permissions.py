@@ -121,19 +121,34 @@ async def test_can_access_conversation_channel_type_false_when_channel_missing(m
     assert not await permissions.can_access_conversation(session=None, conversation=conversation, user_id=uuid.uuid4())
 
 
-async def test_can_access_conversation_direct_type_denied_by_default():
+async def test_can_access_conversation_direct_type_true_for_member(monkeypatch):
+    user_a, user_b = uuid.uuid4(), uuid.uuid4()
+    conversation = Conversation(id=uuid.uuid4(), type=ConversationType.DIRECT, created_by=user_a)
+    monkeypatch.setattr(permissions.conversations_service, "is_member", AsyncMock(return_value=True))
+
+    assert await permissions.can_access_conversation(session=None, conversation=conversation, user_id=user_a)
+
+
+async def test_can_access_conversation_direct_type_false_for_non_member(monkeypatch):
     conversation = Conversation(id=uuid.uuid4(), type=ConversationType.DIRECT, created_by=uuid.uuid4())
+    monkeypatch.setattr(permissions.conversations_service, "is_member", AsyncMock(return_value=False))
 
     assert not await permissions.can_access_conversation(session=None, conversation=conversation, user_id=uuid.uuid4())
 
 
-async def test_can_access_conversation_direct_type_denied_even_with_room_id_set():
-    """Type must gate dispatch, not the presence of a (contradictory) room_id/channel_id."""
+async def test_can_access_conversation_direct_type_denied_even_with_room_id_set(monkeypatch):
+    """Type must gate dispatch, not the presence of a (contradictory) room_id/channel_id --
+    a DIRECT conversation with a stray room_id must still resolve via conversation_members,
+    never fall through to room logic."""
     conversation = Conversation(
         id=uuid.uuid4(), type=ConversationType.DIRECT, room_id=uuid.uuid4(), created_by=uuid.uuid4()
     )
+    get_room_mock = AsyncMock()
+    monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", get_room_mock)
+    monkeypatch.setattr(permissions.conversations_service, "is_member", AsyncMock(return_value=False))
 
     assert not await permissions.can_access_conversation(session=None, conversation=conversation, user_id=uuid.uuid4())
+    get_room_mock.assert_not_awaited()
 
 
 # --- can_access_room / can_access_conversation (room) ---
@@ -299,3 +314,22 @@ async def test_can_send_to_conversation_channel_type_unaffected_by_room_logic(mo
     monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock(return_value=member))
 
     assert await permissions.can_send_to_conversation(session=None, conversation=conversation, user_id=uuid.uuid4())
+
+
+# --- can_send_to_conversation (direct) ---
+
+
+async def test_can_send_to_conversation_direct_member_allowed(monkeypatch):
+    conversation = Conversation(id=uuid.uuid4(), type=ConversationType.DIRECT, created_by=uuid.uuid4())
+    monkeypatch.setattr(permissions.conversations_service, "is_member", AsyncMock(return_value=True))
+
+    assert await permissions.can_send_to_conversation(session=None, conversation=conversation, user_id=uuid.uuid4())
+
+
+async def test_can_send_to_conversation_direct_non_member_denied(monkeypatch):
+    """Covers both 'never a member' and 'malformed/dangling direct conversation' cases --
+    is_member() returning False is the single safe-deny path for either."""
+    conversation = Conversation(id=uuid.uuid4(), type=ConversationType.DIRECT, created_by=uuid.uuid4())
+    monkeypatch.setattr(permissions.conversations_service, "is_member", AsyncMock(return_value=False))
+
+    assert not await permissions.can_send_to_conversation(session=None, conversation=conversation, user_id=uuid.uuid4())

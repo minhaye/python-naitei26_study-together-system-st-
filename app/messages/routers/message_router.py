@@ -99,9 +99,14 @@ async def create_message(
             valid_reference = attachments_service.validate_room_ownership(
                 data.attachment_path, room.id, current_user.id
             )
+        elif conversation.type == ConversationType.DIRECT:
+            valid_reference = attachments_service.validate_direct_ownership(
+                data.attachment_path, conversation.id, current_user.id
+            )
         else:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "Attachments are only supported for channel and room conversations"
+                status.HTTP_400_BAD_REQUEST,
+                "Attachments are only supported for channel, room, and direct conversations",
             )
         if not valid_reference:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid attachment reference")

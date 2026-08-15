@@ -50,9 +50,12 @@ async def create_upload_url(
         if not room:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Study room not found")
         path = attachments_service.build_room_object_path(room.id, current_user.id, data.file_name)
+    elif conversation.type == ConversationType.DIRECT:
+        path = attachments_service.build_direct_object_path(conversation.id, current_user.id, data.file_name)
     else:
         raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "Attachments are only supported for channel and room conversations"
+            status.HTTP_400_BAD_REQUEST,
+            "Attachments are only supported for channel, room, and direct conversations",
         )
 
     try:
