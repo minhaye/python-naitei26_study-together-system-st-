@@ -27,9 +27,6 @@ env/
 # Claude
 .claude/
 
-# cc
-docs/*.md
-
 # IDE
 .vscode/
 .idea/
