@@ -36,7 +36,7 @@ class MessageResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    channel_id: uuid.UUID
+    conversation_id: uuid.UUID
     sender_id: uuid.UUID
     content: str | None
     attachment_path: str | None

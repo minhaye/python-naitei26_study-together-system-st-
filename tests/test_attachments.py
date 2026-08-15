@@ -13,12 +13,14 @@ from app.attachments.services.attachment_service import (
 from app.attachments.utils import sanitize_filename
 from app.auth.dependencies import get_current_user
 from app.channels.entities.channel_entity import Channel
+from app.conversations.entities.conversation_entity import Conversation
 from app.core import permissions
 from app.core.config import settings
-from app.db.enums import GroupMemberRole, MemberStatus
+from app.db.enums import ConversationType, GroupMemberRole, MemberStatus, StudyRoomMemberRole, StudyRoomStatus
 from app.db.session import get_db_session
 from app.groups.entities.group_entity import GroupMember
 from app.main import app
+from app.study_rooms.entities.study_room_entity import StudyRoom, StudyRoomMember
 
 AUTH_HEADERS = {"Authorization": "Bearer testtoken"}
 
@@ -65,6 +67,45 @@ def _make_channel(group_id=None, is_private=False):
 
 def _active_member(group_id, user_id, role=GroupMemberRole.MEMBER):
     return GroupMember(group_id=group_id, user_id=user_id, role=role, status=MemberStatus.ACTIVE)
+
+
+def _make_conversation(channel: Channel) -> Conversation:
+    return Conversation(
+        id=uuid.uuid4(), type=ConversationType.CHANNEL, channel_id=channel.id, created_by=channel.created_by
+    )
+
+
+def _make_room(status=StudyRoomStatus.ACTIVE, host_id=None) -> StudyRoom:
+    return StudyRoom(
+        id=uuid.uuid4(),
+        group_id=uuid.uuid4(),
+        name="Room",
+        host_id=host_id or uuid.uuid4(),
+        status=status,
+        max_participants=50,
+    )
+
+
+def _make_room_conversation(room: StudyRoom) -> Conversation:
+    return Conversation(id=uuid.uuid4(), type=ConversationType.ROOM, room_id=room.id, created_by=room.host_id)
+
+
+def _room_member(room_id, user_id, role=StudyRoomMemberRole.PARTICIPANT, left_at=None) -> StudyRoomMember:
+    return StudyRoomMember(room_id=room_id, user_id=user_id, role=role, left_at=left_at)
+
+
+def _wire_room_conversation(monkeypatch, room: StudyRoom, conversation: Conversation):
+    monkeypatch.setattr(attachment_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
+    monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
+
+
+def _wire_conversation(monkeypatch, channel: Channel, conversation: Conversation):
+    """See tests/test_messages.py's _wire_conversation for why two ChannelsService
+    instances are involved: attachment_router.channel_service (attachment path
+    derivation) vs. permissions.channels_service (authorization, used inside
+    can_access_conversation)."""
+    monkeypatch.setattr(attachment_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
+    monkeypatch.setattr(permissions.channels_service, "get_by_id", AsyncMock(return_value=channel))
 
 
 # --- utils.sanitize_filename ---
@@ -145,6 +186,50 @@ def test_validate_ownership_rejects_malformed_path():
     assert not service.validate_ownership("private/another-group/secret.pdf", group_id, channel_id, user_id)
 
 
+# --- AttachmentsService.validate_room_ownership ---
+
+
+def test_build_room_object_path_uses_study_rooms_namespace():
+    service = AttachmentsService()
+    room_id, user_id = uuid.uuid4(), uuid.uuid4()
+    path = service.build_room_object_path(room_id, user_id, "lesson.pdf")
+    assert path.startswith(f"study-rooms/{room_id}/{user_id}/")
+
+
+def test_validate_room_ownership_accepts_matching_path():
+    service = AttachmentsService()
+    room_id, user_id = uuid.uuid4(), uuid.uuid4()
+    path = service.build_room_object_path(room_id, user_id, "lesson.pdf")
+    assert service.validate_room_ownership(path, room_id, user_id)
+
+
+def test_validate_room_ownership_rejects_foreign_room_or_user():
+    service = AttachmentsService()
+    room_id, user_id = uuid.uuid4(), uuid.uuid4()
+    path = service.build_room_object_path(room_id, user_id, "lesson.pdf")
+
+    assert not service.validate_room_ownership(path, uuid.uuid4(), user_id)
+    assert not service.validate_room_ownership(path, room_id, uuid.uuid4())
+
+
+def test_validate_room_ownership_rejects_channel_shaped_path():
+    """A channel attachment path must never validate as a room attachment, and vice versa --
+    the two namespaces are disjoint."""
+    service = AttachmentsService()
+    room_id, user_id = uuid.uuid4(), uuid.uuid4()
+    channel_path = service.build_object_path(uuid.uuid4(), uuid.uuid4(), user_id, "lesson.pdf")
+    assert not service.validate_room_ownership(channel_path, room_id, user_id)
+
+
+def test_validate_room_ownership_rejects_malformed_path():
+    service = AttachmentsService()
+    room_id, user_id = uuid.uuid4(), uuid.uuid4()
+    assert not service.validate_room_ownership(
+        f"study-rooms/{room_id}/{user_id}/not-a-uuid/lesson.pdf", room_id, user_id
+    )
+    assert not service.validate_room_ownership("private/another-room/secret.pdf", room_id, user_id)
+
+
 # --- AttachmentsService HTTP calls (Storage REST API mocked) ---
 
 
@@ -202,19 +287,31 @@ async def test_object_exists_true_and_false(monkeypatch):
 
 async def test_upload_url_requires_auth(async_client):
     response = await async_client.post(
-        f"/channels/{uuid.uuid4()}/attachments/upload-url",
+        f"/conversations/{uuid.uuid4()}/attachments/upload-url",
         json={"file_name": "lesson.pdf", "content_type": "application/pdf", "file_size": 1024},
     )
     assert response.status_code == 401
 
 
+async def test_upload_url_not_found_for_missing_conversation(async_client, monkeypatch, as_fake_user):
+    monkeypatch.setattr(attachment_router.conversation_service, "get_by_id", AsyncMock(return_value=None))
+
+    response = await async_client.post(
+        f"/conversations/{uuid.uuid4()}/attachments/upload-url",
+        json={"file_name": "lesson.pdf", "content_type": "application/pdf", "file_size": 1024},
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 404
+
+
 async def test_upload_url_forbidden_when_not_group_member(async_client, monkeypatch, as_fake_user):
     channel = _make_channel()
-    monkeypatch.setattr(attachment_router.channel_service, "get_by_id", AsyncMock(return_value=channel))
+    conversation = _make_conversation(channel)
+    _wire_conversation(monkeypatch, channel, conversation)
     monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock(return_value=None))
 
     response = await async_client.post(
-        f"/channels/{channel.id}/attachments/upload-url",
+        f"/conversations/{conversation.id}/attachments/upload-url",
         json={"file_name": "lesson.pdf", "content_type": "application/pdf", "file_size": 1024},
         headers=AUTH_HEADERS,
     )
@@ -223,12 +320,13 @@ async def test_upload_url_forbidden_when_not_group_member(async_client, monkeypa
 
 async def test_upload_url_forbidden_when_banned(async_client, monkeypatch, as_fake_user):
     channel = _make_channel()
+    conversation = _make_conversation(channel)
+    _wire_conversation(monkeypatch, channel, conversation)
     banned = GroupMember(group_id=channel.group_id, user_id=as_fake_user.id, role=GroupMemberRole.MEMBER, status=MemberStatus.BANNED)
-    monkeypatch.setattr(attachment_router.channel_service, "get_by_id", AsyncMock(return_value=channel))
     monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock(return_value=banned))
 
     response = await async_client.post(
-        f"/channels/{channel.id}/attachments/upload-url",
+        f"/conversations/{conversation.id}/attachments/upload-url",
         json={"file_name": "lesson.pdf", "content_type": "application/pdf", "file_size": 1024},
         headers=AUTH_HEADERS,
     )
@@ -237,14 +335,15 @@ async def test_upload_url_forbidden_when_banned(async_client, monkeypatch, as_fa
 
 async def test_upload_url_forbidden_private_channel_non_member(async_client, monkeypatch, as_fake_user):
     channel = _make_channel(is_private=True)
-    monkeypatch.setattr(attachment_router.channel_service, "get_by_id", AsyncMock(return_value=channel))
+    conversation = _make_conversation(channel)
+    _wire_conversation(monkeypatch, channel, conversation)
     monkeypatch.setattr(
         permissions.groups_service, "get_member", AsyncMock(return_value=_active_member(channel.group_id, as_fake_user.id))
     )
     monkeypatch.setattr(permissions.channels_service, "get_member", AsyncMock(return_value=None))
 
     response = await async_client.post(
-        f"/channels/{channel.id}/attachments/upload-url",
+        f"/conversations/{conversation.id}/attachments/upload-url",
         json={"file_name": "lesson.pdf", "content_type": "application/pdf", "file_size": 1024},
         headers=AUTH_HEADERS,
     )
@@ -253,6 +352,8 @@ async def test_upload_url_forbidden_private_channel_non_member(async_client, mon
 
 async def test_upload_url_valid_member_success(async_client, monkeypatch, as_fake_user):
     channel = _make_channel(is_private=False)
+    conversation = _make_conversation(channel)
+    _wire_conversation(monkeypatch, channel, conversation)
     monkeypatch.setattr(attachment_router.channel_service, "get_by_id", AsyncMock(return_value=channel))
     monkeypatch.setattr(
         permissions.groups_service, "get_member", AsyncMock(return_value=_active_member(channel.group_id, as_fake_user.id))
@@ -264,7 +365,7 @@ async def test_upload_url_valid_member_success(async_client, monkeypatch, as_fak
     )
 
     response = await async_client.post(
-        f"/channels/{channel.id}/attachments/upload-url",
+        f"/conversations/{conversation.id}/attachments/upload-url",
         json={"file_name": "lesson.pdf", "content_type": "application/pdf", "file_size": 1024},
         headers=AUTH_HEADERS,
     )
@@ -276,7 +377,7 @@ async def test_upload_url_valid_member_success(async_client, monkeypatch, as_fak
 
 async def test_upload_url_rejects_invalid_content_type(async_client, as_fake_user):
     response = await async_client.post(
-        f"/channels/{uuid.uuid4()}/attachments/upload-url",
+        f"/conversations/{uuid.uuid4()}/attachments/upload-url",
         json={"file_name": "virus.exe", "content_type": "application/x-msdownload", "file_size": 1024},
         headers=AUTH_HEADERS,
     )
@@ -285,7 +386,7 @@ async def test_upload_url_rejects_invalid_content_type(async_client, as_fake_use
 
 async def test_upload_url_rejects_oversized_file(async_client, as_fake_user):
     response = await async_client.post(
-        f"/channels/{uuid.uuid4()}/attachments/upload-url",
+        f"/conversations/{uuid.uuid4()}/attachments/upload-url",
         json={"file_name": "big.pdf", "content_type": "application/pdf", "file_size": 100 * 1024 * 1024},
         headers=AUTH_HEADERS,
     )
@@ -304,9 +405,12 @@ async def test_attachment_url_forbidden_for_outsider(async_client, monkeypatch, 
     from app.messages.entities.message_entity import Message
 
     channel = _make_channel()
-    message = Message(id=uuid.uuid4(), channel_id=channel.id, sender_id=uuid.uuid4(), attachment_path="groups/a/channels/b/c/d/f.pdf")
+    conversation = _make_conversation(channel)
+    message = Message(
+        id=uuid.uuid4(), conversation_id=conversation.id, sender_id=uuid.uuid4(), attachment_path="groups/a/channels/b/c/d/f.pdf"
+    )
     monkeypatch.setattr(attachment_router.message_service, "get_by_id", AsyncMock(return_value=message))
-    monkeypatch.setattr(attachment_router.channel_service, "get_by_id", AsyncMock(return_value=channel))
+    _wire_conversation(monkeypatch, channel, conversation)
     monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock(return_value=None))
 
     response = await async_client.get(f"/messages/{message.id}/attachment-url", headers=AUTH_HEADERS)
@@ -317,9 +421,12 @@ async def test_attachment_url_404_when_message_has_no_attachment(async_client, m
     from app.messages.entities.message_entity import Message
 
     channel = _make_channel()
-    message = Message(id=uuid.uuid4(), channel_id=channel.id, sender_id=as_fake_user.id, content="hi", attachment_path=None)
+    conversation = _make_conversation(channel)
+    message = Message(
+        id=uuid.uuid4(), conversation_id=conversation.id, sender_id=as_fake_user.id, content="hi", attachment_path=None
+    )
     monkeypatch.setattr(attachment_router.message_service, "get_by_id", AsyncMock(return_value=message))
-    monkeypatch.setattr(attachment_router.channel_service, "get_by_id", AsyncMock(return_value=channel))
+    _wire_conversation(monkeypatch, channel, conversation)
     monkeypatch.setattr(
         permissions.groups_service, "get_member", AsyncMock(return_value=_active_member(channel.group_id, as_fake_user.id))
     )
@@ -332,11 +439,15 @@ async def test_attachment_url_success_for_member(async_client, monkeypatch, as_f
     from app.messages.entities.message_entity import Message
 
     channel = _make_channel()
+    conversation = _make_conversation(channel)
     message = Message(
-        id=uuid.uuid4(), channel_id=channel.id, sender_id=as_fake_user.id, attachment_path="groups/a/channels/b/c/d/f.pdf"
+        id=uuid.uuid4(),
+        conversation_id=conversation.id,
+        sender_id=as_fake_user.id,
+        attachment_path="groups/a/channels/b/c/d/f.pdf",
     )
     monkeypatch.setattr(attachment_router.message_service, "get_by_id", AsyncMock(return_value=message))
-    monkeypatch.setattr(attachment_router.channel_service, "get_by_id", AsyncMock(return_value=channel))
+    _wire_conversation(monkeypatch, channel, conversation)
     monkeypatch.setattr(
         permissions.groups_service, "get_member", AsyncMock(return_value=_active_member(channel.group_id, as_fake_user.id))
     )
@@ -349,3 +460,134 @@ async def test_attachment_url_success_for_member(async_client, monkeypatch, as_f
     response = await async_client.get(f"/messages/{message.id}/attachment-url", headers=AUTH_HEADERS)
     assert response.status_code == 200
     assert response.json() == {"url": "https://x/download", "expires_in": 300}
+
+
+# --- Upload-url endpoint: room conversations ---
+
+
+async def test_room_upload_url_authorized_member_success(async_client, monkeypatch, as_fake_user):
+    room = _make_room()
+    conversation = _make_room_conversation(room)
+    _wire_room_conversation(monkeypatch, room, conversation)
+    monkeypatch.setattr(
+        permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
+    )
+    monkeypatch.setattr(
+        attachment_router.attachments_service,
+        "create_signed_upload_url",
+        AsyncMock(return_value={"path": f"study-rooms/{room.id}/{as_fake_user.id}/uuid/lesson.pdf", "token": "tok", "upload_url": "https://x/upload"}),
+    )
+
+    response = await async_client.post(
+        f"/conversations/{conversation.id}/attachments/upload-url",
+        json={"file_name": "lesson.pdf", "content_type": "application/pdf", "file_size": 1024},
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 200
+    assert response.json()["token"] == "tok"
+
+
+async def test_room_upload_url_unauthorized_user_denied(async_client, monkeypatch, as_fake_user):
+    room = _make_room()
+    conversation = _make_room_conversation(room)
+    _wire_room_conversation(monkeypatch, room, conversation)
+    monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
+
+    response = await async_client.post(
+        f"/conversations/{conversation.id}/attachments/upload-url",
+        json={"file_name": "lesson.pdf", "content_type": "application/pdf", "file_size": 1024},
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 403
+
+
+async def test_room_upload_url_denied_for_ended_room(async_client, monkeypatch, as_fake_user):
+    room = _make_room(status=StudyRoomStatus.ENDED)
+    conversation = _make_room_conversation(room)
+    _wire_room_conversation(monkeypatch, room, conversation)
+    monkeypatch.setattr(
+        permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
+    )
+
+    response = await async_client.post(
+        f"/conversations/{conversation.id}/attachments/upload-url",
+        json={"file_name": "lesson.pdf", "content_type": "application/pdf", "file_size": 1024},
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 403
+
+
+# --- Download-url endpoint: room conversations ---
+
+
+async def test_room_attachment_url_authorized_member_success(async_client, monkeypatch, as_fake_user):
+    from app.messages.entities.message_entity import Message
+
+    room = _make_room()
+    conversation = _make_room_conversation(room)
+    message = Message(
+        id=uuid.uuid4(),
+        conversation_id=conversation.id,
+        sender_id=uuid.uuid4(),
+        attachment_path=f"study-rooms/{room.id}/{uuid.uuid4()}/uuid/f.pdf",
+    )
+    monkeypatch.setattr(attachment_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_room_conversation(monkeypatch, room, conversation)
+    monkeypatch.setattr(
+        permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
+    )
+    monkeypatch.setattr(
+        attachment_router.attachments_service,
+        "create_signed_download_url",
+        AsyncMock(return_value={"url": "https://x/download", "expires_in": 300}),
+    )
+
+    response = await async_client.get(f"/messages/{message.id}/attachment-url", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+
+
+async def test_room_ended_member_can_still_download_existing_attachment(async_client, monkeypatch, as_fake_user):
+    """An ended room is read-only chat history: existing attachments must remain downloadable
+    for members even though new uploads/messages are no longer accepted."""
+    from app.messages.entities.message_entity import Message
+
+    room = _make_room(status=StudyRoomStatus.ENDED)
+    conversation = _make_room_conversation(room)
+    message = Message(
+        id=uuid.uuid4(),
+        conversation_id=conversation.id,
+        sender_id=uuid.uuid4(),
+        attachment_path=f"study-rooms/{room.id}/{uuid.uuid4()}/uuid/f.pdf",
+    )
+    monkeypatch.setattr(attachment_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_room_conversation(monkeypatch, room, conversation)
+    monkeypatch.setattr(
+        permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
+    )
+    monkeypatch.setattr(
+        attachment_router.attachments_service,
+        "create_signed_download_url",
+        AsyncMock(return_value={"url": "https://x/download", "expires_in": 300}),
+    )
+
+    response = await async_client.get(f"/messages/{message.id}/attachment-url", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+
+
+async def test_room_attachment_url_unauthorized_user_denied(async_client, monkeypatch, as_fake_user):
+    from app.messages.entities.message_entity import Message
+
+    room = _make_room()
+    conversation = _make_room_conversation(room)
+    message = Message(
+        id=uuid.uuid4(),
+        conversation_id=conversation.id,
+        sender_id=uuid.uuid4(),
+        attachment_path=f"study-rooms/{room.id}/{uuid.uuid4()}/uuid/f.pdf",
+    )
+    monkeypatch.setattr(attachment_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_room_conversation(monkeypatch, room, conversation)
+    monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
+
+    response = await async_client.get(f"/messages/{message.id}/attachment-url", headers=AUTH_HEADERS)
+    assert response.status_code == 403

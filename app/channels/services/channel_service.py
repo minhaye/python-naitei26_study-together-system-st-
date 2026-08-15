@@ -1,9 +1,13 @@
 import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.channels.entities.channel_entity import Channel, ChannelMember
 from app.channels.dto.channel_dto import ChannelCreate, ChannelUpdate
+from app.conversations.services.conversation_service import ConversationsService
+
+conversations_service = ConversationsService()
 
 
 class ChannelsService:
@@ -11,13 +15,23 @@ class ChannelsService:
         channel = Channel(**data.model_dump())
         session.add(channel)
         await session.flush()
+
+        conversation = await conversations_service.create_for_channel(session, channel.id, channel.created_by)
+        # Sync in-memory relationship so the response (built in this same session, no
+        # refetch) can read channel.conversation_id without a lazy-load round trip.
+        channel.conversation = conversation
         return channel
 
     async def get_by_id(self, session: AsyncSession, channel_id: uuid.UUID) -> Channel | None:
-        return await session.get(Channel, channel_id)
+        result = await session.execute(
+            select(Channel).options(selectinload(Channel.conversation)).where(Channel.id == channel_id)
+        )
+        return result.scalar_one_or_none()
 
     async def list_by_group(self, session: AsyncSession, group_id: uuid.UUID) -> list[Channel]:
-        result = await session.execute(select(Channel).where(Channel.group_id == group_id))
+        result = await session.execute(
+            select(Channel).options(selectinload(Channel.conversation)).where(Channel.group_id == group_id)
+        )
         return list(result.scalars().all())
 
     async def update(self, session: AsyncSession, channel: Channel, data: ChannelUpdate) -> Channel:

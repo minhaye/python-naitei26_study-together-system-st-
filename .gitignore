@@ -29,6 +29,7 @@ env/
 
 # cc
 docs/db/migrations
+docs/*.md
 
 # IDE
 .vscode/

@@ -461,15 +461,15 @@ content = NULL
 attachment_path = NULL
 ```
 
-## Trạng thái hiện tại (xác nhận live 2026-08-14) — đang trong quá trình migration
+## Trạng thái hiện tại (xác nhận 2026-08-15) — expand xong, contract đã chuẩn bị nhưng chưa chạy
 
-`channel_id` ở trên là schema **mục tiêu sau khi migration hoàn tất**. Migration 004 **đã chạy thành công trên live database** (đã verify: 33/33 check OK, xem `docs/db/migrations/004_verify.sql`). `messages` hiện đang ở trạng thái **transitional** (expand phase — xem § 12):
+`channel_id` ở trên là schema **mục tiêu sau khi migration hoàn tất**. Migration 004 **đã chạy thành công trên live database** (đã verify: 33/33 check OK, xem `docs/db/migrations/004_verify.sql`). Backend (SQLAlchemy models, `MessagesService`, routers, `app/core/permissions.py`) **đã refactor xong** sang `conversation_id` — full test suite pass (65 passed, 6 skipped). `messages` trên live DB hiện vẫn ở trạng thái **transitional** (expand phase — xem § 12), vì migration 005 (contract phase) **đã viết nhưng chưa chạy** trên Supabase:
 
 ```text
 messages
 ├── id
-├── channel_id        ← vẫn NOT NULL, vẫn còn (chưa drop)
-├── conversation_id    ← NOT NULL, mới thêm, đã backfill đủ cho toàn bộ message hiện có
+├── channel_id        ← vẫn NOT NULL, vẫn còn trên live DB (005 sẽ drop)
+├── conversation_id    ← NOT NULL, đã backfill đủ cho toàn bộ message hiện có; source of truth
 ├── sender_id
 ├── content
 ├── attachment_path
@@ -477,7 +477,7 @@ messages
 └── updated_at
 ```
 
-Cả hai cột cùng tồn tại và được một trigger (`messages_sync_conversation_id`) tự đồng bộ hai chiều. `channel_id` sẽ bị xóa hẳn ở migration 005 (chưa viết), sau khi backend refactor xong. Chi tiết đầy đủ ở § 12–15.
+Cả hai cột cùng tồn tại trên live DB và được một trigger (`messages_sync_conversation_id`) tự đồng bộ hai chiều — nhưng backend đã refactor xong chỉ còn ghi `conversation_id`, trigger tự resolve `channel_id` phía DB (case 2, xem § 12). SQLAlchemy `Message` model đã bỏ mapping `channel_id`. `channel_id` sẽ bị xóa hẳn khỏi schema khi ai đó tự chạy `docs/db/migrations/005_contract_messages_to_conversations.sql` trên Supabase SQL Editor — xem `docs/db/migrations/README.md`. Chi tiết đầy đủ ở § 12–15.
 
 ---
 

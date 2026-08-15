@@ -34,12 +34,15 @@ class AttachmentsService:
         object_id = uuid.uuid4()
         return f"groups/{group_id}/channels/{channel_id}/{user_id}/{object_id}/{safe_name}"
 
-    def validate_ownership(
-        self, attachment_path: str, group_id: uuid.UUID, channel_id: uuid.UUID, user_id: uuid.UUID
-    ) -> bool:
+    def build_room_object_path(self, room_id: uuid.UUID, user_id: uuid.UUID, file_name: str) -> str:
+        safe_name = sanitize_filename(file_name)
+        object_id = uuid.uuid4()
+        return f"study-rooms/{room_id}/{user_id}/{object_id}/{safe_name}"
+
+    def _validate_prefixed_path(self, attachment_path: str, expected_prefix: str) -> bool:
         """Structural check that a client-supplied attachment_path was actually issued to this
-        user for this exact channel (path format from `build_object_path`). No network call."""
-        expected_prefix = f"groups/{group_id}/channels/{channel_id}/{user_id}/"
+        user under the given namespace (path format from `build_object_path`/
+        `build_room_object_path`). No network call."""
         if not attachment_path.startswith(expected_prefix):
             return False
         remainder = attachment_path[len(expected_prefix):]
@@ -52,6 +55,16 @@ class AttachmentsService:
         except ValueError:
             return False
         return bool(file_name) and file_name == sanitize_filename(file_name)
+
+    def validate_ownership(
+        self, attachment_path: str, group_id: uuid.UUID, channel_id: uuid.UUID, user_id: uuid.UUID
+    ) -> bool:
+        return self._validate_prefixed_path(
+            attachment_path, f"groups/{group_id}/channels/{channel_id}/{user_id}/"
+        )
+
+    def validate_room_ownership(self, attachment_path: str, room_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+        return self._validate_prefixed_path(attachment_path, f"study-rooms/{room_id}/{user_id}/")
 
     async def create_signed_upload_url(self, path: str) -> dict[str, str]:
         async with httpx.AsyncClient(timeout=10.0) as client:

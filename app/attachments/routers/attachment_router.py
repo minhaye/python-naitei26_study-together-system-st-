@@ -11,31 +11,50 @@ from app.attachments.services.attachment_service import (
 from app.auth.dependencies import get_current_user
 from app.auth.dto.auth_dto import CurrentUser
 from app.channels.services.channel_service import ChannelsService
+from app.conversations.services.conversation_service import ConversationsService
 from app.core.config import settings
-from app.core.permissions import can_access_channel
+from app.core.permissions import can_access_conversation, can_send_to_conversation
+from app.db.enums import ConversationType
 from app.db.session import get_db_session
 from app.messages.services.message_service import MessagesService
+from app.study_rooms.services.study_room_service import StudyRoomsService
 
 router = APIRouter(tags=["Attachments"])
 attachments_service = AttachmentsService()
 channel_service = ChannelsService()
+conversation_service = ConversationsService()
 message_service = MessagesService()
+study_room_service = StudyRoomsService()
 
 
-@router.post("/channels/{channel_id}/attachments/upload-url", response_model=UploadUrlResponse)
+@router.post("/conversations/{conversation_id}/attachments/upload-url", response_model=UploadUrlResponse)
 async def create_upload_url(
-    channel_id: uuid.UUID,
+    conversation_id: uuid.UUID,
     data: UploadUrlRequest,
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
-    channel = await channel_service.get_by_id(session, channel_id)
-    if not channel:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Channel not found")
-    if not await can_access_channel(session, channel, current_user.id):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have access to this channel")
+    conversation = await conversation_service.get_by_id(session, conversation_id)
+    if not conversation:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found")
+    if not await can_send_to_conversation(session, conversation, current_user.id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have access to this conversation")
 
-    path = attachments_service.build_object_path(channel.group_id, channel_id, current_user.id, data.file_name)
+    if conversation.type == ConversationType.CHANNEL:
+        channel = await channel_service.get_by_id(session, conversation.channel_id)
+        if not channel:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Channel not found")
+        path = attachments_service.build_object_path(channel.group_id, channel.id, current_user.id, data.file_name)
+    elif conversation.type == ConversationType.ROOM:
+        room = await study_room_service.get_by_id(session, conversation.room_id)
+        if not room:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Study room not found")
+        path = attachments_service.build_room_object_path(room.id, current_user.id, data.file_name)
+    else:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Attachments are only supported for channel and room conversations"
+        )
+
     try:
         result = await attachments_service.create_signed_upload_url(path)
     except AttachmentServiceNotConfigured as exc:
@@ -55,8 +74,8 @@ async def get_attachment_url(
     if not message:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
 
-    channel = await channel_service.get_by_id(session, message.channel_id)
-    if not channel or not await can_access_channel(session, channel, current_user.id):
+    conversation = await conversation_service.get_by_id(session, message.conversation_id)
+    if not conversation or not await can_access_conversation(session, conversation, current_user.id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have access to this message")
 
     if not message.attachment_path:
