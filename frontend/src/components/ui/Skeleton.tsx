@@ -123,3 +123,13 @@ export const CategorySkeleton: React.FC = () => {
     </div>
   );
 };
+
+/** TrendingTopicSkeleton — Mô phỏng layout 1 dòng chủ đề nổi bật trong right sidebar */
+export const TrendingTopicSkeleton: React.FC = () => {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Skeleton width={90} height={16} borderRadius={4} />
+      <Skeleton width={55} height={14} borderRadius={4} />
+    </div>
+  );
+};

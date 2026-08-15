@@ -1,18 +1,19 @@
 /**
  * ForumRightSidebar — Sidebar bên phải trang Forum.
  *
- * Tích hợp LikedPostSkeleton khi tải dữ liệu bài viết đã thích.
+ * Tích hợp LikedPostSkeleton và TrendingTopicSkeleton cho trạng thái đang tải.
  */
 
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../../hooks/useAuth';
-import { LikedPostSkeleton } from '../../../components/ui/Skeleton';
+import { LikedPostSkeleton, TrendingTopicSkeleton } from '../../../components/ui/Skeleton';
 
 export const ForumRightSidebar: React.FC = () => {
   const { isLoggedIn } = useAuth();
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isLoading] = useState(false); // Đặt true khi nối API lấy liked posts thật
+  const [isLoadingLiked] = useState(false); // Đặt true khi tải API bài viết đã thích
+  const [isLoadingTrending] = useState(false); // Đặt true khi tải API chủ đề nổi bật
 
   const likedPosts = [
     {
@@ -118,20 +119,31 @@ export const ForumRightSidebar: React.FC = () => {
           Chủ đề nổi bật
         </h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {['#Toán12', '#GiảiTích', '#Java', '#IELTS', '#VậtLýĐạiCương'].map((tag, idx) => (
-            <div
-              key={idx}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                cursor: 'pointer',
-              }}
-            >
-              <span style={{ color: '#3B82F6', fontSize: 14, fontWeight: '500' }}>{tag}</span>
-              <span style={{ color: '#94A3B8', fontSize: 12 }}>+120 bài</span>
-            </div>
-          ))}
+          {isLoadingTrending && (
+            <>
+              <TrendingTopicSkeleton />
+              <TrendingTopicSkeleton />
+              <TrendingTopicSkeleton />
+              <TrendingTopicSkeleton />
+              <TrendingTopicSkeleton />
+            </>
+          )}
+
+          {!isLoadingTrending &&
+            ['#Toán12', '#GiảiTích', '#Java', '#IELTS', '#VậtLýĐạiCương'].map((tag, idx) => (
+              <div
+                key={idx}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  cursor: 'pointer',
+                }}
+              >
+                <span style={{ color: '#3B82F6', fontSize: 14, fontWeight: '500' }}>{tag}</span>
+                <span style={{ color: '#94A3B8', fontSize: 12 }}>+120 bài</span>
+              </div>
+            ))}
         </div>
       </div>
 
@@ -183,14 +195,14 @@ export const ForumRightSidebar: React.FC = () => {
           </div>
 
           <div style={{ alignSelf: 'stretch', flexDirection: 'column', gap: 16, display: 'flex' }}>
-            {isLoading && (
+            {isLoadingLiked && (
               <>
                 <LikedPostSkeleton />
                 <LikedPostSkeleton />
               </>
             )}
 
-            {!isLoading &&
+            {!isLoadingLiked &&
               visiblePosts.map((post) => (
                 <div key={post.id} style={{ alignSelf: 'stretch', gap: 12, display: 'flex' }}>
                   <div
