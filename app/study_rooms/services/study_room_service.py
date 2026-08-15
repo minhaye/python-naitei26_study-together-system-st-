@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.enums import StudyRoomMemberRole, StudyRoomStatus
+from app.db.enums import ModerationAction, StudyRoomMemberRole, StudyRoomStatus
 from app.study_rooms.entities.study_room_entity import StudyRoom, StudyRoomMember, RoomModerationAction
 from app.study_rooms.dto.study_room_dto import RoomModerationActionCreate, StudyRoomCreate, StudyRoomUpdate
 
@@ -91,8 +91,17 @@ class StudyRoomsService:
     # --- moderation ---
 
     async def log_moderation_action(self, session: AsyncSession, data: RoomModerationActionCreate) -> RoomModerationAction:
+        """A KICK also revokes the target's room membership (same session/transaction as the
+        audit log insert -- both are flushed together and committed by the caller as one unit).
+        study_room_members has no separate banned/kicked status, so a kicked member is marked
+        the same way as one who left: `left_at` is set. Other actions (mute, raise hand, ...)
+        are audit-only and never touch membership."""
         action = RoomModerationAction(**data.model_dump())
         session.add(action)
+        if data.action == ModerationAction.KICK:
+            member = await self.get_member(session, data.room_id, data.target_user_id)
+            if member is not None and member.left_at is None:
+                await self.leave(session, member)
         await session.flush()
         return action
 

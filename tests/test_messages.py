@@ -9,13 +9,14 @@ from app.auth.dto.auth_dto import CurrentUser
 from app.channels.entities.channel_entity import Channel
 from app.conversations.entities.conversation_entity import Conversation
 from app.core import permissions
-from app.db.enums import ConversationType, GroupMemberRole, MemberStatus
+from app.db.enums import ConversationType, GroupMemberRole, MemberStatus, StudyRoomMemberRole, StudyRoomStatus
 from app.db.session import get_db_session
 from app.groups.entities.group_entity import GroupMember
 from app.main import app
 from app.messages.entities.message_entity import Message
 from app.messages.routers import message_router
 from app.messages.services.message_service import MessagesService, _decode_cursor, _encode_cursor
+from app.study_rooms.entities.study_room_entity import StudyRoom, StudyRoomMember
 
 AUTH_HEADERS = {"Authorization": "Bearer testtoken"}
 
@@ -74,6 +75,30 @@ def _make_message(sender_id, conversation_id, content="Hello", attachment_path=N
 
 def _active_member(group_id, user_id, role=GroupMemberRole.MEMBER):
     return GroupMember(group_id=group_id, user_id=user_id, role=role, status=MemberStatus.ACTIVE)
+
+
+def _make_room(status=StudyRoomStatus.ACTIVE, host_id=None) -> StudyRoom:
+    return StudyRoom(
+        id=uuid.uuid4(),
+        group_id=uuid.uuid4(),
+        name="Room",
+        host_id=host_id or uuid.uuid4(),
+        status=status,
+        max_participants=50,
+    )
+
+
+def _make_room_conversation(room: StudyRoom) -> Conversation:
+    return Conversation(id=uuid.uuid4(), type=ConversationType.ROOM, room_id=room.id, created_by=room.host_id)
+
+
+def _room_member(room_id, user_id, role=StudyRoomMemberRole.PARTICIPANT, left_at=None) -> StudyRoomMember:
+    return StudyRoomMember(room_id=room_id, user_id=user_id, role=role, left_at=left_at)
+
+
+def _wire_room_conversation(monkeypatch, room: StudyRoom, conversation: Conversation):
+    monkeypatch.setattr(message_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
+    monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
 
 
 def _wire_conversation(monkeypatch, channel: Channel, conversation: Conversation):
@@ -282,6 +307,299 @@ async def test_delete_message_success_for_group_manager(async_client, monkeypatc
 
     response = await async_client.delete(f"/messages/{message.id}", headers=AUTH_HEADERS)
     assert response.status_code == 204
+
+
+# --- Room conversation: list / send ---
+
+
+async def test_room_host_can_list_messages(async_client, monkeypatch, as_fake_user):
+    room = _make_room(host_id=as_fake_user.id)
+    conversation = _make_room_conversation(room)
+    _wire_room_conversation(monkeypatch, room, conversation)
+    monkeypatch.setattr(message_router.message_service, "list_by_conversation", AsyncMock(return_value=([], None)))
+
+    response = await async_client.get(f"/conversations/{conversation.id}/messages", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+
+
+async def test_room_host_can_send_message(async_client, monkeypatch, as_fake_user):
+    room = _make_room(host_id=as_fake_user.id)
+    conversation = _make_room_conversation(room)
+    _wire_room_conversation(monkeypatch, room, conversation)
+    created = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="hi all")
+    monkeypatch.setattr(message_router.message_service, "create", AsyncMock(return_value=created))
+
+    response = await async_client.post(
+        f"/conversations/{conversation.id}/messages", json={"content": "hi all"}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 201
+
+
+async def test_room_active_member_can_list_messages(async_client, monkeypatch, as_fake_user):
+    room = _make_room()
+    conversation = _make_room_conversation(room)
+    _wire_room_conversation(monkeypatch, room, conversation)
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, as_fake_user.id)),
+    )
+    monkeypatch.setattr(message_router.message_service, "list_by_conversation", AsyncMock(return_value=([], None)))
+
+    response = await async_client.get(f"/conversations/{conversation.id}/messages", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+
+
+async def test_room_active_member_can_send_message(async_client, monkeypatch, as_fake_user):
+    room = _make_room()
+    conversation = _make_room_conversation(room)
+    _wire_room_conversation(monkeypatch, room, conversation)
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, as_fake_user.id)),
+    )
+    created = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="hi")
+    monkeypatch.setattr(message_router.message_service, "create", AsyncMock(return_value=created))
+
+    response = await async_client.post(
+        f"/conversations/{conversation.id}/messages", json={"content": "hi"}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 201
+
+
+async def test_room_non_member_denied(async_client, monkeypatch, as_fake_user):
+    room = _make_room()
+    conversation = _make_room_conversation(room)
+    _wire_room_conversation(monkeypatch, room, conversation)
+    monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
+
+    response = await async_client.get(f"/conversations/{conversation.id}/messages", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_room_banned_member_denied(async_client, monkeypatch, as_fake_user):
+    """Study rooms have no distinct 'banned' status (unlike group_members) -- a member no
+    longer welcome in the room is represented by their study_room_members row having left_at
+    set, same as a voluntary leave or a kick."""
+    room = _make_room()
+    conversation = _make_room_conversation(room)
+    _wire_room_conversation(monkeypatch, room, conversation)
+    removed_member = _room_member(room.id, as_fake_user.id, left_at=datetime.now(timezone.utc))
+    monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=removed_member))
+
+    response = await async_client.get(f"/conversations/{conversation.id}/messages", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_room_kicked_member_denied(async_client, monkeypatch, as_fake_user):
+    """RoomModerationAction.KICK is only an audit log entry; there is no auto-wiring to
+    membership. A kicked member is represented identically to a left member (left_at set)."""
+    room = _make_room()
+    conversation = _make_room_conversation(room)
+    _wire_room_conversation(monkeypatch, room, conversation)
+    kicked_member = _room_member(room.id, as_fake_user.id, left_at=datetime.now(timezone.utc))
+    monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=kicked_member))
+
+    response = await async_client.post(
+        f"/conversations/{conversation.id}/messages", json={"content": "hi"}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 403
+
+
+async def test_room_left_member_denied(async_client, monkeypatch, as_fake_user):
+    room = _make_room()
+    conversation = _make_room_conversation(room)
+    _wire_room_conversation(monkeypatch, room, conversation)
+    left_member = _room_member(room.id, as_fake_user.id, left_at=datetime.now(timezone.utc))
+    monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=left_member))
+
+    response = await async_client.get(f"/conversations/{conversation.id}/messages", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_room_missing_room_id_denied_safely(async_client, monkeypatch, as_fake_user):
+    conversation = Conversation(id=uuid.uuid4(), type=ConversationType.ROOM, room_id=None, created_by=uuid.uuid4())
+    monkeypatch.setattr(message_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
+
+    response = await async_client.get(f"/conversations/{conversation.id}/messages", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_room_dangling_room_reference_denied_safely(async_client, monkeypatch, as_fake_user):
+    conversation = Conversation(id=uuid.uuid4(), type=ConversationType.ROOM, room_id=uuid.uuid4(), created_by=uuid.uuid4())
+    monkeypatch.setattr(message_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
+    monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=None))
+
+    response = await async_client.get(f"/conversations/{conversation.id}/messages", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_direct_conversation_type_cannot_bypass_via_room_id(async_client, monkeypatch, as_fake_user):
+    """Dispatch must key off conversation.type, not the presence of a room_id -- a direct
+    conversation stays denied-by-default even if a room_id happens to be set."""
+    conversation = Conversation(
+        id=uuid.uuid4(), type=ConversationType.DIRECT, room_id=uuid.uuid4(), created_by=uuid.uuid4()
+    )
+    monkeypatch.setattr(message_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
+    get_room_mock = AsyncMock()
+    monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", get_room_mock)
+
+    response = await async_client.get(f"/conversations/{conversation.id}/messages", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+    get_room_mock.assert_not_awaited()
+
+
+async def test_room_ended_denies_new_message_but_allows_reading_history(async_client, monkeypatch, as_fake_user):
+    room = _make_room(status=StudyRoomStatus.ENDED)
+    conversation = _make_room_conversation(room)
+    _wire_room_conversation(monkeypatch, room, conversation)
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, as_fake_user.id)),
+    )
+    monkeypatch.setattr(message_router.message_service, "list_by_conversation", AsyncMock(return_value=([], None)))
+
+    list_response = await async_client.get(f"/conversations/{conversation.id}/messages", headers=AUTH_HEADERS)
+    assert list_response.status_code == 200
+
+    send_response = await async_client.post(
+        f"/conversations/{conversation.id}/messages", json={"content": "hi"}, headers=AUTH_HEADERS
+    )
+    assert send_response.status_code == 403
+
+
+# --- Room conversation: message-level ---
+
+
+async def test_room_member_can_get_room_message(async_client, monkeypatch, as_fake_user):
+    room = _make_room()
+    conversation = _make_room_conversation(room)
+    message = _make_message(sender_id=uuid.uuid4(), conversation_id=conversation.id, content="hi")
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_room_conversation(monkeypatch, room, conversation)
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, as_fake_user.id)),
+    )
+
+    response = await async_client.get(f"/messages/{message.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+
+
+async def test_room_member_can_patch_own_message(async_client, monkeypatch, as_fake_user):
+    room = _make_room()
+    conversation = _make_room_conversation(room)
+    message = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="hi")
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    updated = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="edited")
+    monkeypatch.setattr(message_router.message_service, "update", AsyncMock(return_value=updated))
+
+    response = await async_client.patch(f"/messages/{message.id}", json={"content": "edited"}, headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    assert response.json()["content"] == "edited"
+
+
+async def test_room_member_can_delete_own_message(async_client, monkeypatch, as_fake_user):
+    room = _make_room()
+    conversation = _make_room_conversation(room)
+    message = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="hi")
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    monkeypatch.setattr(message_router.message_service, "delete", AsyncMock(return_value=None))
+
+    response = await async_client.delete(f"/messages/{message.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 204
+
+
+async def test_room_unauthorized_user_cannot_get_room_message(async_client, monkeypatch, as_fake_user):
+    room = _make_room()
+    conversation = _make_room_conversation(room)
+    message = _make_message(sender_id=uuid.uuid4(), conversation_id=conversation.id, content="hi")
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_room_conversation(monkeypatch, room, conversation)
+    monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
+
+    response = await async_client.get(f"/messages/{message.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_room_unauthorized_user_cannot_patch_room_message(async_client, monkeypatch, as_fake_user):
+    message = _make_message(sender_id=uuid.uuid4(), conversation_id=uuid.uuid4(), content="hi")
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+
+    response = await async_client.patch(f"/messages/{message.id}", json={"content": "edited"}, headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_room_unauthorized_user_cannot_delete_room_message(async_client, monkeypatch, as_fake_user):
+    room = _make_room()
+    conversation = _make_room_conversation(room)
+    message = _make_message(sender_id=uuid.uuid4(), conversation_id=conversation.id, content="hi")
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    monkeypatch.setattr(message_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
+
+    response = await async_client.delete(f"/messages/{message.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+# --- Room conversation: ended room is read-only ---
+
+
+async def test_room_ended_member_can_get_message(async_client, monkeypatch, as_fake_user):
+    room = _make_room(status=StudyRoomStatus.ENDED)
+    conversation = _make_room_conversation(room)
+    message = _make_message(sender_id=uuid.uuid4(), conversation_id=conversation.id, content="old message")
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_room_conversation(monkeypatch, room, conversation)
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, as_fake_user.id)),
+    )
+
+    response = await async_client.get(f"/messages/{message.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+
+
+async def test_room_ended_member_cannot_patch_own_message(async_client, monkeypatch, as_fake_user):
+    room = _make_room(status=StudyRoomStatus.ENDED)
+    conversation = _make_room_conversation(room)
+    message = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="old")
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    monkeypatch.setattr(message_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
+    monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
+
+    response = await async_client.patch(f"/messages/{message.id}", json={"content": "edited"}, headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_room_ended_member_cannot_delete_own_message(async_client, monkeypatch, as_fake_user):
+    room = _make_room(status=StudyRoomStatus.ENDED)
+    conversation = _make_room_conversation(room)
+    message = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="old")
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    monkeypatch.setattr(message_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
+    monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
+
+    response = await async_client.delete(f"/messages/{message.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_room_active_member_can_still_patch_own_message(async_client, monkeypatch, as_fake_user):
+    """Regression guard: the new ended-room gate must not affect active/waiting rooms."""
+    room = _make_room(status=StudyRoomStatus.ACTIVE)
+    conversation = _make_room_conversation(room)
+    message = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="old")
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    monkeypatch.setattr(message_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
+    monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
+    updated = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="edited")
+    monkeypatch.setattr(message_router.message_service, "update", AsyncMock(return_value=updated))
+
+    response = await async_client.patch(f"/messages/{message.id}", json={"content": "edited"}, headers=AUTH_HEADERS)
+    assert response.status_code == 200
 
 
 # --- Pagination (service-level) ---

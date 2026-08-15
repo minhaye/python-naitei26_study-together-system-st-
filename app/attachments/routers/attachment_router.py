@@ -13,16 +13,18 @@ from app.auth.dto.auth_dto import CurrentUser
 from app.channels.services.channel_service import ChannelsService
 from app.conversations.services.conversation_service import ConversationsService
 from app.core.config import settings
-from app.core.permissions import can_access_conversation
+from app.core.permissions import can_access_conversation, can_send_to_conversation
 from app.db.enums import ConversationType
 from app.db.session import get_db_session
 from app.messages.services.message_service import MessagesService
+from app.study_rooms.services.study_room_service import StudyRoomsService
 
 router = APIRouter(tags=["Attachments"])
 attachments_service = AttachmentsService()
 channel_service = ChannelsService()
 conversation_service = ConversationsService()
 message_service = MessagesService()
+study_room_service = StudyRoomsService()
 
 
 @router.post("/conversations/{conversation_id}/attachments/upload-url", response_model=UploadUrlResponse)
@@ -35,16 +37,24 @@ async def create_upload_url(
     conversation = await conversation_service.get_by_id(session, conversation_id)
     if not conversation:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found")
-    if not await can_access_conversation(session, conversation, current_user.id):
+    if not await can_send_to_conversation(session, conversation, current_user.id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have access to this conversation")
-    if conversation.type != ConversationType.CHANNEL:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Attachments are only supported for channel conversations")
 
-    channel = await channel_service.get_by_id(session, conversation.channel_id)
-    if not channel:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Channel not found")
+    if conversation.type == ConversationType.CHANNEL:
+        channel = await channel_service.get_by_id(session, conversation.channel_id)
+        if not channel:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Channel not found")
+        path = attachments_service.build_object_path(channel.group_id, channel.id, current_user.id, data.file_name)
+    elif conversation.type == ConversationType.ROOM:
+        room = await study_room_service.get_by_id(session, conversation.room_id)
+        if not room:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Study room not found")
+        path = attachments_service.build_room_object_path(room.id, current_user.id, data.file_name)
+    else:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Attachments are only supported for channel and room conversations"
+        )
 
-    path = attachments_service.build_object_path(channel.group_id, channel.id, current_user.id, data.file_name)
     try:
         result = await attachments_service.create_signed_upload_url(path)
     except AttachmentServiceNotConfigured as exc:

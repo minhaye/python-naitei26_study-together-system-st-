@@ -13,11 +13,17 @@ from app.auth.dto.auth_dto import CurrentUser
 from app.channels.services.channel_service import ChannelsService
 from app.conversations.entities.conversation_entity import Conversation
 from app.conversations.services.conversation_service import ConversationsService
-from app.core.permissions import can_access_conversation, is_group_manager
+from app.core.permissions import (
+    can_access_conversation,
+    can_send_to_conversation,
+    is_group_manager,
+    is_room_conversation_open_for_writes,
+)
 from app.db.enums import ConversationType
 from app.db.session import get_db_session
 from app.messages.dto.message_dto import MessageCreate, MessageListResponse, MessageResponse, MessageUpdate
 from app.messages.services.message_service import MessagesService
+from app.study_rooms.services.study_room_service import StudyRoomsService
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +32,7 @@ message_service = MessagesService()
 channel_service = ChannelsService()
 conversation_service = ConversationsService()
 attachments_service = AttachmentsService()
+study_room_service = StudyRoomsService()
 
 
 async def _load_conversation(session: AsyncSession, conversation_id: uuid.UUID) -> Conversation:
@@ -37,6 +44,11 @@ async def _load_conversation(session: AsyncSession, conversation_id: uuid.UUID) 
 
 async def _authorize(session: AsyncSession, conversation: Conversation, user_id: uuid.UUID) -> None:
     if not await can_access_conversation(session, conversation, user_id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have access to this conversation")
+
+
+async def _authorize_send(session: AsyncSession, conversation: Conversation, user_id: uuid.UUID) -> None:
+    if not await can_send_to_conversation(session, conversation, user_id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have access to this conversation")
 
 
@@ -70,17 +82,28 @@ async def create_message(
     session: AsyncSession = Depends(get_db_session),
 ):
     conversation = await _load_conversation(session, conversation_id)
-    await _authorize(session, conversation, current_user.id)
+    await _authorize_send(session, conversation, current_user.id)
 
     if data.attachment_path:
-        if conversation.type != ConversationType.CHANNEL:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Attachments are only supported for channel conversations")
-        channel = await channel_service.get_by_id(session, conversation.channel_id)
-        if not channel:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "Channel not found")
-        if not attachments_service.validate_ownership(
-            data.attachment_path, channel.group_id, channel.id, current_user.id
-        ):
+        if conversation.type == ConversationType.CHANNEL:
+            channel = await channel_service.get_by_id(session, conversation.channel_id)
+            if not channel:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Channel not found")
+            valid_reference = attachments_service.validate_ownership(
+                data.attachment_path, channel.group_id, channel.id, current_user.id
+            )
+        elif conversation.type == ConversationType.ROOM:
+            room = await study_room_service.get_by_id(session, conversation.room_id)
+            if not room:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Study room not found")
+            valid_reference = attachments_service.validate_room_ownership(
+                data.attachment_path, room.id, current_user.id
+            )
+        else:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "Attachments are only supported for channel and room conversations"
+            )
+        if not valid_reference:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid attachment reference")
         try:
             exists = await attachments_service.object_exists(data.attachment_path)
@@ -133,6 +156,10 @@ async def update_message(
     if message.sender_id != current_user.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the sender can edit this message")
 
+    conversation = await conversation_service.get_by_id(session, message.conversation_id)
+    if conversation is not None and not await is_room_conversation_open_for_writes(session, conversation):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "This study room has ended; messages can no longer be edited")
+
     try:
         updated = await message_service.update(session, message, data)
         await session.commit()
@@ -155,14 +182,17 @@ async def delete_message(
     if not message:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
 
+    conversation = await conversation_service.get_by_id(session, message.conversation_id)
+
     allowed = message.sender_id == current_user.id
-    if not allowed:
-        conversation = await conversation_service.get_by_id(session, message.conversation_id)
-        if conversation is not None and conversation.type == ConversationType.CHANNEL:
-            channel = await channel_service.get_by_id(session, conversation.channel_id)
-            allowed = channel is not None and await is_group_manager(session, channel.group_id, current_user.id)
+    if not allowed and conversation is not None and conversation.type == ConversationType.CHANNEL:
+        channel = await channel_service.get_by_id(session, conversation.channel_id)
+        allowed = channel is not None and await is_group_manager(session, channel.group_id, current_user.id)
     if not allowed:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have permission to delete this message")
+
+    if conversation is not None and not await is_room_conversation_open_for_writes(session, conversation):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "This study room has ended; messages can no longer be deleted")
 
     attachment_path = message.attachment_path
     try:
