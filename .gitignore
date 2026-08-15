@@ -28,7 +28,6 @@ env/
 .claude/
 
 # cc
-docs/db/migrations
 docs/*.md
 
 # IDE

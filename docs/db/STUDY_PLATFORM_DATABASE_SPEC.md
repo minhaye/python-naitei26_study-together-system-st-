@@ -523,7 +523,7 @@ Contract (005) Xóa messages.channel_id, FK, index cũ, và trigger compatibilit
                Chỉ chạy SAU KHI backend refactor đã test xong.
 ```
 
-## Trạng thái migration (xác nhận live 2026-08-15)
+## Trạng thái migration (xác nhận live 2026-08-16)
 
 | File | Trạng thái | Ghi chú |
 |---|---|---|
@@ -533,6 +533,7 @@ Contract (005) Xóa messages.channel_id, FK, index cũ, và trigger compatibilit
 | `004_refactor_chat_to_conversations.sql` | ✅ Đã áp dụng live, đã verify | `004_verify.sql` chạy live: 33/33 check OK, 0 FAIL. `conversations`: 16 channel-type + 8 room-type = 24 rows, khớp đúng số `channels`/`study_rooms` hiện có |
 | `005_contract_messages_to_conversations.sql` | ✅ Đã áp dụng live | `messages.channel_id`, FK, index cũ, và trigger `messages_sync_conversation_id` đã bị xóa. `messages.conversation_id` là cột duy nhất còn lại, backend (SQLAlchemy + routers) đã refactor và test khớp trước khi chạy |
 | `006_direct_conversation_pair_uniqueness.sql` | ✅ Đã áp dụng live | Thêm `conversations.direct_user_min_id`/`direct_user_max_id` + CHECK + partial unique index, đảm bảo một cặp user chỉ có tối đa một `conversation` type=direct — xem § 15 |
+| `007_fix_room_moderation_select_policy.sql` | ✅ Đã áp dụng live | Sửa tautology `srm.room_id = srm.room_id` trong policy `room_moderation_select` trên `room_moderation_actions` thành `srm.room_id = room_moderation_actions.room_id` — xem § 37 |
 
 Các mục § 13–15 dưới đây mô tả schema **đã live thật** trên Supabase kể từ khi 006 chạy — không còn là "đích đến" nữa.
 
@@ -1343,7 +1344,7 @@ study_rooms ───┼──► conversations ──► messages
                      (chỉ dùng khi type = direct)
 ```
 
-Đã áp dụng live: 004 (2026-08-14), 005 và 006 (2026-08-15) — xem § 12 để biết chi tiết trạng thái migration.
+Đã áp dụng live: 004 (2026-08-14), 005 và 006 (2026-08-15), 007 (2026-08-16) — xem § 12 để biết chi tiết trạng thái migration.
 
 ---
 
@@ -1589,38 +1590,32 @@ RLS giúp bảo vệ dữ liệu ngay ở tầng PostgreSQL.
 
 ---
 
-# 37. RLS cần kiểm tra
+# 37. RLS — bug đã biết, ĐÃ FIX (xác nhận live 2026-08-16)
 
-Trong schema hiện tại có một policy của `room_moderation_actions` chứa điều kiện dạng:
+Policy `room_moderation_select` trên `room_moderation_actions` từng chứa điều kiện dạng:
 
 ```sql
 srm.room_id = srm.room_id
 ```
 
-Điều kiện này luôn đúng.
+Điều kiện này luôn đúng, nên không thực sự lọc theo room của dòng `room_moderation_actions` đang được đọc.
 
-Ý định nhiều khả năng phải là so sánh membership room với room của moderation action, ví dụ:
-
-```sql
-srm.room_id = room_moderation_actions.room_id
-```
-
-Owner database cần kiểm tra lại policy này trước khi production.
-
-Đây là **security issue tiềm năng**, không chỉ là lỗi logic thông thường.
-
-**Xác nhận lại trên live DB (2026-08-14): bug này vẫn còn tồn tại, chưa được fix.** Policy `room_moderation_select` hiện tại:
+**Xác nhận lại trên live DB (2026-08-14): bug này vẫn còn tồn tại, chưa được fix.** Policy `room_moderation_select` lúc đó:
 
 ```sql
 (is_room_manager(room_id) OR (EXISTS (
   SELECT 1 FROM study_room_members srm
-  WHERE srm.room_id = srm.room_id       -- vẫn tautology
+  WHERE srm.room_id = srm.room_id       -- tautology
     AND srm.user_id = auth.uid()
     AND srm.left_at IS NULL
 )))
 ```
 
-Hệ quả thực tế: bất kỳ user nào đang là active member của **bất kỳ** study room nào (không nhất thiết room X) đều pass được điều kiện `EXISTS` này khi đọc `room_moderation_actions` của room X — miễn không phải room manager thì vẫn lọt qua nhánh OR thứ hai một cách sai lệch. Chưa nằm trong scope của migration 004 (chỉ đụng tới `messages`/`channels`/`conversations`) — cần một migration riêng (transaction nhỏ, một dòng `CREATE OR REPLACE POLICY` hoặc `ALTER POLICY`) để sửa `srm.room_id = srm.room_id` thành `srm.room_id = room_moderation_actions.room_id`.
+Hệ quả thực tế trước khi fix: bất kỳ user nào đang là active member của **bất kỳ** study room nào (không nhất thiết room X) đều pass được điều kiện `EXISTS` này khi đọc `room_moderation_actions` của room X — miễn không phải room manager thì vẫn lọt qua nhánh OR thứ hai một cách sai lệch. Đây là **security issue thật**, không chỉ là lỗi logic thông thường.
+
+Chưa nằm trong scope của migration 004 (chỉ đụng tới `messages`/`channels`/`conversations`), nên được tách thành migration riêng: `007_fix_room_moderation_select_policy.sql` (`ALTER POLICY`, sửa `srm.room_id = srm.room_id` thành `srm.room_id = room_moderation_actions.room_id`, không đổi gì khác của policy).
+
+**Đã áp dụng live và verify (2026-08-16)** — `007_verify.sql` xác nhận: policy vẫn tồn tại, `qual` không còn chứa tautology, có chứa `srm.room_id = room_moderation_actions.room_id`, RLS vẫn bật trên `room_moderation_actions`, `is_room_manager()` không bị đụng tới. Từ nay policy chỉ cho phép đọc `room_moderation_actions` của room X nếu là room manager (host/moderator) của room X **hoặc** active member của **chính room X đó** — không còn rò rỉ sang room khác.
 
 ## can_access_channel() — bug đã biết, ĐÃ FIX (xác nhận live 2026-08-14)
 
