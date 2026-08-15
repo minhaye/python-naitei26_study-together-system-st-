@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     supabase_publishable_key: str | None = None
     supabase_service_role_key: str | None = None
     attachment_download_url_expires_in: int = 300
+    livekit_url: str
+    livekit_api_key: str
+    livekit_api_secret: str
+    livekit_token_ttl_seconds: int = 600
 
     @property
     def supabase_jwks_url(self) -> str:
