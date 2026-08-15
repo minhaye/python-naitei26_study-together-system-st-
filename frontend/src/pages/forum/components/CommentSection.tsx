@@ -1,18 +1,16 @@
 /**
  * CommentSection — Phần bình luận của 1 bài viết.
  *
- * Dùng hook useComments để:
- *   - Tải danh sách comment (cây 2 cấp)
- *   - Gửi comment mới
- *   - Xử lý reply và like comment (delegate xuống CommentItem)
+ * Dùng hook useComments để tải danh sách comment và render CommentSkeleton khi đang tải.
  */
 
 import React, { useState } from 'react';
-import { Send, Loader2 } from 'lucide-react';
+import { Send } from 'lucide-react';
 import { Avatar } from '../../../components/ui/Avatar';
 import { CommentItem } from './CommentItem';
 import { useComments } from '../hooks/useComments';
 import { FORUM_COLORS } from '../constants/colors';
+import { CommentSkeleton } from '../../../components/ui/Skeleton';
 
 interface CommentSectionProps {
   postId: string;
@@ -79,14 +77,15 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
         </div>
       </div>
 
-      {/* Loading */}
-      {isLoading && (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0' }}>
-          <Loader2 size={20} color={FORUM_COLORS.textDisabled} style={{ animation: 'spin 1s linear infinite' }} />
+      {/* Loading CommentSkeletons */}
+      {isLoading && comments.length === 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 6 }}>
+          <CommentSkeleton />
+          <CommentSkeleton />
         </div>
       )}
 
-      {/* Danh sách comment */}
+      {/* Danh sách comment thật */}
       {!isLoading && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {comments.length === 0 && (

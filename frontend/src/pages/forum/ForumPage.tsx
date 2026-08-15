@@ -1,12 +1,7 @@
 /**
  * ForumPage — Trang Diễn đàn chính.
  *
- * Giao diện 3 Cột Scroll Độc Lập (Independent 3-Column Scroll Area):
- *   - Cột 1 (Trái): ForumSidebar (280px, scroll nội bộ)
- *   - Cột 2 (Giữa): Main Feed bài viết (flex: 1, scroll nội bộ, kích hoạt infinite scroll)
- *   - Cột 3 (Phải): ForumRightSidebar (300px, scroll nội bộ)
- *
- * Thanh cuộn chính của trang (window scrollbar) đã được ẩn hoàn toàn.
+ * Tích hợp PostSkeleton loading state mượt mà không gây giật lag giao diện (CLS).
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -22,6 +17,7 @@ import { usePostActions } from './hooks/usePostActions';
 import { useAuth } from '../../hooks/useAuth';
 import { forumApi } from './lib/forum.api';
 import type { ForumCategoryResponse } from './types/forum.types';
+import { PostSkeleton } from '../../components/ui/Skeleton';
 
 export const ForumPage: React.FC = () => {
   const { isLoggedIn } = useAuth();
@@ -136,7 +132,17 @@ export const ForumPage: React.FC = () => {
 
           {/* Posts List */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            {posts.length === 0 && !isLoading && (
+            {/* Lần đầu tải: Hiển thị 3 PostSkeleton */}
+            {isLoading && posts.length === 0 && (
+              <>
+                <PostSkeleton />
+                <PostSkeleton />
+                <PostSkeleton />
+              </>
+            )}
+
+            {/* Khi không có dữ liệu */}
+            {!isLoading && posts.length === 0 && (
               <div
                 style={{
                   background: 'white',
@@ -151,14 +157,15 @@ export const ForumPage: React.FC = () => {
               </div>
             )}
 
+            {/* Dữ liệu thật */}
             {posts.map((post) => (
               <PostCard key={post.id} post={post} onToggleLike={handleToggleLike} />
             ))}
           </div>
 
-          {/* Infinite Scroll Trigger & Loader */}
+          {/* Infinite Scroll Trigger & Loader (khi cuộn tải thêm trang tiếp theo) */}
           <div ref={observerRef} style={{ textAlign: 'center', padding: '24px 0', minHeight: 40 }}>
-            {isLoading && (
+            {isLoading && posts.length > 0 && (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, color: '#64748B' }}>
                 <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
                 <span style={{ fontSize: 14, fontWeight: '500' }}>Tải thêm câu hỏi...</span>

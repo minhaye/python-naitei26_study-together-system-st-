@@ -1,19 +1,18 @@
 /**
  * ForumRightSidebar — Sidebar bên phải trang Forum.
  *
- * Sắp xếp thứ tự Widget:
- *   1. Bạn cần trợ giúp? (banner gradient dẫn tới /groups)
- *   2. Chủ đề nổi bật (#Toán12, #GiảiTích, #Java...)
- *   3. BÀI VIẾT ĐÃ THÍCH (chỉ hiển thị khi đã đăng nhập, có toggle "Xem thêm / Thu gọn")
+ * Tích hợp LikedPostSkeleton khi tải dữ liệu bài viết đã thích.
  */
 
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../../hooks/useAuth';
+import { LikedPostSkeleton } from '../../../components/ui/Skeleton';
 
 export const ForumRightSidebar: React.FC = () => {
   const { isLoggedIn } = useAuth();
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isLoading] = useState(false); // Đặt true khi nối API lấy liked posts thật
 
   const likedPosts = [
     {
@@ -184,54 +183,62 @@ export const ForumRightSidebar: React.FC = () => {
           </div>
 
           <div style={{ alignSelf: 'stretch', flexDirection: 'column', gap: 16, display: 'flex' }}>
-            {visiblePosts.map((post) => (
-              <div key={post.id} style={{ alignSelf: 'stretch', gap: 12, display: 'flex' }}>
-                <div
-                  style={{
-                    width: 32,
-                    height: 32,
-                    background: post.authorColor,
-                    borderRadius: 9999,
-                    display: 'flex',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    color: 'white',
-                    fontSize: 12,
-                    fontWeight: '600',
-                    flexShrink: 0,
-                  }}
-                >
-                  {post.authorInitial}
-                </div>
-                <div style={{ flex: 1, flexDirection: 'column', gap: 2, display: 'flex' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#64748B' }}>
-                    <span style={{ color: '#0F172A', fontWeight: '500' }}>{post.authorName}</span>
-                    <span>•</span>
-                    <span>{post.timeAgo}</span>
+            {isLoading && (
+              <>
+                <LikedPostSkeleton />
+                <LikedPostSkeleton />
+              </>
+            )}
+
+            {!isLoading &&
+              visiblePosts.map((post) => (
+                <div key={post.id} style={{ alignSelf: 'stretch', gap: 12, display: 'flex' }}>
+                  <div
+                    style={{
+                      width: 32,
+                      height: 32,
+                      background: post.authorColor,
+                      borderRadius: 9999,
+                      display: 'flex',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      color: 'white',
+                      fontSize: 12,
+                      fontWeight: '600',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {post.authorInitial}
                   </div>
-                  <div style={{ color: '#0F172A', fontSize: 14, fontWeight: '500' }}>{post.title}</div>
-                  <div style={{ display: 'flex', gap: 12, fontSize: 11, color: '#64748B', paddingTop: 2 }}>
-                    <span>{post.likes} thích</span>
-                    <span>{post.comments} bình luận</span>
+                  <div style={{ flex: 1, flexDirection: 'column', gap: 2, display: 'flex' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#64748B' }}>
+                      <span style={{ color: '#0F172A', fontWeight: '500' }}>{post.authorName}</span>
+                      <span>•</span>
+                      <span>{post.timeAgo}</span>
+                    </div>
+                    <div style={{ color: '#0F172A', fontSize: 14, fontWeight: '500' }}>{post.title}</div>
+                    <div style={{ display: 'flex', gap: 12, fontSize: 11, color: '#64748B', paddingTop: 2 }}>
+                      <span>{post.likes} thích</span>
+                      <span>{post.comments} bình luận</span>
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      width: 48,
+                      height: 48,
+                      background: '#F1F5F9',
+                      borderRadius: 6,
+                      border: '1px #E2E8F0 solid',
+                      display: 'flex',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div style={{ width: 18, height: 18, background: '#CBD5E1', borderRadius: 2 }} />
                   </div>
                 </div>
-                <div
-                  style={{
-                    width: 48,
-                    height: 48,
-                    background: '#F1F5F9',
-                    borderRadius: 6,
-                    border: '1px #E2E8F0 solid',
-                    display: 'flex',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    flexShrink: 0,
-                  }}
-                >
-                  <div style={{ width: 18, height: 18, background: '#CBD5E1', borderRadius: 2 }} />
-                </div>
-              </div>
-            ))}
+              ))}
           </div>
         </div>
       )}

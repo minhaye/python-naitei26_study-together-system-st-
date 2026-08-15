@@ -9,6 +9,7 @@ import React, { useState, useEffect } from 'react';
 import { Search } from 'lucide-react';
 import { forumApi } from '../lib/forum.api';
 import type { ForumCategoryResponse } from '../types/forum.types';
+import { CategorySkeleton } from '../../../components/ui/Skeleton';
 
 interface ForumSidebarProps {
   selectedCategoryId: string | null;
@@ -22,9 +23,13 @@ export const ForumSidebar: React.FC<ForumSidebarProps> = ({
   onSearchChange,
 }) => {
   const [categories, setCategories] = useState<ForumCategoryResponse[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    forumApi.getCategories().then(setCategories);
+    forumApi.getCategories().then((cats) => {
+      setCategories(cats);
+      setIsLoading(false);
+    });
   }, []);
 
   const isActive = (id: string | null) => selectedCategoryId === id;
@@ -79,24 +84,34 @@ export const ForumSidebar: React.FC<ForumSidebarProps> = ({
 
         {/* Flat Category List */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {categories.map((cat) => (
-            <div
-              key={cat.id}
-              onClick={() => onSelectCategory(cat.id)}
-              style={{
-                padding: '8px 16px',
-                borderRadius: 8,
-                cursor: 'pointer',
-                color: isActive(cat.id) ? '#1D4ED8' : '#334155',
-                background: isActive(cat.id) ? '#EFF6FF' : 'transparent',
-                fontWeight: isActive(cat.id) ? '500' : '400',
-                fontSize: 14,
-                transition: 'all 0.2s',
-              }}
-            >
-              {cat.name}
-            </div>
-          ))}
+          {isLoading && (
+            <>
+              <CategorySkeleton />
+              <CategorySkeleton />
+              <CategorySkeleton />
+              <CategorySkeleton />
+            </>
+          )}
+
+          {!isLoading &&
+            categories.map((cat) => (
+              <div
+                key={cat.id}
+                onClick={() => onSelectCategory(cat.id)}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  color: isActive(cat.id) ? '#1D4ED8' : '#334155',
+                  background: isActive(cat.id) ? '#EFF6FF' : 'transparent',
+                  fontWeight: isActive(cat.id) ? '500' : '400',
+                  fontSize: 14,
+                  transition: 'all 0.2s',
+                }}
+              >
+                {cat.name}
+              </div>
+            ))}
         </div>
       </div>
     </aside>
