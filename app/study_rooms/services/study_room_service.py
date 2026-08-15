@@ -9,12 +9,15 @@ from app.study_rooms.dto.study_room_dto import RoomModerationActionCreate, Study
 
 
 class StudyRoomsService:
-    async def create(self, session: AsyncSession, data: StudyRoomCreate) -> StudyRoom:
-        room = StudyRoom(**data.model_dump())
+    async def create(self, session: AsyncSession, data: StudyRoomCreate, host_id: uuid.UUID) -> StudyRoom:
+        """`host_id` is the authenticated caller, passed explicitly by the router --
+        never trust `data.host_id` (client-supplied) as the room owner."""
+        room_fields = data.model_dump(exclude={"host_id"})
+        room = StudyRoom(**room_fields, host_id=host_id)
         session.add(room)
         await session.flush()
 
-        host_membership = StudyRoomMember(room_id=room.id, user_id=data.host_id, role=StudyRoomMemberRole.HOST)
+        host_membership = StudyRoomMember(room_id=room.id, user_id=host_id, role=StudyRoomMemberRole.HOST)
         session.add(host_membership)
         await session.flush()
         return room
