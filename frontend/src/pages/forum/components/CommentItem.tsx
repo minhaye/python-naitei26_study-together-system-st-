@@ -1,18 +1,13 @@
 /**
  * CommentItem — Hiển thị 1 bình luận (hoặc 1 reply trong cây comment).
  *
- * Hỗ trợ:
- *   - Avatar + tên + thời gian
- *   - Nút Like (toggle)
- *   - Nút Reply (mở ô nhập reply)
- *   - Đệ quy hiển thị replies (cây 2 cấp từ useComments)
- *
- * @prop isReply - nếu true thì thụt lề vào, bỏ border trái
+ * Tích hợp RichContentView hiển thị đẹp mắt tất cả định dạng (Toán KaTeX, Ảnh, In đậm, Nghiêng).
  */
 
 import React, { useState } from 'react';
 import { ThumbsUp, CornerDownRight, Send } from 'lucide-react';
 import { Avatar } from '../../../components/ui/Avatar';
+import { RichContentView } from '../../../components/ui/RichContentView';
 import { FORUM_COLORS } from '../constants/colors';
 import type { Comment } from '../types/forum.types';
 
@@ -21,13 +16,6 @@ interface CommentItemProps {
   onReply: (parentId: string, content: string) => void;
   onLike: (commentId: string, isLiked: boolean) => void;
   isReply?: boolean;
-}
-
-const AUTHOR_COLORS = ['#2563EB', '#10B981', '#F59E0B', '#8B5CF6', '#EF4444'];
-function getAuthorColor(id: string) {
-  let hash = 0;
-  for (const ch of id) hash = ch.charCodeAt(0) + ((hash << 5) - hash);
-  return AUTHOR_COLORS[Math.abs(hash) % AUTHOR_COLORS.length];
 }
 
 export const CommentItem: React.FC<CommentItemProps> = ({
@@ -53,17 +41,14 @@ export const CommentItem: React.FC<CommentItemProps> = ({
       style={{
         display: 'flex',
         gap: 10,
-        paddingLeft: isReply ? 40 : 0,
+        paddingLeft: isReply ? 36 : 0,
       }}
     >
-      <Avatar
-        initials={comment.authorName.slice(0, 2).toUpperCase()}
-        color={getAuthorColor(comment.authorId)}
-        size={isReply ? 'xs' : 'sm'}
-      />
+      {/* Avatar dùng name prop đồng bộ */}
+      <Avatar name={comment.authorName} size={isReply ? 'xs' : 'sm'} />
 
       <div style={{ flex: 1 }}>
-        {/* Bubble */}
+        {/* Bubble với RichContentView */}
         <div
           style={{
             background: FORUM_COLORS.subtle,
@@ -76,16 +61,16 @@ export const CommentItem: React.FC<CommentItemProps> = ({
           <span style={{ fontWeight: '600', fontSize: 13, color: FORUM_COLORS.textPrimary }}>
             {comment.authorName}
           </span>
-          <p style={{ margin: '4px 0 0', fontSize: 14, color: FORUM_COLORS.textSecondary, lineHeight: 1.55 }}>
-            {comment.content}
-          </p>
+          <div style={{ marginTop: 4 }}>
+            <RichContentView content={comment.content} />
+          </div>
         </div>
 
         {/* Meta + Actions */}
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 6, paddingLeft: 4 }}>
           <span style={{ fontSize: 11, color: FORUM_COLORS.textDisabled }}>{comment.timeAgo}</span>
 
-          {/* Like */}
+          {/* Like button with likesCount */}
           <button
             onMouseEnter={() => setLikeHovered(true)}
             onMouseLeave={() => setLikeHovered(false)}
@@ -109,36 +94,38 @@ export const CommentItem: React.FC<CommentItemProps> = ({
             }}
           >
             <ThumbsUp size={12} fill={comment.isLiked ? FORUM_COLORS.primary : 'none'} />
-            Thích
+            <span>Thích</span>
+            {comment.likesCount > 0 && <span style={{ fontWeight: '500' }}>({comment.likesCount})</span>}
           </button>
 
-          {/* Reply — chỉ hiển thị ở comment cấp 1 */}
-          {!isReply && (
-            <button
-              onMouseEnter={() => setReplyHovered(true)}
-              onMouseLeave={() => setReplyHovered(false)}
-              onClick={() => setShowReplyBox((v) => !v)}
-              style={{
-                background: 'none',
-                border: 'none',
-                padding: 0,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4,
-                fontSize: 12,
-                fontWeight: '600',
-                color: replyHovered ? FORUM_COLORS.textPrimary : FORUM_COLORS.textMuted,
-                transition: 'color 0.15s ease',
-              }}
-            >
-              <CornerDownRight size={12} />
-              Trả lời
-            </button>
-          )}
+          {/* Reply button */}
+          <button
+            onMouseEnter={() => setReplyHovered(true)}
+            onMouseLeave={() => setReplyHovered(false)}
+            onClick={() => setShowReplyBox((v) => !v)}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              fontSize: 12,
+              fontWeight: '600',
+              color: replyHovered ? FORUM_COLORS.textPrimary : FORUM_COLORS.textMuted,
+              transition: 'color 0.15s ease',
+            }}
+          >
+            <CornerDownRight size={12} />
+            <span>Trả lời</span>
+            {comment.replies.length > 0 && (
+              <span style={{ fontWeight: '500' }}>({comment.replies.length})</span>
+            )}
+          </button>
         </div>
 
-        {/* Reply input */}
+        {/* Reply input box */}
         {showReplyBox && (
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
             <input
@@ -178,7 +165,7 @@ export const CommentItem: React.FC<CommentItemProps> = ({
           </div>
         )}
 
-        {/* Replies đệ quy (cấp 2) */}
+        {/* Replies đệ quy */}
         {comment.replies.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
             {comment.replies.map((reply) => (

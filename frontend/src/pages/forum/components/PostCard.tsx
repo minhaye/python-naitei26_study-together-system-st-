@@ -1,56 +1,78 @@
 /**
  * PostCard — Card hiển thị 1 bài viết trong danh sách Forum.
  *
- * Khôi phục 100% kích thước, padding, màu sắc, layout, số lượt thích và bình luận từ HomePage.tsx gốc.
+ * Tích hợp RichContentView hiển thị đẹp mắt tất cả định dạng (Toán KaTeX, Ảnh, In đậm, Nghiêng, Hashtag).
  */
 
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ThumbsUp, MessageSquare, Share2 } from 'lucide-react';
 import type { Post } from '../types/forum.types';
 import { CommentSection } from './CommentSection';
+import { Avatar } from '../../../components/ui/Avatar';
+import { Hashtag } from '../../../components/ui/Hashtag';
+import { RichContentView } from '../../../components/ui/RichContentView';
+import { extractHashtags } from '../lib/hashtagUtils';
 
 interface PostCardProps {
   post: Post;
   onToggleLike: (postId: string) => void;
+  defaultShowComments?: boolean;
 }
 
-const AUTHOR_COLORS = ['#2563EB', '#10B981', '#F59E0B', '#8B5CF6', '#EF4444'];
-function getAuthorColor(id: string) {
-  let hash = 0;
-  for (const ch of id) hash = ch.charCodeAt(0) + ((hash << 5) - hash);
-  return AUTHOR_COLORS[Math.abs(hash) % AUTHOR_COLORS.length];
-}
+export const PostCard: React.FC<PostCardProps> = ({
+  post,
+  onToggleLike,
+  defaultShowComments = false,
+}) => {
+  const navigate = useNavigate();
+  const [showComments, setShowComments] = useState(defaultShowComments);
+  const [hoveredButton, setHoveredButton] = useState<'like' | 'comment' | 'share' | null>(null);
 
-export const PostCard: React.FC<PostCardProps> = ({ post, onToggleLike }) => {
-  const [showComments, setShowComments] = useState(false);
-  const authorInitial = post.authorId.slice(0, 2).toUpperCase();
-  const authorColor = getAuthorColor(post.authorId);
+  // Tự động bóc tách Hashtags có trong nội dung bài viết
+  const extractedTags = extractHashtags(post.content);
+  const tags = extractedTags.length > 0 ? extractedTags : ['#Toán12', '#GiảiTích'];
 
-  const tags = ['#Toán12', '#GiảiTích'];
+  const MAX_CONTENT_LENGTH = 240;
+  const isContentLong = post.content.length > MAX_CONTENT_LENGTH;
+  const displayContent = isContentLong
+    ? post.content.slice(0, MAX_CONTENT_LENGTH)
+    : post.content;
+
+  const actionButtonStyle = (
+    btnType: 'like' | 'comment' | 'share',
+    active = false
+  ): React.CSSProperties => ({
+    flex: 1,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    padding: '12px 0',
+    color: active ? '#3B82F6' : '#64748B',
+    background: hoveredButton === btnType ? '#F1F5F9' : 'transparent',
+    cursor: 'pointer',
+    transition: 'background 0.15s ease, color 0.15s ease',
+    userSelect: 'none',
+    fontWeight: '600',
+    fontSize: 14,
+  });
 
   return (
-    <div style={{ background: 'white', borderRadius: 16, padding: 24, border: '1px solid #E2E8F0', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+    <div
+      style={{
+        background: 'white',
+        borderRadius: 16,
+        padding: '24px 24px 0px 24px',
+        border: '1px solid #E2E8F0',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
+        overflow: 'hidden',
+      }}
+    >
       {/* Post Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <div
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: '50%',
-              background: authorColor,
-              color: 'white',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 'bold',
-              fontSize: 16,
-              flexShrink: 0,
-            }}
-          >
-            {authorInitial}
-          </div>
+          <Avatar name={post.authorId} size="lg" />
           <div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <span style={{ fontWeight: '600', color: '#0F172A', fontSize: 15 }}>{post.authorId}</span>
@@ -61,7 +83,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onToggleLike }) => {
         </div>
       </div>
 
-      {/* Post Content */}
+      {/* Post Title -> Links to /forum/post/:id */}
       <h2 style={{ fontSize: 20, fontWeight: '700', color: '#0F172A', margin: '0 0 12px 0' }}>
         <Link
           to={`/forum/post/${post.id}`}
@@ -72,112 +94,111 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onToggleLike }) => {
           {post.title}
         </Link>
       </h2>
-      <p style={{ fontSize: 15, color: '#334155', lineHeight: '1.6', margin: '0 0 16px 0' }}>
-        {post.content}
-      </p>
 
-      {/* Tags */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+      {/* Post Content với RichContentView (Render KaTeX Math, Ảnh & định dạng HTML đẹp mắt) */}
+      <div style={{ marginBottom: 16 }}>
+        <RichContentView content={displayContent} />
+        {isContentLong && (
+          <div style={{ marginTop: 6 }}>
+            <span style={{ color: '#64748B' }}>... </span>
+            <span
+              onClick={() => navigate(`/forum/post/${post.id}`)}
+              style={{
+                color: '#1D4ED8',
+                fontWeight: '600',
+                cursor: 'pointer',
+                textDecoration: 'none',
+              }}
+            >
+              Xem thêm
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Image Attachment (nếu có) -> Click to /forum/post/:id */}
+      {post.imagePath && (
+        <div
+          onClick={() => navigate(`/forum/post/${post.id}`)}
+          style={{
+            marginBottom: 16,
+            borderRadius: 12,
+            overflow: 'hidden',
+            cursor: 'pointer',
+            border: '1px solid #E2E8F0',
+          }}
+        >
+          <img
+            src={post.imagePath}
+            alt={post.title}
+            style={{ width: '100%', maxHeight: 320, objectFit: 'cover', display: 'block' }}
+          />
+        </div>
+      )}
+
+      {/* Tags (Render qua component <Hashtag />) */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         {tags.map((tag) => (
-          <span
-            key={tag}
-            style={{ padding: '4px 10px', background: '#F1F5F9', color: '#3B82F6', borderRadius: 6, fontSize: 13, fontWeight: '500' }}
-          >
-            {tag}
-          </span>
+          <Hashtag key={tag} tag={tag} onClick={(t) => alert(`Lọc bài viết theo thẻ ${t}`)} />
         ))}
       </div>
 
-      {/* Actions */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 16, borderTop: '1px solid #F1F5F9' }}>
-        <div style={{ display: 'flex', gap: 24 }}>
-          {/* Like button with likes count */}
-          <div
-            onClick={() => onToggleLike(post.id)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              color: post.isLiked ? '#3B82F6' : '#64748B',
-              cursor: 'pointer',
-              transition: 'color 0.2s',
-            }}
-            onMouseOver={(e) => (e.currentTarget.style.color = '#3B82F6')}
-            onMouseOut={(e) => (e.currentTarget.style.color = post.isLiked ? '#3B82F6' : '#64748B')}
-          >
-            <ThumbsUp size={18} fill={post.isLiked ? '#3B82F6' : 'none'} />
-            <span style={{ fontWeight: '500', fontSize: 14 }}>{post.likesCount}</span>
-          </div>
-
-          {/* Comment button with comments count */}
-          <div
-            onClick={() => setShowComments((v) => !v)}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#3B82F6', cursor: 'pointer' }}
-          >
-            <MessageSquare size={18} />
-            <span style={{ fontWeight: '500', fontSize: 14 }}>{post.commentsCount} bình luận</span>
-          </div>
+      {/* Actions (Thanh Facebook Action Bar tràn viền sát đáy card) */}
+      <div
+        style={{
+          margin: '12px -24px 0px -24px',
+          borderTop: '1px solid #F1F5F9',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'stretch',
+          borderBottomLeftRadius: showComments ? 0 : 16,
+          borderBottomRightRadius: showComments ? 0 : 16,
+          overflow: 'hidden',
+        }}
+      >
+        {/* Nút Thích */}
+        <div
+          onClick={() => onToggleLike(post.id)}
+          onMouseEnter={() => setHoveredButton('like')}
+          onMouseLeave={() => setHoveredButton(null)}
+          style={actionButtonStyle('like', post.isLiked)}
+        >
+          <ThumbsUp size={18} fill={post.isLiked ? '#3B82F6' : 'none'} />
+          <span>{post.likesCount}</span>
         </div>
 
-        {/* Share button */}
+        {/* Nút Bình luận */}
+        <div
+          onClick={() => setShowComments((v) => !v)}
+          onMouseEnter={() => setHoveredButton('comment')}
+          onMouseLeave={() => setHoveredButton(null)}
+          style={actionButtonStyle('comment', showComments)}
+        >
+          <MessageSquare size={18} />
+          <span>{post.commentsCount} bình luận</span>
+        </div>
+
+        {/* Nút Chia sẻ */}
         <div
           onClick={() => {
             navigator.clipboard?.writeText(window.location.origin + `/forum/post/${post.id}`);
             alert('Đã copy link bài viết để chia sẻ!');
           }}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#64748B', cursor: 'pointer', transition: 'color 0.2s' }}
-          onMouseOver={(e) => (e.currentTarget.style.color = '#3B82F6')}
-          onMouseOut={(e) => (e.currentTarget.style.color = '#64748B')}
+          onMouseEnter={() => setHoveredButton('share')}
+          onMouseLeave={() => setHoveredButton(null)}
+          style={actionButtonStyle('share')}
         >
           <Share2 size={18} />
-          <span style={{ fontWeight: '500', fontSize: 14 }}>Chia sẻ</span>
+          <span>Chia sẻ</span>
         </div>
       </div>
 
-      {/* Inline Comment Input / Thread */}
-      <div style={{ marginTop: 20 }}>
-        {showComments ? (
+      {/* Comment Section (chỉ mở khi bấm nút "Bình luận" hoặc khi defaultShowComments = true) */}
+      {showComments && (
+        <div style={{ margin: '0 -24px', padding: 24, background: '#FAFAFA', borderTop: '1px solid #F1F5F9' }}>
           <CommentSection postId={post.id} />
-        ) : (
-          <div
-            onClick={() => setShowComments(true)}
-            style={{ display: 'flex', gap: 12, cursor: 'pointer' }}
-          >
-            <div
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: '50%',
-                background: '#E2E8F0',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}
-            >
-              <span style={{ color: '#64748B', fontSize: 14, fontWeight: 'bold' }}>ME</span>
-            </div>
-            <div style={{ flex: 1, position: 'relative' }}>
-              <input
-                type="text"
-                placeholder="Viết bình luận..."
-                readOnly
-                style={{
-                  width: '100%',
-                  padding: '10px 16px',
-                  background: '#F8FAFC',
-                  border: '1px solid #E2E8F0',
-                  borderRadius: 20,
-                  outline: 'none',
-                  fontSize: 14,
-                  color: '#334155',
-                  cursor: 'pointer',
-                }}
-              />
-            </div>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

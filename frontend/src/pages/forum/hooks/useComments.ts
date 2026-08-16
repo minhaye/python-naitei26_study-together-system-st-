@@ -1,17 +1,5 @@
 /**
  * useComments — Quản lý bình luận và reply của một bài viết Forum.
- *
- * Chịu trách nhiệm:
- *   - Tải danh sách bình luận (cây 2 cấp: comment + replies, đã nhóm bởi forumApi)
- *   - Thêm bình luận mới (yêu cầu đăng nhập)
- *   - Reply cho một bình luận (yêu cầu đăng nhập) — dùng parent_comment_id
- *   - Toggle thích/bỏ thích bình luận (yêu cầu đăng nhập)
- *
- * Cách dùng:
- * ```tsx
- * const { comments, handleAddComment, handleReply, handleToggleCommentLike } =
- *   useComments(postId);
- * ```
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -19,14 +7,17 @@ import type { Comment, CommentCreate } from '../types/forum.types';
 import { forumApi } from '../lib/forum.api';
 import { useAuth } from '../../../hooks/useAuth';
 
-// ID giả cho user hiện tại
-const CURRENT_USER_ID = 'user-current';
-const CURRENT_USER_NAME = 'Bạn';
-
-/** Cập nhật đệ quy trạng thái isLiked của một comment trong cây comment */
+/** Cập nhật đệ quy trạng thái isLiked và likesCount của một comment trong cây comment */
 function updateLikeInTree(comments: Comment[], commentId: string): Comment[] {
   return comments.map((c) => {
-    if (c.id === commentId) return { ...c, isLiked: !c.isLiked };
+    if (c.id === commentId) {
+      const nextLiked = !c.isLiked;
+      return {
+        ...c,
+        isLiked: nextLiked,
+        likesCount: nextLiked ? c.likesCount + 1 : Math.max(0, c.likesCount - 1),
+      };
+    }
     if (c.replies.length > 0) return { ...c, replies: updateLikeInTree(c.replies, commentId) };
     return c;
   });
@@ -43,11 +34,10 @@ function appendReplyInTree(comments: Comment[], parentId: string, reply: Comment
 }
 
 export function useComments(postId: string) {
-  const { requireAuth } = useAuth();
+  const { requireAuth, currentUser } = useAuth();
   const [comments, setComments] = useState<Comment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  /** Tải danh sách bình luận khi mở bài viết */
   const loadComments = useCallback(async () => {
     if (!postId) return;
     setIsLoading(true);
@@ -61,51 +51,55 @@ export function useComments(postId: string) {
   }, [loadComments]);
 
   /**
-   * Thêm bình luận mới (cấp 1 — comment chính).
-   * Yêu cầu đăng nhập.
+   * Thêm bình luận mới (cấp 1) — ĐƯA LÊN ĐẦU DANH SÁCH với Avatar của currentUser.
    */
   const handleAddComment = (content: string) => {
     requireAuth(async () => {
       const payload: CommentCreate = {
         post_id: postId,
-        author_id: CURRENT_USER_ID,
+        author_id: currentUser.id,
         content,
         parent_comment_id: null,
       };
       const newComment = await forumApi.createComment(payload);
-      // Gán tên hiển thị ngay
-      setComments((prev) => [...prev, { ...newComment, authorName: CURRENT_USER_NAME }]);
+      // Chèn bình luận mới lên ĐẦU danh sách kèm thông tin currentUser chuẩn
+      setComments((prev) => [
+        {
+          ...newComment,
+          authorId: currentUser.id,
+          authorName: currentUser.name,
+          likesCount: 0,
+        },
+        ...prev,
+      ]);
     });
   };
 
   /**
    * Reply một bình luận (cấp 2).
-   * Yêu cầu đăng nhập.
-   *
-   * @param parentId - id của comment đang reply
-   * @param content  - nội dung reply
    */
   const handleReply = (parentId: string, content: string) => {
     requireAuth(async () => {
       const payload: CommentCreate = {
         post_id: postId,
-        author_id: CURRENT_USER_ID,
+        author_id: currentUser.id,
         content,
         parent_comment_id: parentId,
       };
       const newReply = await forumApi.createComment(payload);
       setComments((prev) =>
-        appendReplyInTree(prev, parentId, { ...newReply, authorName: CURRENT_USER_NAME })
+        appendReplyInTree(prev, parentId, {
+          ...newReply,
+          authorId: currentUser.id,
+          authorName: currentUser.name,
+          likesCount: 0,
+        })
       );
     });
   };
 
   /**
    * Toggle thích/bỏ thích một bình luận.
-   * Yêu cầu đăng nhập.
-   *
-   * @param commentId  - id bình luận cần toggle
-   * @param isLiked    - trạng thái hiện tại (true = đang thích)
    */
   const handleToggleCommentLike = (commentId: string, isLiked: boolean) => {
     requireAuth(async () => {

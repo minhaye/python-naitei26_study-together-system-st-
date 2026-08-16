@@ -49,7 +49,12 @@ function mapPost(
 }
 
 /** Map CommentResponse (BE DTO) → Comment (UI Model) */
-function mapComment(dto: CommentResponse, authorName: string, isLiked = false): Comment {
+function mapComment(
+  dto: CommentResponse,
+  authorName: string,
+  likesCount = 3,
+  isLiked = false
+): Comment {
   return {
     id: dto.id,
     postId: dto.post_id,
@@ -59,6 +64,7 @@ function mapComment(dto: CommentResponse, authorName: string, isLiked = false): 
     content: dto.content,
     createdAt: dto.created_at,
     timeAgo: timeAgo(dto.created_at),
+    likesCount,
     isLiked,
     replies: [],
   };
@@ -131,22 +137,23 @@ const MOCK_AUTHORS: Record<string, string> = {
   'user-3': 'Ngọc Anh',
 };
 
-let MOCK_COMMENTS: CommentResponse[] = [
+let MOCK_COMMENTS: (CommentResponse & { likesCount: number })[] = [
   {
     id: 'cmt-1', post_id: 'post-1', author_id: 'user-2', parent_comment_id: null,
     content: 'Bạn cứ nhớ thứ tự ưu tiên chọn u: Logarit → Đa thức → Lượng giác → Mũ.',
     created_at: new Date(Date.now() - 3600000).toISOString(),
     updated_at: new Date(Date.now() - 3600000).toISOString(),
+    likesCount: 5,
   },
   {
     id: 'cmt-2', post_id: 'post-1', author_id: 'user-1', parent_comment_id: 'cmt-1',
     content: 'Cảm ơn bạn! Ví dụ có x*ln(x) thì chọn u = ln(x) đúng không?',
     created_at: new Date(Date.now() - 1800000).toISOString(),
     updated_at: new Date(Date.now() - 1800000).toISOString(),
+    likesCount: 2,
   },
 ];
 
-// Trạng thái like phía client
 const likedPosts = new Set<string>();
 const likedComments = new Set<string>();
 
@@ -207,12 +214,12 @@ export const forumApi = {
   getComments: async (postId: string): Promise<Comment[]> => {
     const flat = MOCK_COMMENTS
       .filter((c) => c.post_id === postId)
-      .map((c) => mapComment(c, MOCK_AUTHORS[c.author_id] ?? 'Ẩn danh', likedComments.has(c.id)));
+      .map((c) => mapComment(c, MOCK_AUTHORS[c.author_id] ?? 'Ẩn danh', c.likesCount, likedComments.has(c.id)));
     return Promise.resolve(nestComments(flat));
   },
 
   createComment: async (payload: CommentCreate): Promise<Comment> => {
-    const newDto: CommentResponse = {
+    const newDto = {
       id: `cmt-${Date.now()}`,
       post_id: payload.post_id,
       author_id: payload.author_id,
@@ -220,20 +227,25 @@ export const forumApi = {
       content: payload.content,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      likesCount: 0,
     };
-    MOCK_COMMENTS = [...MOCK_COMMENTS, newDto];
+    MOCK_COMMENTS = [newDto, ...MOCK_COMMENTS];
     const post = MOCK_POSTS.find((p) => p.id === payload.post_id);
     if (post) post.commentsCount += 1;
-    return Promise.resolve(mapComment(newDto, MOCK_AUTHORS[payload.author_id] ?? 'Bạn'));
+    return Promise.resolve(mapComment(newDto, MOCK_AUTHORS[payload.author_id] ?? 'Bạn', 0));
   },
 
   likeComment: async (commentId: string): Promise<void> => {
     likedComments.add(commentId);
+    const comment = MOCK_COMMENTS.find((c) => c.id === commentId);
+    if (comment) comment.likesCount += 1;
     return Promise.resolve();
   },
 
   unlikeComment: async (commentId: string): Promise<void> => {
     likedComments.delete(commentId);
+    const comment = MOCK_COMMENTS.find((c) => c.id === commentId);
+    if (comment && comment.likesCount > 0) comment.likesCount -= 1;
     return Promise.resolve();
   },
 };

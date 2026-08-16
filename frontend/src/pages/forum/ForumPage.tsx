@@ -1,14 +1,14 @@
 /**
  * ForumPage — Trang Diễn đàn chính.
  *
- * Tích hợp PostSkeleton loading state mượt mà không gây giật lag giao diện (CLS).
+ * Tích hợp bộ lọc 4 tùy chọn (Mới nhất, Chưa trả lời, Câu hỏi hay, Câu hỏi của tôi).
  */
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { ForumSidebar } from './components/ForumSidebar';
-import { ForumFilterBar } from './components/ForumFilterBar';
+import { ForumFilterBar, type FilterOption } from './components/ForumFilterBar';
 import { PostCard } from './components/PostCard';
 import { ForumRightSidebar } from './components/ForumRightSidebar';
 import { CreatePostModal } from './components/CreatePostModal';
@@ -20,13 +20,19 @@ import type { ForumCategoryResponse } from './types/forum.types';
 import { PostSkeleton } from '../../components/ui/Skeleton';
 
 export const ForumPage: React.FC = () => {
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, currentUser } = useAuth();
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const [selectedFilter, setSelectedFilter] = useState<FilterOption>('latest');
   const [search, setSearch] = useState('');
   const [categories, setCategories] = useState<ForumCategoryResponse[]>([]);
 
-  // Hooks
-  const { posts, setPosts, isLoading, hasMore, fetchNextPage } = useForumPosts(selectedCategoryId, search);
+  // Hooks với bộ lọc selectedFilter
+  const { posts, setPosts, isLoading, hasMore, fetchNextPage } = useForumPosts(
+    selectedCategoryId,
+    search,
+    selectedFilter,
+    currentUser.id
+  );
   const { showCreateModal, setShowCreateModal, handleCreatePost, handleToggleLike } = usePostActions(setPosts);
 
   // Trigger div cho Infinite Scroll
@@ -103,6 +109,8 @@ export const ForumPage: React.FC = () => {
           {/* Header Filter Bar */}
           <ForumFilterBar
             categoryName={selectedCategoryName}
+            selectedFilter={selectedFilter}
+            onSelectFilter={setSelectedFilter}
             onOpenCreateModal={() => setShowCreateModal(true)}
           />
 
@@ -145,6 +153,8 @@ export const ForumPage: React.FC = () => {
             {!isLoading && posts.length === 0 && (
               <div
                 style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
                   background: 'white',
                   borderRadius: 16,
                   padding: 40,
@@ -163,7 +173,7 @@ export const ForumPage: React.FC = () => {
             ))}
           </div>
 
-          {/* Infinite Scroll Trigger & Loader (khi cuộn tải thêm trang tiếp theo) */}
+          {/* Infinite Scroll Trigger & Loader */}
           <div ref={observerRef} style={{ textAlign: 'center', padding: '24px 0', minHeight: 40 }}>
             {isLoading && posts.length > 0 && (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, color: '#64748B' }}>

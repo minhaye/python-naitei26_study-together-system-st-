@@ -1,21 +1,54 @@
 /**
- * ForumFilterBar — Thanh filter + nút "Đặt câu hỏi" ở đầu trang Forum.
+ * ForumFilterBar — Thanh filter 4 tùy chọn + nút "Đặt câu hỏi" ở đầu trang Forum.
  *
- * Khôi phục 100% kích thước font, padding và style từ HomePage.tsx gốc.
+ * Tùy chọn lọc:
+ *   1. Mới nhất (Latest)
+ *   2. Chưa trả lời (Unanswered)
+ *   3. Câu hỏi hay (Popular)
+ *   4. Câu hỏi của tôi (My Questions)
  */
 
-import React from 'react';
-import { Filter, ChevronDown, Edit3 } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Filter, ChevronDown, Edit3, Check } from 'lucide-react';
+
+export type FilterOption = 'latest' | 'unanswered' | 'popular' | 'my_questions';
+
+export const FILTER_LABELS: Record<FilterOption, string> = {
+  latest: 'Mới nhất',
+  unanswered: 'Chưa trả lời',
+  popular: 'Câu hỏi hay',
+  my_questions: 'Câu hỏi của tôi',
+};
 
 interface ForumFilterBarProps {
   categoryName: string | null;
+  selectedFilter: FilterOption;
+  onSelectFilter: (filter: FilterOption) => void;
   onOpenCreateModal: () => void;
 }
 
 export const ForumFilterBar: React.FC<ForumFilterBarProps> = ({
   categoryName,
+  selectedFilter,
+  onSelectFilter,
   onOpenCreateModal,
 }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Thao tác click bên ngoài để đóng dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const options: FilterOption[] = ['latest', 'unanswered', 'popular', 'my_questions'];
+
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
@@ -27,30 +60,88 @@ export const ForumFilterBar: React.FC<ForumFilterBarProps> = ({
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 12 }}>
-        <div
-          onClick={() => alert('Bộ lọc "Mới nhất" đã được chọn!')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '8px 16px',
-            background: 'white',
-            border: '1px solid #E2E8F0',
-            borderRadius: 8,
-            cursor: 'pointer',
-            color: '#475569',
-            fontSize: 14,
-            fontWeight: '500',
-            transition: 'all 0.2s',
-          }}
-          onMouseOver={(e) => (e.currentTarget.style.background = '#F8FAFC')}
-          onMouseOut={(e) => (e.currentTarget.style.background = 'white')}
-        >
-          <Filter size={16} />
-          Mới nhất
-          <ChevronDown size={16} />
+      <div style={{ display: 'flex', gap: 12, position: 'relative' }}>
+        {/* Dropdown Filter Box */}
+        <div ref={dropdownRef} style={{ position: 'relative' }}>
+          <div
+            onClick={() => setIsOpen((prev) => !prev)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 16px',
+              background: 'white',
+              border: '1px solid #E2E8F0',
+              borderRadius: 8,
+              cursor: 'pointer',
+              color: '#475569',
+              fontSize: 14,
+              fontWeight: '500',
+              transition: 'all 0.2s',
+              userSelect: 'none',
+            }}
+            onMouseOver={(e) => (e.currentTarget.style.background = '#F8FAFC')}
+            onMouseOut={(e) => (e.currentTarget.style.background = 'white')}
+          >
+            <Filter size={16} />
+            <span>{FILTER_LABELS[selectedFilter]}</span>
+            <ChevronDown size={16} style={{ transition: 'transform 0.2s', transform: isOpen ? 'rotate(180deg)' : 'none' }} />
+          </div>
+
+          {/* Menu Dropdown Popup */}
+          {isOpen && (
+            <div
+              style={{
+                position: 'absolute',
+                right: 0,
+                top: 'calc(100% + 6px)',
+                width: 180,
+                background: 'white',
+                borderRadius: 10,
+                border: '1px solid #E2E8F0',
+                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                padding: '6px 0',
+                zIndex: 50,
+              }}
+            >
+              {options.map((option) => {
+                const isSelected = selectedFilter === option;
+                return (
+                  <div
+                    key={option}
+                    onClick={() => {
+                      onSelectFilter(option);
+                      setIsOpen(false);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '10px 16px',
+                      fontSize: 14,
+                      color: isSelected ? '#1D4ED8' : '#334155',
+                      fontWeight: isSelected ? '600' : '400',
+                      background: isSelected ? '#EFF6FF' : 'transparent',
+                      cursor: 'pointer',
+                      transition: 'background 0.15s ease',
+                    }}
+                    onMouseOver={(e) => {
+                      if (!isSelected) e.currentTarget.style.background = '#F8FAFC';
+                    }}
+                    onMouseOut={(e) => {
+                      if (!isSelected) e.currentTarget.style.background = 'transparent';
+                    }}
+                  >
+                    <span>{FILTER_LABELS[option]}</span>
+                    {isSelected && <Check size={16} color="#1D4ED8" />}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
+
+        {/* Nút Đặt câu hỏi */}
         <button
           onClick={onOpenCreateModal}
           style={{

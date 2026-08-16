@@ -1,12 +1,13 @@
 /**
  * CreatePostModal — Popup tạo câu hỏi / bài viết mới trên Forum.
  *
- * Cho phép chọn danh mục môn học, nhập tiêu đề và nội dung câu hỏi.
+ * Tích hợp EditTextTool (TipTap Editor) với đầy đủ công cụ soạn thảo, bảng, ảnh & công thức toán.
  */
 
 import React, { useState, useEffect } from 'react';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
+import { EditTextTool } from '../../../components/ui/EditTextTool';
 import { FORUM_COLORS } from '../constants/colors';
 import { forumApi } from '../lib/forum.api';
 import type { ForumCategoryResponse } from '../types/forum.types';
@@ -40,7 +41,9 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !content.trim() || !categoryId) return;
+    // Loại bỏ thẻ HTML thô nếu rỗng
+    const textOnly = content.replace(/<[^>]*>/g, '').trim();
+    if (!title.trim() || !textOnly || !categoryId) return;
     onSubmit({
       category_id: categoryId,
       title: title.trim(),
@@ -101,27 +104,16 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
           />
         </div>
 
-        {/* Nội dung */}
+        {/* Nội dung với Trình soạn thảo EditTextTool (TipTap) */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <label style={{ fontSize: 13, fontWeight: '600', color: FORUM_COLORS.textSecondary }}>
-            Nội dung chi tiết
+            Nội dung chi tiết (hỗ trợ công thức Toán, bảng, ảnh & định dạng)
           </label>
-          <textarea
-            rows={5}
+          <EditTextTool
+            content={content}
+            onChange={setContent}
             placeholder="Mô tả chi tiết câu hỏi hoặc thắc mắc của bạn..."
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            style={{
-              padding: '10px 12px',
-              borderRadius: 8,
-              border: `1px solid ${FORUM_COLORS.border}`,
-              background: FORUM_COLORS.subtle,
-              fontSize: 14,
-              color: FORUM_COLORS.textPrimary,
-              outline: 'none',
-              resize: 'vertical',
-              fontFamily: 'inherit',
-            }}
+            minHeight={140}
           />
         </div>
 
@@ -130,7 +122,11 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
           <Button variant="outline" type="button" onClick={onClose}>
             Hủy
           </Button>
-          <Button variant="primary" type="submit" disabled={!title.trim() || !content.trim() || !categoryId}>
+          <Button
+            variant="primary"
+            type="submit"
+            disabled={!title.trim() || !content.replace(/<[^>]*>/g, '').trim() || !categoryId}
+          >
             Đăng câu hỏi
           </Button>
         </div>

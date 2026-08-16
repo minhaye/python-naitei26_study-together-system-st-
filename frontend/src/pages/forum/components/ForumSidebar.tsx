@@ -2,7 +2,6 @@
  * ForumSidebar — Sidebar danh mục bên trái trang Forum.
  *
  * Khôi phục kích thước 280px và style từ HomePage.tsx gốc.
- * Danh mục hiển thị phẳng (flat list) trực tiếp từ Backend API.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -78,6 +77,12 @@ export const ForumSidebar: React.FC<ForumSidebarProps> = ({
             marginBottom: 16,
             transition: 'all 0.2s',
           }}
+          onMouseOver={(e) => {
+            if (!isActive(null)) e.currentTarget.style.background = '#F8FAFC';
+          }}
+          onMouseOut={(e) => {
+            if (!isActive(null)) e.currentTarget.style.background = 'transparent';
+          }}
         >
           Tất cả môn học
         </div>
@@ -107,6 +112,12 @@ export const ForumSidebar: React.FC<ForumSidebarProps> = ({
                   fontWeight: isActive(cat.id) ? '500' : '400',
                   fontSize: 14,
                   transition: 'all 0.2s',
+                }}
+                onMouseOver={(e) => {
+                  if (!isActive(cat.id)) e.currentTarget.style.background = '#F8FAFC';
+                }}
+                onMouseOut={(e) => {
+                  if (!isActive(cat.id)) e.currentTarget.style.background = 'transparent';
                 }}
               >
                 {cat.name}
