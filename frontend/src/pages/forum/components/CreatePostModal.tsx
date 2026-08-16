@@ -39,11 +39,16 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
     }
   }, [isOpen]);
 
+  const hasContent = (html: string) => {
+    if (!html.trim()) return false;
+    const hasImage = /<img[^>]*>/i.test(html);
+    const textOnly = html.replace(/<[^>]*>/g, '').trim();
+    return textOnly.length > 0 || hasImage;
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Loại bỏ thẻ HTML thô nếu rỗng
-    const textOnly = content.replace(/<[^>]*>/g, '').trim();
-    if (!title.trim() || !textOnly || !categoryId) return;
+    if (!title.trim() || !hasContent(content) || !categoryId) return;
     onSubmit({
       category_id: categoryId,
       title: title.trim(),
@@ -125,7 +130,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
           <Button
             variant="primary"
             type="submit"
-            disabled={!title.trim() || !content.replace(/<[^>]*>/g, '').trim() || !categoryId}
+            disabled={!title.trim() || !hasContent(content) || !categoryId}
           >
             Đăng câu hỏi
           </Button>

@@ -171,9 +171,11 @@ export const EditTextTool: React.FC<EditTextToolProps> = ({
           fontSize: 15,
           lineHeight: 1.6,
           color: '#0F172A',
+          outline: 'none',
+          cursor: 'text',
         }}
       >
-        <EditorContent editor={editor} placeholder={placeholder} />
+        <EditorContent editor={editor} placeholder={placeholder} style={{ outline: 'none' }} />
       </div>
 
       {/* Toolbar Bottom Container (Khung công cụ tối ưu kèm Hover xám nhạt) */}

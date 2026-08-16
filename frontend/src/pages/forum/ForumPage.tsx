@@ -85,7 +85,7 @@ export const ForumPage: React.FC = () => {
         }}
       >
         {/* CỘT 1: Left Sidebar (280px - Scroll độc lập) */}
-        <div style={{ width: 290, flexShrink: 0, height: '100%', overflowY: 'auto', paddingRight: 4 }}>
+        <div style={{ width: 295, flexShrink: 0, height: '100%', overflowY: 'auto', paddingRight: 4 }}>
           <ForumSidebar
             selectedCategoryId={selectedCategoryId}
             onSelectCategory={setSelectedCategoryId}

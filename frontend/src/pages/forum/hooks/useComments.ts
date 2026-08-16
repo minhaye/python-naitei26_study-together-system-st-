@@ -1,5 +1,5 @@
 /**
- * useComments — Quản lý bình luận và reply của một bài viết Forum.
+ * useComments — Quản lý bình luận và reply của một bài viết Forum với Optimistic UI (0ms).
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -33,10 +33,17 @@ function appendReplyInTree(comments: Comment[], parentId: string, reply: Comment
   });
 }
 
-export function useComments(postId: string) {
+export function useComments(postId: string, onCommentAdded?: () => void) {
   const { requireAuth, currentUser } = useAuth();
   const [comments, setComments] = useState<Comment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Đăng ký tác giả hiện tại vào bộ nhớ API
+  useEffect(() => {
+    if (currentUser?.id && currentUser?.name) {
+      forumApi.registerAuthor(currentUser.id, currentUser.name);
+    }
+  }, [currentUser]);
 
   const loadComments = useCallback(async () => {
     if (!postId) return;
@@ -51,64 +58,109 @@ export function useComments(postId: string) {
   }, [loadComments]);
 
   /**
-   * Thêm bình luận mới (cấp 1) — ĐƯA LÊN ĐẦU DANH SÁCH với Avatar của currentUser.
+   * Thêm bình luận mới (cấp 1) — Optimistic UI (0ms).
    */
   const handleAddComment = (content: string) => {
     requireAuth(async () => {
+      const tempId = `temp-cmt-${Date.now()}`;
+      const newCommentUI: Comment = {
+        id: tempId,
+        postId,
+        authorId: currentUser.id,
+        authorName: currentUser.name,
+        parentCommentId: null,
+        content,
+        createdAt: new Date().toISOString(),
+        timeAgo: 'Vừa xong',
+        likesCount: 0,
+        isLiked: false,
+        replies: [],
+      };
+
+      // 1. Cập nhật giao diện 0ms
+      setComments((prev) => [newCommentUI, ...prev]);
+      onCommentAdded?.();
+
+      // 2. Gọi API ngầm lưu vào bộ nhớ Store
       const payload: CommentCreate = {
         post_id: postId,
         author_id: currentUser.id,
         content,
         parent_comment_id: null,
       };
-      const newComment = await forumApi.createComment(payload);
-      // Chèn bình luận mới lên ĐẦU danh sách kèm thông tin currentUser chuẩn
-      setComments((prev) => [
-        {
-          ...newComment,
-          authorId: currentUser.id,
-          authorName: currentUser.name,
-          likesCount: 0,
-        },
-        ...prev,
-      ]);
+      const realComment = await forumApi.createComment(payload, currentUser.name);
+      
+      // Replace tempId với real ID
+      setComments((prev) =>
+        prev.map((c) => (c.id === tempId ? { ...realComment, authorName: currentUser.name } : c))
+      );
     });
   };
 
   /**
-   * Reply một bình luận (cấp 2).
+   * Reply một bình luận (cấp 2) — Optimistic UI (0ms).
    */
   const handleReply = (parentId: string, content: string) => {
     requireAuth(async () => {
+      const tempId = `temp-reply-${Date.now()}`;
+      const newReplyUI: Comment = {
+        id: tempId,
+        postId,
+        authorId: currentUser.id,
+        authorName: currentUser.name,
+        parentCommentId: parentId,
+        content,
+        createdAt: new Date().toISOString(),
+        timeAgo: 'Vừa xong',
+        likesCount: 0,
+        isLiked: false,
+        replies: [],
+      };
+
+      // 1. Cập nhật giao diện 0ms
+      setComments((prev) => appendReplyInTree(prev, parentId, newReplyUI));
+      onCommentAdded?.();
+
+      // 2. Gọi API ngầm lưu vào bộ nhớ Store
       const payload: CommentCreate = {
         post_id: postId,
         author_id: currentUser.id,
         content,
         parent_comment_id: parentId,
       };
-      const newReply = await forumApi.createComment(payload);
+      const realReply = await forumApi.createComment(payload, currentUser.name);
+
+      // Replace tempId bằng real ID
       setComments((prev) =>
-        appendReplyInTree(prev, parentId, {
-          ...newReply,
-          authorId: currentUser.id,
-          authorName: currentUser.name,
-          likesCount: 0,
+        prev.map((c) => {
+          if (c.id === parentId) {
+            return {
+              ...c,
+              replies: c.replies.map((r) =>
+                r.id === tempId ? { ...realReply, authorName: currentUser.name } : r
+              ),
+            };
+          }
+          return c;
         })
       );
     });
   };
 
   /**
-   * Toggle thích/bỏ thích một bình luận.
+   * Toggle thích/bỏ thích một bình luận — Optimistic UI (0ms).
    */
   const handleToggleCommentLike = (commentId: string, isLiked: boolean) => {
     requireAuth(async () => {
+      // 1. Cập nhật giao diện 0ms
+      setComments((prev) => updateLikeInTree(prev, commentId));
+
+      // 2. Gọi API ngầm
       if (isLiked) {
         await forumApi.unlikeComment(commentId);
       } else {
         await forumApi.likeComment(commentId);
       }
-      setComments((prev) => updateLikeInTree(prev, commentId));
     });
   };
 

@@ -1,5 +1,5 @@
 /**
- * forum.api.ts — Tầng giao tiếp với Forum API Backend
+ * forum.api.ts — Tầng giao tiếp với Forum API Backend (với Mock Data Store lưu trong bộ nhớ)
  */
 
 import type {
@@ -85,7 +85,7 @@ function nestComments(flat: Comment[]): Comment[] {
   return roots;
 }
 
-// ─── Mock Data ────────────────────────────────────────────────────────────────
+// ─── Mock Data Store ──────────────────────────────────────────────────────────
 
 const MOCK_CATEGORIES: ForumCategoryResponse[] = [
   { id: 'cat-1', name: 'Toán học', description: null, created_at: '2026-01-01T00:00:00Z' },
@@ -160,6 +160,13 @@ const likedComments = new Set<string>();
 // ─── API Functions ─────────────────────────────────────────────────────────────
 
 export const forumApi = {
+  /** Đăng ký tác giả vào bộ nhớ tạm */
+  registerAuthor: (authorId: string, name: string) => {
+    if (authorId && name) {
+      MOCK_AUTHORS[authorId] = name;
+    }
+  },
+
   getCategories: async (): Promise<ForumCategoryResponse[]> => {
     return Promise.resolve([...MOCK_CATEGORIES]);
   },
@@ -178,7 +185,10 @@ export const forumApi = {
     );
   },
 
-  createPost: async (payload: ForumPostCreate): Promise<Post> => {
+  createPost: async (payload: ForumPostCreate, authorName?: string): Promise<Post> => {
+    if (authorName) {
+      MOCK_AUTHORS[payload.author_id] = authorName;
+    }
     const newDto = {
       id: `post-${Date.now()}`,
       author_id: payload.author_id,
@@ -214,11 +224,21 @@ export const forumApi = {
   getComments: async (postId: string): Promise<Comment[]> => {
     const flat = MOCK_COMMENTS
       .filter((c) => c.post_id === postId)
-      .map((c) => mapComment(c, MOCK_AUTHORS[c.author_id] ?? 'Ẩn danh', c.likesCount, likedComments.has(c.id)));
+      .map((c) =>
+        mapComment(
+          c,
+          MOCK_AUTHORS[c.author_id] ?? 'Ẩn danh', // Giữ nguyên fallback 'Ẩn danh'
+          c.likesCount,
+          likedComments.has(c.id)
+        )
+      );
     return Promise.resolve(nestComments(flat));
   },
 
-  createComment: async (payload: CommentCreate): Promise<Comment> => {
+  createComment: async (payload: CommentCreate, authorName?: string): Promise<Comment> => {
+    if (authorName) {
+      MOCK_AUTHORS[payload.author_id] = authorName;
+    }
     const newDto = {
       id: `cmt-${Date.now()}`,
       post_id: payload.post_id,
@@ -230,9 +250,13 @@ export const forumApi = {
       likesCount: 0,
     };
     MOCK_COMMENTS = [newDto, ...MOCK_COMMENTS];
+
+    // Tăng đếm comment số lượng bài viết trong bộ nhớ API Store
     const post = MOCK_POSTS.find((p) => p.id === payload.post_id);
     if (post) post.commentsCount += 1;
-    return Promise.resolve(mapComment(newDto, MOCK_AUTHORS[payload.author_id] ?? 'Bạn', 0));
+
+    const resolvedAuthorName = MOCK_AUTHORS[payload.author_id] ?? authorName ?? 'Ẩn danh';
+    return Promise.resolve(mapComment(newDto, resolvedAuthorName, 0));
   },
 
   likeComment: async (commentId: string): Promise<void> => {

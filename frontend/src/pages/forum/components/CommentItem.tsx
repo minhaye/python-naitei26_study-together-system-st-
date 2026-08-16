@@ -1,7 +1,10 @@
 /**
  * CommentItem — Hiển thị 1 bình luận (hoặc 1 reply trong cây comment).
  *
- * Tích hợp RichContentView hiển thị đẹp mắt tất cả định dạng (Toán KaTeX, Ảnh, In đậm, Nghiêng).
+ * Tích hợp nút "Xem X phản hồi" / "Ẩn X phản hồi" kiểu Facebook:
+ *   - Mặc định KHÔNG tự động mở tràn các câu trả lời con.
+ *   - Hiển thị nút "Xem X phản hồi". Bấm vào mới mở bung danh sách trả lời con.
+ *   - Tự động mở bung khi người dùng vừa viết câu trả lời mới.
  */
 
 import React, { useState } from 'react';
@@ -16,6 +19,8 @@ interface CommentItemProps {
   onReply: (parentId: string, content: string) => void;
   onLike: (commentId: string, isLiked: boolean) => void;
   isReply?: boolean;
+  nestingLevel?: number; // 0 = gốc, 1 = trả lời trực tiếp gốc, 2+ = trả lời của trả lời
+  isLastChild?: boolean; // Đánh dấu comment con cuối cùng trong nhánh
 }
 
 export const CommentItem: React.FC<CommentItemProps> = ({
@@ -23,8 +28,11 @@ export const CommentItem: React.FC<CommentItemProps> = ({
   onReply,
   onLike,
   isReply = false,
+  nestingLevel = 0,
+  isLastChild = false,
 }) => {
   const [showReplyBox, setShowReplyBox] = useState(false);
+  const [showReplies, setShowReplies] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [likeHovered, setLikeHovered] = useState(false);
   const [replyHovered, setReplyHovered] = useState(false);
@@ -34,21 +42,78 @@ export const CommentItem: React.FC<CommentItemProps> = ({
     onReply(comment.id, replyText.trim());
     setReplyText('');
     setShowReplyBox(false);
+    setShowReplies(true); // Tự động bung danh sách reply khi người dùng vừa trả lời
   };
+
+  const isRoot = nestingLevel === 0;
+  // Chỉ vẽ đường nối khi là comment trả lời cấp 2 trở lên
+  const showConnectorLine = isReply && nestingLevel >= 2;
 
   return (
     <div
       style={{
         display: 'flex',
         gap: 10,
-        paddingLeft: isReply ? 36 : 0,
+        position: 'relative',
       }}
     >
-      {/* Avatar dùng name prop đồng bộ */}
-      <Avatar name={comment.authorName} size={isReply ? 'xs' : 'sm'} />
+      {/* 🟢 ĐƯỜNG KẺ NỐI CHUẨN FACEBOOK */}
+      {showConnectorLine && (
+        <>
+          {/* Comment con CUỐI CÙNG: Bắt đầu từ top: 0, uốn cong 90 độ tại y: 12px đâm vào tâm Avatar và DỪNG HẲN */}
+          {isLastChild ? (
+            <div
+              style={{
+                position: 'absolute',
+                left: -20,
+                top: 0,
+                width: 20,
+                height: 12,
+                borderLeft: '2px solid #CBD5E1',
+                borderBottom: '2px solid #CBD5E1',
+                borderBottomLeftRadius: 10,
+                pointerEvents: 'none',
+              }}
+            />
+          ) : (
+            /* Comment con KHÔNG PHẢI CUỐI: Đường dọc kéo xuống hết chiều cao + Nét uốn L đâm vào tâm Avatar */
+            <>
+              <div
+                style={{
+                  position: 'absolute',
+                  left: -20,
+                  top: 0,
+                  bottom: -12,
+                  width: 2,
+                  borderLeft: '2px solid #CBD5E1',
+                  pointerEvents: 'none',
+                }}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  left: -20,
+                  top: 0,
+                  width: 20,
+                  height: 12,
+                  borderLeft: '2px solid #CBD5E1',
+                  borderBottom: '2px solid #CBD5E1',
+                  borderBottomLeftRadius: 10,
+                  pointerEvents: 'none',
+                }}
+              />
+            </>
+          )}
+        </>
+      )}
 
-      <div style={{ flex: 1 }}>
-        {/* Bubble với RichContentView */}
+      {/* Avatar dùng name prop đồng bộ */}
+      <div style={{ position: 'relative', zIndex: 1, flexShrink: 0 }}>
+        <Avatar name={comment.authorName} size={isRoot ? 'sm' : 'xs'} />
+      </div>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Bubble chứa nội dung comment */}
         <div
           style={{
             background: FORUM_COLORS.subtle,
@@ -70,7 +135,7 @@ export const CommentItem: React.FC<CommentItemProps> = ({
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 6, paddingLeft: 4 }}>
           <span style={{ fontSize: 11, color: FORUM_COLORS.textDisabled }}>{comment.timeAgo}</span>
 
-          {/* Like button with likesCount */}
+          {/* Nút Thích */}
           <button
             onMouseEnter={() => setLikeHovered(true)}
             onMouseLeave={() => setLikeHovered(false)}
@@ -98,7 +163,7 @@ export const CommentItem: React.FC<CommentItemProps> = ({
             {comment.likesCount > 0 && <span style={{ fontWeight: '500' }}>({comment.likesCount})</span>}
           </button>
 
-          {/* Reply button */}
+          {/* Nút Trả lời */}
           <button
             onMouseEnter={() => setReplyHovered(true)}
             onMouseLeave={() => setReplyHovered(false)}
@@ -119,13 +184,37 @@ export const CommentItem: React.FC<CommentItemProps> = ({
           >
             <CornerDownRight size={12} />
             <span>Trả lời</span>
-            {comment.replies.length > 0 && (
-              <span style={{ fontWeight: '500' }}>({comment.replies.length})</span>
-            )}
           </button>
         </div>
 
-        {/* Reply input box */}
+        {/* Nút "Xem X phản hồi" / "Ẩn X phản hồi" kiểu Facebook */}
+        {comment.replies.length > 0 && (
+          <button
+            onClick={() => setShowReplies((v) => !v)}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: '4px 0 0 4px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 12,
+              fontWeight: '600',
+              color: FORUM_COLORS.primary,
+              marginTop: 4,
+            }}
+          >
+            <CornerDownRight size={13} />
+            <span>
+              {showReplies
+                ? `Ẩn ${comment.replies.length} phản hồi`
+                : `Xem ${comment.replies.length} phản hồi`}
+            </span>
+          </button>
+        )}
+
+        {/* Khung gõ Reply */}
         {showReplyBox && (
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
             <input
@@ -165,16 +254,27 @@ export const CommentItem: React.FC<CommentItemProps> = ({
           </div>
         )}
 
-        {/* Replies đệ quy */}
-        {comment.replies.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
-            {comment.replies.map((reply) => (
+        {/* Mảng replies đệ quy (Chỉ mở khi showReplies === true) */}
+        {showReplies && comment.replies.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
+              marginTop: 10,
+              paddingLeft: 32,
+              position: 'relative',
+            }}
+          >
+            {comment.replies.map((reply, index) => (
               <CommentItem
                 key={reply.id}
                 comment={reply}
                 onReply={onReply}
                 onLike={onLike}
                 isReply
+                nestingLevel={nestingLevel + 1}
+                isLastChild={index === comment.replies.length - 1}
               />
             ))}
           </div>

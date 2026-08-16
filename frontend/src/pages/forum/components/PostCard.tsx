@@ -4,7 +4,7 @@
  * Tích hợp RichContentView hiển thị đẹp mắt tất cả định dạng (Toán KaTeX, Ảnh, In đậm, Nghiêng, Hashtag).
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ThumbsUp, MessageSquare, Share2 } from 'lucide-react';
 import type { Post } from '../types/forum.types';
@@ -18,27 +18,56 @@ interface PostCardProps {
   post: Post;
   onToggleLike: (postId: string) => void;
   defaultShowComments?: boolean;
+  isDetailPage?: boolean;
 }
 
 export const PostCard: React.FC<PostCardProps> = ({
   post,
   onToggleLike,
   defaultShowComments = false,
+  isDetailPage = false,
 }) => {
   const navigate = useNavigate();
   const [showComments, setShowComments] = useState(defaultShowComments);
   const [hoveredButton, setHoveredButton] = useState<'like' | 'comment' | 'share' | null>(null);
 
+  // Optimistic UI state cho Like & Comment count (0ms response)
+  const [localIsLiked, setLocalIsLiked] = useState(post.isLiked);
+  const [localLikesCount, setLocalLikesCount] = useState(post.likesCount);
+  const [localCommentsCount, setLocalCommentsCount] = useState(post.commentsCount);
+
+  useEffect(() => {
+    setLocalIsLiked(post.isLiked);
+    setLocalLikesCount(post.likesCount);
+    setLocalCommentsCount(post.commentsCount);
+  }, [post.isLiked, post.likesCount, post.commentsCount]);
+
+  const handleLikeClick = () => {
+    const nextLiked = !localIsLiked;
+    setLocalIsLiked(nextLiked);
+    setLocalLikesCount((prev) => (nextLiked ? prev + 1 : Math.max(0, prev - 1)));
+    onToggleLike(post.id);
+  };
+
+  const handleCommentAdded = () => {
+    setLocalCommentsCount((prev) => prev + 1);
+  };
+
   // Tự động bóc tách Hashtags có trong nội dung bài viết
   const extractedTags = extractHashtags(post.content);
   const tags = extractedTags.length > 0 ? extractedTags : ['#Toán12', '#GiảiTích'];
 
+  // Bóc tách ảnh và văn bản riêng để tính độ dài chữ chuẩn kiểu Facebook (không tính chuỗi Base64 ảnh)
+  const imgMatches = post.content.match(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi) || [];
+  const cleanTextContent = post.content.replace(/<img[^>]*>/gi, '');
+
   const MAX_CONTENT_LENGTH = 240;
-  const isContentLong = post.content.length > MAX_CONTENT_LENGTH;
+  const isContentLong = cleanTextContent.length > MAX_CONTENT_LENGTH;
   const displayContent = isContentLong
-    ? post.content.slice(0, MAX_CONTENT_LENGTH)
+    ? cleanTextContent.slice(0, MAX_CONTENT_LENGTH) + imgMatches.join('')
     : post.content;
 
+  // GIỮ NGUYÊN 100% FE STYLES VÀ HOVER GỐC CỦA BẠN
   const actionButtonStyle = (
     btnType: 'like' | 'comment' | 'share',
     active = false
@@ -156,15 +185,15 @@ export const PostCard: React.FC<PostCardProps> = ({
           overflow: 'hidden',
         }}
       >
-        {/* Nút Thích */}
+        {/* Nút Thích (0ms Optimistic UI) */}
         <div
-          onClick={() => onToggleLike(post.id)}
+          onClick={handleLikeClick}
           onMouseEnter={() => setHoveredButton('like')}
           onMouseLeave={() => setHoveredButton(null)}
-          style={actionButtonStyle('like', post.isLiked)}
+          style={actionButtonStyle('like', localIsLiked)}
         >
-          <ThumbsUp size={18} fill={post.isLiked ? '#3B82F6' : 'none'} />
-          <span>{post.likesCount}</span>
+          <ThumbsUp size={18} fill={localIsLiked ? '#3B82F6' : 'none'} />
+          <span>{localLikesCount}</span>
         </div>
 
         {/* Nút Bình luận */}
@@ -175,7 +204,7 @@ export const PostCard: React.FC<PostCardProps> = ({
           style={actionButtonStyle('comment', showComments)}
         >
           <MessageSquare size={18} />
-          <span>{post.commentsCount} bình luận</span>
+          <span>{localCommentsCount} bình luận</span>
         </div>
 
         {/* Nút Chia sẻ */}
@@ -196,7 +225,11 @@ export const PostCard: React.FC<PostCardProps> = ({
       {/* Comment Section (chỉ mở khi bấm nút "Bình luận" hoặc khi defaultShowComments = true) */}
       {showComments && (
         <div style={{ margin: '0 -24px', padding: 24, background: '#FAFAFA', borderTop: '1px solid #F1F5F9' }}>
-          <CommentSection postId={post.id} />
+          <CommentSection
+            postId={post.id}
+            isDetailPage={isDetailPage}
+            onCommentAdded={handleCommentAdded}
+          />
         </div>
       )}
     </div>

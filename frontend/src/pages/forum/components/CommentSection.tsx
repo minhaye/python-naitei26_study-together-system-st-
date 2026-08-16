@@ -1,7 +1,10 @@
 /**
  * CommentSection — Phần bình luận của 1 bài viết.
  *
- * Tích hợp EditTextTool (TipTap Editor) giúp bình luận hỗ trợ ảnh, bảng, công thức toán và định dạng.
+ * Tích hợp:
+ *   - Nút "Xem thêm X bình luận" trên Diễn đàn Feed chính (Mặc định hiện 3 bình luận)
+ *   - Mở tràn 100% tất cả bình luận trên Trang Chi Tiết (isDetailPage = true)
+ *   - EditTextTool (TipTap Editor) hỗ trợ ảnh, công thức toán và định dạng.
  */
 
 import React, { useState } from 'react';
@@ -16,22 +19,40 @@ import { useAuth } from '../../../hooks/useAuth';
 
 interface CommentSectionProps {
   postId: string;
+  isDetailPage?: boolean;
+  initialLimit?: number;
+  onCommentAdded?: () => void;
 }
 
-export const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
+export const CommentSection: React.FC<CommentSectionProps> = ({
+  postId,
+  isDetailPage = false,
+  initialLimit = 3,
+  onCommentAdded,
+}) => {
   const { currentUser } = useAuth();
   const { comments, isLoading, handleAddComment, handleReply, handleToggleCommentLike } =
-    useComments(postId);
+    useComments(postId, onCommentAdded);
   const [newComment, setNewComment] = useState('');
   const [showRichEditor, setShowRichEditor] = useState(false);
+  const [expandedAll, setExpandedAll] = useState(false);
 
   const handleSubmit = () => {
+    if (!newComment.trim()) return;
+    const hasImage = /<img[^>]*>/i.test(newComment);
     const textOnly = newComment.replace(/<[^>]*>/g, '').trim();
-    if (!textOnly) return;
+    if (!textOnly && !hasImage) return;
+
     handleAddComment(newComment);
     setNewComment('');
     setShowRichEditor(false);
   };
+
+  const displayedComments = isDetailPage || expandedAll
+    ? comments
+    : comments.slice(0, initialLimit);
+
+  const remainingCount = comments.length - initialLimit;
 
   return (
     <div
@@ -43,7 +64,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
         gap: 14,
       }}
     >
-      {/* Input gửi comment mới với Avatar đồng bộ của currentUser */}
+      {/* Input gửi comment mới */}
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
         <Avatar name={currentUser.name} size="sm" style={{ marginTop: 4 }} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -53,7 +74,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
                 value={newComment}
                 onFocus={() => setShowRichEditor(true)}
                 onChange={(e) => setNewComment(e.target.value)}
-                placeholder="Viết bình luận (bấm để mở công cụ soạn thảo, chèn toán, bảng, ảnh)..."
+                placeholder="Viết bình luận (bấm để mở công cụ soạn thảo, chèn toán, ảnh)..."
                 style={{
                   flex: 1,
                   padding: '9px 16px',
@@ -146,7 +167,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
               Chưa có bình luận nào. Hãy là người đầu tiên!
             </p>
           )}
-          {comments.map((comment) => (
+          {displayedComments.map((comment) => (
             <CommentItem
               key={comment.id}
               comment={comment}
@@ -154,6 +175,26 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
               onLike={handleToggleCommentLike}
             />
           ))}
+
+          {/* Nút "Xem thêm X bình luận" (Chỉ hiện ở Feed chính khi comment > initialLimit) */}
+          {!isDetailPage && !expandedAll && remainingCount > 0 && (
+            <button
+              onClick={() => setExpandedAll(true)}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: '4px 0',
+                color: FORUM_COLORS.primary,
+                fontWeight: '600',
+                fontSize: 13,
+                cursor: 'pointer',
+                textAlign: 'left',
+                width: 'fit-content',
+              }}
+            >
+              Xem thêm {remainingCount} bình luận...
+            </button>
+          )}
         </div>
       )}
     </div>

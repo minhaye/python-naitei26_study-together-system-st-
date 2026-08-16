@@ -112,3 +112,20 @@ h1, h2, h3, h4, h5, h6, p {
     transform: rotate(360deg);
   }
 }
+
+/* ─── TipTap Editor Focus Outline Reset ──────────────────────────────────────── */
+
+.ProseMirror {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.ProseMirror:focus,
+.ProseMirror:focus-visible,
+.ProseMirror-focused {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+

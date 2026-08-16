@@ -81,7 +81,7 @@ export const ForumPostDetail: React.FC = () => {
 
           {/* Post Card — Tự động mở sẵn bình luận */}
           {!isLoading && post && (
-            <PostCard post={post} onToggleLike={handleToggleLike} defaultShowComments={true} />
+            <PostCard post={post} onToggleLike={handleToggleLike} defaultShowComments={true} isDetailPage={true} />
           )}
 
           {/* Not Found */}
