@@ -12,7 +12,7 @@ from app.db.enums import ChannelType, pg_enum
 if TYPE_CHECKING:
     from app.groups.entities.group_entity import Group
     from app.profiles.entities.profile_entity import Profile
-    from app.messages.entities.message_entity import Message
+    from app.conversations.entities.conversation_entity import Conversation
 
 
 class Channel(Base):
@@ -36,7 +36,13 @@ class Channel(Base):
     group: Mapped["Group"] = relationship(back_populates="channels")
     creator: Mapped["Profile"] = relationship(back_populates="created_channels", foreign_keys=[created_by])
     members: Mapped[list["ChannelMember"]] = relationship(back_populates="channel")
-    messages: Mapped[list["Message"]] = relationship(back_populates="channel")
+    conversation: Mapped["Conversation | None"] = relationship(back_populates="channel", uselist=False)
+
+    @property
+    def conversation_id(self) -> uuid.UUID | None:
+        """Convenience accessor for API responses. Requires `conversation` to already be
+        loaded (see ChannelsService.get_by_id/list_by_group, which eager-load it)."""
+        return self.conversation.id if self.conversation else None
 
 
 class ChannelMember(Base):

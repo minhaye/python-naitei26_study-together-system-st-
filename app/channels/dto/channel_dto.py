@@ -33,6 +33,7 @@ class ChannelResponse(BaseModel):
     created_by: uuid.UUID
     created_at: datetime
     updated_at: datetime
+    conversation_id: uuid.UUID | None
 
 
 class ChannelMemberCreate(BaseModel):

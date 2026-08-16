@@ -461,9 +461,224 @@ content = NULL
 attachment_path = NULL
 ```
 
+## Trạng thái hiện tại (xác nhận 2026-08-15) — expand + contract đã xong, Direct Message (1-1) đã live
+
+`channel_id` ở trên là schema mục tiêu, **và đây cũng là schema thật hiện tại** — migration 005 (contract phase) đã chạy live, `messages.channel_id` đã bị xóa hẳn khỏi database. Toàn bộ chuỗi 004 → 005 → 006 giờ đã áp dụng xong trên Supabase:
+
+```text
+messages
+├── id
+├── conversation_id    ← NOT NULL, FK -> conversations.id; source of truth duy nhất
+├── sender_id
+├── content
+├── attachment_path
+├── created_at
+└── updated_at
+```
+
+Backend (SQLAlchemy models, `MessagesService`, routers, `app/core/permissions.py`) đã refactor xong sang `conversation_id` từ trước (004 → 005). Trigger tương thích `messages_sync_conversation_id` và cột `messages.channel_id` đã bị 005 dọn sạch — không còn tồn tại trên live DB, không còn được backend tham chiếu.
+
+Tiếp theo, migration 006 (`006_direct_conversation_pair_uniqueness.sql`) **đã chạy live** (xác nhận bởi người vận hành database), thêm ràng buộc uniqueness ở tầng DB cho cặp user của Direct Message — xem § 15. Cùng với đó, tầng application (FastAPI) đã triển khai đầy đủ Direct Message 1-1: `POST /conversations/direct`, `GET /conversations/direct`, dùng chung `GET/POST /conversations/{conversation_id}/messages` với channel/room. Chi tiết đầy đủ ở § 12–15.
+
 ---
 
-# 12. study_rooms — Phòng học trực tuyến
+# 12. Chat Architecture Migration — Channel → Conversation
+
+## Vai trò
+
+Tính năng chat ban đầu (mục § 9–11) chỉ hỗ trợ **channel chat trong group**. Hệ thống đang được mở rộng để hỗ trợ thêm:
+
+```text
+Room chat      — chat trong một Study Room đang hoạt động (nhiều người)
+Direct message — nhắn tin 1-1 giữa hai user
+```
+
+Cả hai tính năng này **chưa tồn tại trước khi migration này bắt đầu** — `study_rooms` trước đó không có quan hệ nào tới `messages`, và không có model/service nào cho DM.
+
+## Kiến trúc mục tiêu
+
+Thay vì `messages` gắn cứng vào `channels`, một bảng trung gian `conversations` được thêm vào, đóng vai trò polymorphic parent cho `messages`:
+
+```text
+Channel  ─┐
+Room     ─┼──► Conversation ──► Messages
+Direct   ─┘
+```
+
+`conversations.type` quyết định quan hệ nào áp dụng, và quyền truy cập cũng rẽ nhánh theo `type` — xem § 14.
+
+## Chiến lược migration: expand/contract
+
+Vì `messages.channel_id` đang được backend (chưa refactor) đọc/ghi trực tiếp, migration **không đổi schema một phát ăn ngay** — làm theo hai giai đoạn tách biệt để không phá vỡ backend đang chạy:
+
+```text
+Expand  (004)  Thêm schema mới (conversations, conversation_members,
+               messages.conversation_id) SONG SONG với schema cũ.
+               messages.channel_id vẫn giữ nguyên, KHÔNG bị đổi/xóa.
+               Trigger messages_sync_conversation_id giữ hai cột đồng bộ.
+                    ↓
+[Backend refactor — SQLAlchemy models + MessageService dùng conversation_id]
+                    ↓
+Contract (005) Xóa messages.channel_id, FK, index cũ, và trigger compatibility.
+               Chỉ chạy SAU KHI backend refactor đã test xong.
+```
+
+## Trạng thái migration (xác nhận live 2026-08-16)
+
+| File | Trạng thái | Ghi chú |
+|---|---|---|
+| `001_enable_realtime_messages.sql` | ✅ Đã áp dụng live | Bật Realtime cho `messages` |
+| `002_fix_can_access_channel_active_membership.sql` | ✅ Fix đã sống (qua 004 §7) | `can_access_channel()` live hiện đã re-check `group_members.status='active'` — xác nhận bằng cách đọc lại function body thật |
+| `003_create_message_attachments_bucket.sql` | ✅ Đã áp dụng live | `storage.buckets` xác nhận có `message-attachments` (`public=false`, giới hạn 10MB) |
+| `004_refactor_chat_to_conversations.sql` | ✅ Đã áp dụng live, đã verify | `004_verify.sql` chạy live: 33/33 check OK, 0 FAIL. `conversations`: 16 channel-type + 8 room-type = 24 rows, khớp đúng số `channels`/`study_rooms` hiện có |
+| `005_contract_messages_to_conversations.sql` | ✅ Đã áp dụng live | `messages.channel_id`, FK, index cũ, và trigger `messages_sync_conversation_id` đã bị xóa. `messages.conversation_id` là cột duy nhất còn lại, backend (SQLAlchemy + routers) đã refactor và test khớp trước khi chạy |
+| `006_direct_conversation_pair_uniqueness.sql` | ✅ Đã áp dụng live | Thêm `conversations.direct_user_min_id`/`direct_user_max_id` + CHECK + partial unique index, đảm bảo một cặp user chỉ có tối đa một `conversation` type=direct — xem § 15 |
+| `007_fix_room_moderation_select_policy.sql` | ✅ Đã áp dụng live | Sửa tautology `srm.room_id = srm.room_id` trong policy `room_moderation_select` trên `room_moderation_actions` thành `srm.room_id = room_moderation_actions.room_id` — xem § 37 |
+
+Các mục § 13–15 dưới đây mô tả schema **đã live thật** trên Supabase kể từ khi 006 chạy — không còn là "đích đến" nữa.
+
+## Quyền truy cập theo loại Conversation
+
+```text
+type = channel  → dựa vào group_members (active) + channel_members (nếu private)
+type = room     → dựa vào group_members (active) + study_room_members
+                    (row tồn tại AND left_at IS NULL)
+type = direct   → dựa vào conversation_members
+```
+
+Hàm `can_access_conversation(conversation_id)` là entry point duy nhất, tự rẽ nhánh theo `type` — xem § 14.
+
+---
+
+# 13. conversation_type — Enum loại hội thoại
+
+```text
+channel
+room
+direct
+```
+
+`group_direct` (nhóm chat DM nhiều người, không gắn Room/Channel) **chưa** nằm trong scope hiện tại — dự kiến thêm sau nếu cần, bằng `ALTER TYPE ... ADD VALUE`.
+
+---
+
+# 14. conversations — Hội thoại (polymorphic)
+
+## Vai trò
+
+Parent chung cho mọi loại chat: channel, room, direct. Mỗi `channels` hiện có và mỗi `study_rooms` hiện có được backfill đúng 1 row `conversations` tương ứng.
+
+## Fields
+
+```text
+conversations
+├── id
+├── type                  -- conversation_type
+├── channel_id            -- nullable, FK -> channels.id
+├── room_id               -- nullable, FK -> study_rooms.id
+├── created_by            -- FK -> profiles.id
+├── direct_user_min_id    -- nullable, FK -> profiles.id (migration 006, chỉ set khi type=direct)
+├── direct_user_max_id    -- nullable, FK -> profiles.id (migration 006, chỉ set khi type=direct)
+├── created_at
+└── updated_at
+```
+
+| Field | Ý nghĩa |
+|---|---|
+| `type` | `channel` \| `room` \| `direct` |
+| `channel_id` | Chỉ set khi `type = channel`, `NULL` với room/direct |
+| `room_id` | Chỉ set khi `type = room`, `NULL` với channel/direct |
+| `created_by` | Người tạo conversation (`ON DELETE RESTRICT`, giống `channels.created_by`) |
+| `direct_user_min_id` / `direct_user_max_id` | Cặp user id của cuộc DM, luôn được sort (`min < max`) để A→B và B→A cùng resolve về một row. Chỉ set khi `type = direct`, `NULL` với channel/room. Xem § 15 để biết lý do và cách dùng |
+
+## Ràng buộc polymorphic bắt buộc
+
+```sql
+(type = 'channel' AND channel_id IS NOT NULL AND room_id IS NULL)
+OR (type = 'room' AND room_id IS NOT NULL AND channel_id IS NULL)
+OR (type = 'direct' AND channel_id IS NULL AND room_id IS NULL)
+```
+
+Migration 006 thêm một CHECK thứ hai, độc lập với CHECK trên (`conversations_direct_pair_check`):
+
+```sql
+(type = 'direct' AND direct_user_min_id IS NOT NULL AND direct_user_max_id IS NOT NULL
+   AND direct_user_min_id < direct_user_max_id)
+OR (type <> 'direct' AND direct_user_min_id IS NULL AND direct_user_max_id IS NULL)
+```
+
+## Unique Rule
+
+```text
+1 Channel    ↔ tối đa 1 Conversation          (partial unique index trên channel_id)
+1 Study Room ↔ tối đa 1 Conversation          (partial unique index trên room_id)
+1 cặp user   ↔ tối đa 1 Conversation type=direct (partial unique index trên
+                (direct_user_min_id, direct_user_max_id) where type='direct' — migration 006)
+```
+
+Không cho phép hai `conversations` row cùng trỏ về một channel/room, và (từ 006) không cho phép hai `conversations` row type=direct cùng một cặp user — tránh việc lịch sử tin nhắn bị chia làm hai nhánh.
+
+## ON DELETE
+
+```text
+channel_id           -> CASCADE   (xóa channel kéo theo xóa conversation + messages)
+room_id              -> CASCADE   (xóa room kéo theo xóa conversation + messages)
+created_by           -> RESTRICT  (không xóa được profile còn đứng tên tạo conversation)
+direct_user_min_id   -> CASCADE   (xóa profile của 1 trong 2 người kéo theo xóa DM đó)
+direct_user_max_id   -> CASCADE   (tương tự, giống ON DELETE của conversation_members.user_id)
+```
+
+---
+
+# 15. conversation_members — Thành viên hội thoại trực tiếp (DM)
+
+## Vai trò
+
+**Chỉ dùng cho `type = direct`** ở phase hiện tại. Channel/Room chat KHÔNG duplicate membership vào đây — vẫn dùng `channel_members`/`study_room_members` như cũ, tránh lưu hai nguồn sự thật cho cùng một thông tin.
+
+## Fields
+
+```text
+conversation_members
+├── id
+├── conversation_id
+├── user_id
+└── joined_at
+```
+
+## Unique Rule
+
+```text
+UNIQUE(conversation_id, user_id)
+```
+
+## Chống trùng DM cho một cặp user — đã giải quyết (migration 006)
+
+`conversation_members` tự thân không thể declarative-constraint "cặp user A/B chỉ có tối đa 1 conversation", vì đây là bảng con (membership nằm ở 2 row riêng biệt, không phải 1 row đại diện cho cặp). Giải pháp (migration 006, § 14): thêm `direct_user_min_id`/`direct_user_max_id` trực tiếp trên `conversations` (luôn sort để A→B và B→A cùng resolve về 1 row), ràng buộc bởi CHECK + một partial unique index trên `(direct_user_min_id, direct_user_max_id) WHERE type='direct'`.
+
+Race condition (A và B cùng mở DM gần như đồng thời) được xử lý ở tầng service bằng SAVEPOINT + retry, không phải `SELECT` rồi `INSERT` đơn giản: `ConversationsService.get_or_create_direct` (`app/conversations/services/conversation_service.py`) SELECT trước; nếu miss thì INSERT bên trong `session.begin_nested()` (SAVEPOINT thật); nếu insert thua race (`IntegrityError` từ unique index), SAVEPOINT tự rollback (không rollback cả transaction), rồi service SELECT lại để trả về row mà transaction thắng đã commit.
+
+## API layer đã triển khai
+
+```text
+POST /conversations/direct   body: {"user_id": "<uuid>"}   -- idempotent get-or-create, luôn 200
+GET  /conversations/direct                                  -- danh sách DM của current user
+```
+
+Sau khi có `conversation_id`, DM dùng chung API generic với channel/room — không có endpoint message riêng cho DM:
+
+```text
+GET/POST /conversations/{conversation_id}/messages
+GET/PATCH/DELETE /messages/{message_id}
+POST /conversations/{conversation_id}/attachments/upload-url
+GET  /messages/{message_id}/attachment-url
+```
+
+Authorization (`app/core/permissions.py::can_access_conversation`, nhánh `DIRECT`) delegate sang `ConversationsService.is_member` — cùng logic với hàm SQL `is_conversation_member()` dùng trong RLS (§ 37). Attachment của DM dùng namespace riêng trong Storage: `direct/{conversation_id}/{user_id}/{object_id}/{filename}` (song song với `groups/{group_id}/channels/{channel_id}/...` của channel và `study-rooms/{room_id}/{user_id}/...` của room).
+
+---
+
+# 16. study_rooms — Phòng học trực tuyến
 
 ## Vai trò
 
@@ -510,7 +725,7 @@ max_participants = 50
 
 ---
 
-# 13. Study Room Status
+# 17. Study Room Status
 
 `study_room_status`:
 
@@ -550,7 +765,7 @@ ended_at = now()
 
 ---
 
-# 14. study_room_members — Thành viên trong Study Room
+# 18. study_room_members — Thành viên trong Study Room
 
 ## Vai trò
 
@@ -592,7 +807,7 @@ left_at IS NULL
 
 ---
 
-# 15. Business Rule khi tạo Study Room
+# 19. Business Rule khi tạo Study Room
 
 Khi user A tạo Study Room:
 
@@ -615,7 +830,7 @@ Hai thao tác nên chạy trong cùng transaction.
 
 ---
 
-# 16. Join / Leave / Rejoin Study Room
+# 20. Join / Leave / Rejoin Study Room
 
 Database có:
 
@@ -658,7 +873,7 @@ WHERE
 
 ---
 
-# 17. room_moderation_actions — Lịch sử moderation
+# 21. room_moderation_actions — Lịch sử moderation
 
 ## Vai trò
 
@@ -703,7 +918,7 @@ room_moderation_actions:
 
 ---
 
-# 18. Study Room Permission Model
+# 22. Study Room Permission Model
 
 ## Host
 
@@ -732,7 +947,7 @@ Có thể:
 
 ---
 
-# 19. resource_folders — Thư mục tài liệu
+# 23. resource_folders — Thư mục tài liệu
 
 ## Vai trò
 
@@ -770,7 +985,7 @@ parent_folder_id = NULL
 
 ---
 
-# 20. resources — Tài liệu
+# 24. resources — Tài liệu
 
 ## Vai trò
 
@@ -824,7 +1039,7 @@ avatars
 
 ---
 
-# 21. forum_categories — Danh mục diễn đàn
+# 25. forum_categories — Danh mục diễn đàn
 
 ## Vai trò
 
@@ -853,7 +1068,7 @@ Business
 
 ---
 
-# 22. forum_posts — Bài viết diễn đàn
+# 26. forum_posts — Bài viết diễn đàn
 
 ## Vai trò
 
@@ -902,7 +1117,7 @@ khi trả danh sách bài viết thông thường.
 
 ---
 
-# 23. post_likes — Like bài viết
+# 27. post_likes — Like bài viết
 
 ## Vai trò
 
@@ -935,7 +1150,7 @@ WHERE post_id = ? AND user_id = ?
 
 ---
 
-# 24. comments — Bình luận
+# 28. comments — Bình luận
 
 ## Vai trò
 
@@ -987,7 +1202,7 @@ database hiện vẫn hỗ trợ vì `parent_comment_id` self-reference tới `c
 
 ---
 
-# 25. comment_likes
+# 29. comment_likes
 
 ## Vai trò
 
@@ -1013,7 +1228,7 @@ Một user chỉ like một comment một lần.
 
 ---
 
-# 26. notifications — Thông báo
+# 30. notifications — Thông báo
 
 ## Vai trò
 
@@ -1076,7 +1291,7 @@ post_id = post.id
 
 ---
 
-# 27. Tổng quan quan hệ Database
+# 31. Tổng quan quan hệ Database
 
 ```text
 auth.users
@@ -1093,11 +1308,9 @@ groups                                      forum_posts
     │                                             │
     ├── channels                                  └── comments
     │      │                                           │
-    │      ├── channel_members                         ├── comment_likes
-    │      │                                           │
-    │      └── messages                                └── replies
-    │
-    ├── study_rooms
+    │      └── channel_members                         ├── comment_likes
+    │                                                   │
+    ├── study_rooms                                     └── replies
     │      │
     │      ├── study_room_members
     │      │
@@ -1119,9 +1332,23 @@ profiles
     └── notifications
 ```
 
+## Conversation / Messages (§ 12–15, đã live)
+
+`messages` không còn là con trực tiếp của `channels` — nó đi qua `conversations` trung gian, polymorphic theo `type`. Sơ đồ trên (mục đích minh họa Group hierarchy chung) cố tình không vẽ nhánh này để giữ đơn giản; sơ đồ đúng cho chat là:
+
+```text
+channels ──────┐
+study_rooms ───┼──► conversations ──► messages
+(profiles, DM) ─┘         │
+                     conversation_members
+                     (chỉ dùng khi type = direct)
+```
+
+Đã áp dụng live: 004 (2026-08-14), 005 và 006 (2026-08-15), 007 (2026-08-16) — xem § 12 để biết chi tiết trạng thái migration.
+
 ---
 
-# 28. Quan hệ chính
+# 32. Quan hệ chính
 
 ## User — Group
 
@@ -1145,14 +1372,17 @@ groups
 channels
 ```
 
-## Channel — Message
+## Channel / Room / Direct — Conversation — Message
 
 ```text
-channels
-   │ 1:N
-   ▼
-messages
+channels     ─┐
+study_rooms  ─┼─ 1:1 (partial unique) ─► conversations ── 1:N ──► messages
+(profiles)   ─┘   (direct: cặp user identity nằm ở
+                    conversations.direct_user_min_id/max_id — § 14 —
+                    và được nhân đôi thành 2 row conversation_members)
 ```
+
+Quan hệ `channels → messages` trực tiếp (1:N) đã **thay thế** bằng quan hệ qua `conversations` ở trên — xem § 12. Migration 005 đã chạy live: `messages.channel_id` không còn tồn tại, `conversation_id` là FK duy nhất từ `messages` xuống `conversations`.
 
 ## Group — Study Room
 
@@ -1201,7 +1431,7 @@ comments
 
 ---
 
-# 29. Backend Layer đề xuất
+# 33. Backend Layer đề xuất
 
 Nếu sử dụng FastAPI:
 
@@ -1240,7 +1470,7 @@ Không nên đặt toàn bộ business logic trực tiếp trong route.
 
 ---
 
-# 30. Các service nghiệp vụ quan trọng
+# 34. Các service nghiệp vụ quan trọng
 
 Một số thao tác không nên chỉ là CRUD đơn giản.
 
@@ -1304,7 +1534,7 @@ cho tác giả comment cha.
 
 ---
 
-# 31. Permission Checks đề xuất
+# 35. Permission Checks đề xuất
 
 Backend nên có các helper/service kiểu:
 
@@ -1342,7 +1572,7 @@ Role phải được kiểm tra từ database.
 
 ---
 
-# 32. Security
+# 36. Security
 
 Hệ thống đang sử dụng Supabase nên cần kết hợp:
 
@@ -1360,29 +1590,50 @@ RLS giúp bảo vệ dữ liệu ngay ở tầng PostgreSQL.
 
 ---
 
-# 33. RLS cần kiểm tra
+# 37. RLS — bug đã biết, ĐÃ FIX (xác nhận live 2026-08-16)
 
-Trong schema hiện tại có một policy của `room_moderation_actions` chứa điều kiện dạng:
+Policy `room_moderation_select` trên `room_moderation_actions` từng chứa điều kiện dạng:
 
 ```sql
 srm.room_id = srm.room_id
 ```
 
-Điều kiện này luôn đúng.
+Điều kiện này luôn đúng, nên không thực sự lọc theo room của dòng `room_moderation_actions` đang được đọc.
 
-Ý định nhiều khả năng phải là so sánh membership room với room của moderation action, ví dụ:
+**Xác nhận lại trên live DB (2026-08-14): bug này vẫn còn tồn tại, chưa được fix.** Policy `room_moderation_select` lúc đó:
 
 ```sql
-srm.room_id = room_moderation_actions.room_id
+(is_room_manager(room_id) OR (EXISTS (
+  SELECT 1 FROM study_room_members srm
+  WHERE srm.room_id = srm.room_id       -- tautology
+    AND srm.user_id = auth.uid()
+    AND srm.left_at IS NULL
+)))
 ```
 
-Owner database cần kiểm tra lại policy này trước khi production.
+Hệ quả thực tế trước khi fix: bất kỳ user nào đang là active member của **bất kỳ** study room nào (không nhất thiết room X) đều pass được điều kiện `EXISTS` này khi đọc `room_moderation_actions` của room X — miễn không phải room manager thì vẫn lọt qua nhánh OR thứ hai một cách sai lệch. Đây là **security issue thật**, không chỉ là lỗi logic thông thường.
 
-Đây là **security issue tiềm năng**, không chỉ là lỗi logic thông thường.
+Chưa nằm trong scope của migration 004 (chỉ đụng tới `messages`/`channels`/`conversations`), nên được tách thành migration riêng: `007_fix_room_moderation_select_policy.sql` (`ALTER POLICY`, sửa `srm.room_id = srm.room_id` thành `srm.room_id = room_moderation_actions.room_id`, không đổi gì khác của policy).
+
+**Đã áp dụng live và verify (2026-08-16)** — `007_verify.sql` xác nhận: policy vẫn tồn tại, `qual` không còn chứa tautology, có chứa `srm.room_id = room_moderation_actions.room_id`, RLS vẫn bật trên `room_moderation_actions`, `is_room_manager()` không bị đụng tới. Từ nay policy chỉ cho phép đọc `room_moderation_actions` của room X nếu là room manager (host/moderator) của room X **hoặc** active member của **chính room X đó** — không còn rò rỉ sang room khác.
+
+## can_access_channel() — bug đã biết, ĐÃ FIX (xác nhận live 2026-08-14)
+
+Tương tự, `can_access_channel()` có một bug khác (không liên quan tới bug trên): nhánh private channel không re-check `group_members.status = 'active'`, nên banned/left member với `channel_members` row còn sót lại vẫn đọc được private channel. Fix đã soạn ở `002_fix_can_access_channel_active_membership.sql` và được gộp lại (idempotent) trong `004_refactor_chat_to_conversations.sql` § 7. **Đã xác nhận live**: đọc lại `pg_get_functiondef` của `can_access_channel()` sau khi 004 chạy, `public.is_group_member(c.group_id, p_user_id)` giờ là điều kiện `AND` bắt buộc (không còn nằm trong nhánh `OR` của riêng private channel) — bug đã được đóng.
+
+## RLS mới cho Conversation (§ 12–15)
+
+`conversations`/`conversation_members`/`messages` (bản mới) dùng chung một entry point:
+
+```text
+can_access_conversation(conversation_id)
+```
+
+Hàm này (và 2 hàm con `can_access_room_conversation`, `is_conversation_member`) **chỉ nhận resource id, tự đọc `auth.uid()` nội bộ** — không nhận `p_user_id` tùy ý như 3 hàm cũ (`can_access_channel`, `is_group_member`, `is_group_manager`), để tránh việc một client bất kỳ dùng RPC probe quyền truy cập hộ người dùng khác. Chi tiết xem comment trong `004_refactor_chat_to_conversations.sql`.
 
 ---
 
-# 34. Quy tắc tránh duplicate data
+# 38. Quy tắc tránh duplicate data
 
 Các bảng association đã có unique constraint:
 
@@ -1395,6 +1646,14 @@ UNIQUE(channel_id, user_id)
 
 study_room_members:
 UNIQUE(room_id, user_id)
+
+conversation_members:
+UNIQUE(conversation_id, user_id)
+
+conversations (chỉ khi type = direct, migration 006):
+UNIQUE(direct_user_min_id, direct_user_max_id) WHERE type = 'direct'
+-- đảm bảo 1 cặp user chỉ có tối đa 1 conversation type=direct, kể cả khi
+-- request A→B và B→A tới gần như đồng thời — xem § 15
 
 post_likes:
 UNIQUE(post_id, user_id)
@@ -1416,7 +1675,7 @@ thay vì tạo duplicate record.
 
 ---
 
-# 35. Quy ước timestamp
+# 39. Quy ước timestamp
 
 Các timestamp nên dùng:
 
@@ -1436,7 +1695,7 @@ Database có thể lưu UTC và frontend convert theo timezone người dùng.
 
 ---
 
-# 36. File Storage Architecture
+# 40. File Storage Architecture
 
 Khuyến nghị:
 
@@ -1463,7 +1722,7 @@ không lưu binary file trực tiếp.
 
 ---
 
-# 37. MVP Scope
+# 41. MVP Scope
 
 Các chức năng cần ưu tiên:
 
@@ -1516,7 +1775,7 @@ Các chức năng cần ưu tiên:
 
 ---
 
-# 38. Các điểm cần thống nhất giữa Dev
+# 42. Các điểm cần thống nhất giữa Dev
 
 Trước khi triển khai sâu, team cần thống nhất:
 
@@ -1556,7 +1815,7 @@ Trước khi triển khai sâu, team cần thống nhất:
 
 ---
 
-# 39. Kết luận
+# 43. Kết luận
 
 Schema hiện tại phù hợp với kiến trúc ứng dụng:
 
@@ -1602,7 +1861,7 @@ luôn đồng bộ.
 
 ---
 
-# 40. Danh sách bảng hiện tại
+# 44. Danh sách bảng hiện tại
 
 ```text
 1. profiles
@@ -1622,13 +1881,17 @@ luôn đồng bộ.
 15. comments
 16. comment_likes
 17. notifications
+18. conversations              -- migration 004, đã live — xem § 12; 2 cột direct_user_min_id/max_id thêm bởi migration 006 — xem § 14
+19. conversation_members       -- migration 004, đã live — xem § 12
 ```
 
 Tổng cộng:
 
 ```text
-17 tables
+19 tables
 ```
+
+`messages.channel_id` đã bị migration 005 xóa hẳn khỏi schema (contract phase đã chạy live — xem § 12); `messages.conversation_id` là FK duy nhất còn lại.
 
 Ngoài ra database sử dụng các enum domain như:
 
@@ -1640,9 +1903,11 @@ study_room_status
 study_room_member_role
 moderation_action
 notification_type
+conversation_type              -- migration 004, đã live — xem § 13
 ```
 
 ---
 
-**Document status:** Draft technical specification  
+**Document status:** Draft technical specification, đã cập nhật theo migration chat → conversation + Direct Message (004, 005, 006 đều đã áp dụng live — xem § 12–15)
 **Purpose:** Shared understanding between Backend / Frontend / Database developers
+**Last verified against live Supabase project:** 2026-08-15, sau khi migration 006 chạy (`006_verify.sql` — chi tiết query xem `docs/db/migrations/006_preflight.sql` / `006_verify.sql`; 004/005 đã verify trước đó, xem `004_verify.sql`/`005_verify.sql`)

@@ -25,7 +25,7 @@ export function StudyRooms() {
             </div>
 
             {/* Grid Section */}
-            <div style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 24}}>
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 24}}>
                 
                 {/* Card 1 */}
                 <div style={{background: 'white', borderRadius: 8, outline: '1px #E2E8F0 solid', outlineOffset: '-1px', display: 'flex', flexDirection: 'column', overflow: 'hidden'}}>

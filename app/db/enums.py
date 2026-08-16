@@ -7,6 +7,12 @@ class ChannelType(str, enum.Enum):
     TEXT = "text"
 
 
+class ConversationType(str, enum.Enum):
+    CHANNEL = "channel"
+    ROOM = "room"
+    DIRECT = "direct"
+
+
 class GroupMemberRole(str, enum.Enum):
     OWNER = "owner"
     MODERATOR = "moderator"
