@@ -19,7 +19,8 @@
 
 html, body {
   margin: 0;
-  display: flex;
+  padding: 0;
+  width: 100%;
   min-width: 320px;
   min-height: 100vh;
   color: #0B1C30;
@@ -34,6 +35,7 @@ html::-webkit-scrollbar, body::-webkit-scrollbar {
 
 #root {
   width: 100%;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
 }

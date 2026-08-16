@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
     Hash, 
@@ -10,28 +10,31 @@ import {
     Settings, 
     Send, 
     UserPlus, 
-    MoreVertical
+    MoreVertical,
+    ChevronDown,
+    Shield,
+    Globe,
+    Lock,
+    LogOut,
+    Users
 } from 'lucide-react';
 
 export function StudyGroupDetail() {
   const navigate = useNavigate();
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
 
   // Dynamic States
   const [activeChannel, setActiveChannel] = useState('thao-luan-chung');
   const [chatInput, setChatInput] = useState('');
   const [mainView, setMainView] = useState<'chat' | 'rooms'>('chat');
 
-  // Mock data for multiple live rooms
-  const rooms = [
-    { id: '101', name: 'Phòng 101', isLive: true, members: 6, subject: 'Cơ học lượng tử' },
-    { id: '103', name: 'Phòng 103', isLive: true, members: 3, subject: 'Giải bài tập nhóm' },
-    { id: '104', name: 'Phòng 104', isLive: true, members: 8, subject: 'Ôn tập giữa kỳ' },
-    { id: '105', name: 'Phòng 105', isLive: true, members: 15, subject: 'Thảo luận tự do' },
-    { id: '106', name: 'Phòng 106', isLive: true, members: 2, subject: 'Hỏi đáp bài tập' },
-    { id: '102', name: 'Phòng 102', isLive: false, members: 12, subject: '' }
-  ];
-
-  const liveRooms = rooms.filter(r => r.isLive);
+  // Group Settings & Dropdown Menu States
+  const [showGroupMenu, setShowGroupMenu] = useState(false);
+  const [isPublic, setIsPublic] = useState(true);
+  const [ownerNote, setOwnerNote] = useState('📌 Nhắc nhở từ Thầy Hoàng: Đọc slide Bài 4 trước 15h hôm nay!');
+  const [isEditingNote, setIsEditingNote] = useState(false);
+  const [newNote, setNewNote] = useState(ownerNote);
+  const [userRole, setUserRole] = useState<'HOST' | 'ADMIN' | 'MEMBER'>('HOST');
 
   // Mock data for chat messages across channels
   const [messages, setMessages] = useState<Record<string, any[]>>({
@@ -44,6 +47,23 @@ export function StudyGroupDetail() {
       { id: 1, sender: 'Lan Phương', time: 'Hôm qua lúc 08:00 PM', text: 'Mình vừa upload slide bài giảng tuần trước, mọi người tải về tham khảo nhé!', avatar: 'https://i.pravatar.cc/150?img=9' }
     ]
   });
+
+  // Auto-scroll chat to bottom on new message or channel change
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, activeChannel, mainView]);
+
+  // Mock data for multiple live rooms
+  const rooms = [
+    { id: '101', name: 'Phòng 101', isLive: true, members: 6, subject: 'Cơ học lượng tử' },
+    { id: '103', name: 'Phòng 103', isLive: true, members: 3, subject: 'Giải bài tập nhóm' },
+    { id: '104', name: 'Phòng 104', isLive: true, members: 8, subject: 'Ôn tập giữa kỳ' },
+    { id: '105', name: 'Phòng 105', isLive: true, members: 15, subject: 'Thảo luận tự do' },
+    { id: '106', name: 'Phòng 106', isLive: true, members: 2, subject: 'Hỏi đáp bài tập' },
+    { id: '102', name: 'Phòng 102', isLive: false, members: 12, subject: '' }
+  ];
+
+  const liveRooms = rooms.filter(r => r.isLive);
 
   const handleJoinRoom = (roomId: string) => {
     if (document.documentElement.requestFullscreen) {
@@ -78,27 +98,171 @@ export function StudyGroupDetail() {
   };
 
   return (
-    <div style={{display: 'flex', flexDirection: 'column', flex: 1, width: '100%', overflow: 'hidden'}}>
+    <div style={{display: 'flex', flexDirection: 'column', height: 'calc(100vh - 64px)', width: '100%', overflow: 'hidden'}}>
         {/* Main Content - Discord-like 3-pane layout */}
-        <div style={{display: 'flex', flex: 1, overflow: 'hidden', background: 'white'}}>
+        <div style={{display: 'flex', flex: 1, overflow: 'hidden', background: 'white', width: '100%'}}>
             
             {/* Left Sidebar - Channels & Rooms */}
-            <div style={{width: 280, display: 'flex', flexDirection: 'column', background: '#F8FAFC', borderRight: '1px solid #E2E8F0'}}>
-                {/* Group Info */}
-                <div style={{padding: '20px 16px', borderBottom: '1px solid #E2E8F0', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                    <div>
-                        <div style={{color: '#0B1C30', fontSize: 18, fontFamily: 'Inter', fontWeight: '700', marginBottom: 4}}>Cơ học lượng tử 101</div>
-                        <div style={{color: '#10B981', fontSize: 13, fontFamily: 'Inter', fontWeight: '500', display: 'flex', alignItems: 'center', gap: 6}}>
-                            <div style={{width: 8, height: 8, borderRadius: '50%', background: '#10B981'}}></div>
-                            Trực tiếp • Nhóm học tập
+            <div style={{width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', background: '#F8FAFC', borderRight: '1px solid #E2E8F0'}}>
+                {/* Group Info Header with Discord-style Menu */}
+                <div style={{position: 'relative', borderBottom: '1px solid #E2E8F0'}}>
+                    <div 
+                        onClick={() => setShowGroupMenu(!showGroupMenu)}
+                        style={{
+                            padding: '16px', 
+                            cursor: 'pointer', 
+                            display: 'flex', 
+                            justify: 'space-between', 
+                            alignItems: 'center',
+                            background: showGroupMenu ? '#F1F5F9' : 'transparent',
+                            transition: 'background 0.2s'
+                        }}
+                    >
+                        <div style={{flex: 1, minWidth: 0, paddingRight: 8}}>
+                            <div style={{color: '#0B1C30', fontSize: 16, fontFamily: 'Inter', fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>
+                                Cơ học lượng tử 101
+                            </div>
+                            <div style={{color: '#64748B', fontSize: 12, fontFamily: 'Inter', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6}}>
+                                <span style={{padding: '2px 6px', background: isPublic ? '#DCFCE7' : '#FEF3C7', color: isPublic ? '#15803D' : '#B45309', borderRadius: 4, fontSize: 10, fontWeight: '700'}}>
+                                    {isPublic ? 'Public' : 'Private'}
+                                </span>
+                                <span>• 4 thành viên</span>
+                            </div>
                         </div>
+                        <ChevronDown size={18} color="#64748B" style={{transform: showGroupMenu ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s'}} />
                     </div>
-                    <MoreVertical size={18} color="#64748B" />
+
+                    {/* Discord-style Dropdown Menu */}
+                    {showGroupMenu && (
+                        <div 
+                            style={{
+                                position: 'absolute', 
+                                top: '100%', 
+                                left: 8, 
+                                right: 8, 
+                                zIndex: 50, 
+                                background: 'white', 
+                                borderRadius: 8, 
+                                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)', 
+                                border: '1px solid #E2E8F0', 
+                                padding: '6px', 
+                                marginTop: 4,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 2
+                            }}
+                        >
+                            <div 
+                                onClick={() => { alert('Mở bảng Cài đặt nhóm học'); setShowGroupMenu(false); }}
+                                style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#1E293B', cursor: 'pointer'}}
+                                onMouseOver={e => e.currentTarget.style.background = '#F1F5F9'}
+                                onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                            >
+                                <Settings size={16} color="#475569" /> Cài đặt nhóm
+                            </div>
+
+                            {userRole === 'HOST' && (
+                                <>
+                                    <div 
+                                        onClick={() => { alert('Phân quyền và quản lý danh sách vai trò'); setShowGroupMenu(false); }}
+                                        style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#1E293B', cursor: 'pointer'}}
+                                        onMouseOver={e => e.currentTarget.style.background = '#F1F5F9'}
+                                        onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                        <Shield size={16} color="#475569" /> Phân quyền & Vai trò
+                                    </div>
+
+                                    <div 
+                                        onClick={() => { setIsPublic(!isPublic); setShowGroupMenu(false); }}
+                                        style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#1E293B', cursor: 'pointer'}}
+                                        onMouseOver={e => e.currentTarget.style.background = '#F1F5F9'}
+                                        onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                        {isPublic ? <Lock size={16} color="#475569" /> : <Globe size={16} color="#475569" />} 
+                                        {isPublic ? 'Chuyển sang Riêng tư' : 'Chuyển sang Công khai'}
+                                    </div>
+                                </>
+                            )}
+
+                            <div 
+                                onClick={() => { alert('Đã sao chép liên kết mời tham gia nhóm học!'); setShowGroupMenu(false); }}
+                                style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#1E293B', cursor: 'pointer'}}
+                                onMouseOver={e => e.currentTarget.style.background = '#F1F5F9'}
+                                onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                            >
+                                <UserPlus size={16} color="#475569" /> Mời thêm người
+                            </div>
+
+                            <div style={{height: 1, background: '#E2E8F0', margin: '4px 0'}} />
+
+                            <div 
+                                onClick={() => { navigate('/groups'); }}
+                                style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#DC2626', cursor: 'pointer'}}
+                                onMouseOver={e => e.currentTarget.style.background = '#FEF2F2'}
+                                onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                            >
+                                <LogOut size={16} color="#DC2626" /> Rời nhóm học
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Owner Note / Announcement Banner */}
+                <div style={{padding: '10px 14px', background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', fontSize: 12, color: '#475569', lineHeight: '1.4'}}>
+                    <div style={{fontWeight: '700', marginBottom: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#1E293B'}}>
+                        <span>Ghi chú</span>
+                        {userRole === 'HOST' && (
+                            <span onClick={(e) => { e.stopPropagation(); setIsEditingNote(!isEditingNote); }} style={{fontSize: 10, color: '#2563EB', textDecoration: 'underline', cursor: 'pointer'}}>
+                                {isEditingNote ? 'Hủy' : 'Sửa'}
+                            </span>
+                        )}
+                    </div>
+                    {isEditingNote ? (
+                        <div style={{marginTop: 4, display: 'flex', flexDirection: 'column', gap: 6}}>
+                            <input 
+                                type="text" 
+                                value={newNote} 
+                                onChange={e => setNewNote(e.target.value)}
+                                style={{padding: '4px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #CBD5E1', outline: 'none'}}
+                            />
+                            <button 
+                                onClick={() => { setOwnerNote(newNote); setIsEditingNote(false); }}
+                                style={{padding: '4px 8px', background: '#0F172A', color: 'white', border: 'none', borderRadius: 4, fontSize: 11, fontWeight: '600', cursor: 'pointer', alignSelf: 'flex-end'}}
+                            >
+                                Lưu
+                            </button>
+                        </div>
+                    ) : (
+                        <div>{ownerNote}</div>
+                    )}
                 </div>
 
                 {/* Scrollable Channels List */}
                 <div style={{flex: 1, overflowY: 'auto', padding: '16px 8px'}}>
                     
+                    {/* Text Channels */}
+                    <div style={{marginBottom: 24}}>
+                        <div style={{color: '#64748B', fontSize: 12, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase', marginBottom: 8, paddingLeft: 8}}>Kênh Chat</div>
+                        <div style={{display: 'flex', flexDirection: 'column', gap: 2}}>
+                            <div 
+                                onClick={() => { setActiveChannel('thao-luan-chung'); setMainView('chat'); }}
+                                style={{padding: '8px 12px', background: activeChannel === 'thao-luan-chung' && mainView === 'chat' ? '#E2E8F0' : 'transparent', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8, color: activeChannel === 'thao-luan-chung' && mainView === 'chat' ? '#0F172A' : '#475569', fontWeight: activeChannel === 'thao-luan-chung' && mainView === 'chat' ? '600' : '500', cursor: 'pointer'}}
+                                onMouseOver={e => (activeChannel !== 'thao-luan-chung' || mainView !== 'chat') && (e.currentTarget.style.background = '#F1F5F9')} 
+                                onMouseOut={e => (activeChannel !== 'thao-luan-chung' || mainView !== 'chat') && (e.currentTarget.style.background = 'transparent')}
+                            >
+                                <Hash size={18} color={activeChannel === 'thao-luan-chung' && mainView === 'chat' ? '#64748B' : '#94A3B8'} /> thao-luan-chung
+                            </div>
+                            <div 
+                                onClick={() => { setActiveChannel('chia-se-tai-lieu'); setMainView('chat'); }}
+                                style={{padding: '8px 12px', background: activeChannel === 'chia-se-tai-lieu' && mainView === 'chat' ? '#E2E8F0' : 'transparent', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8, color: activeChannel === 'chia-se-tai-lieu' && mainView === 'chat' ? '#0F172A' : '#475569', fontWeight: activeChannel === 'chia-se-tai-lieu' && mainView === 'chat' ? '600' : '500', cursor: 'pointer'}}
+                                onMouseOver={e => (activeChannel !== 'chia-se-tai-lieu' || mainView !== 'chat') && (e.currentTarget.style.background = '#F1F5F9')} 
+                                onMouseOut={e => (activeChannel !== 'chia-se-tai-lieu' || mainView !== 'chat') && (e.currentTarget.style.background = 'transparent')}
+                            >
+                                <Hash size={18} color={activeChannel === 'chia-se-tai-lieu' ? '#64748B' : '#94A3B8'} /> chia-se-tai-lieu
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Voice / Video Rooms */}
                     <div style={{marginBottom: 24}}>
                         <div style={{color: '#64748B', fontSize: 12, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase', marginBottom: 8, paddingLeft: 8}}>Phòng học đang Live</div>
@@ -144,29 +308,6 @@ export function StudyGroupDetail() {
                         </div>
                     </div>
 
-                    {/* Text Channels */}
-                    <div style={{marginBottom: 24}}>
-                        <div style={{color: '#64748B', fontSize: 12, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase', marginBottom: 8, paddingLeft: 8}}>Kênh Chat</div>
-                        <div style={{display: 'flex', flexDirection: 'column', gap: 2}}>
-                            <div 
-                                onClick={() => { setActiveChannel('thao-luan-chung'); setMainView('chat'); }}
-                                style={{padding: '8px 12px', background: activeChannel === 'thao-luan-chung' && mainView === 'chat' ? '#E2E8F0' : 'transparent', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8, color: activeChannel === 'thao-luan-chung' && mainView === 'chat' ? '#0F172A' : '#475569', fontWeight: activeChannel === 'thao-luan-chung' && mainView === 'chat' ? '600' : '500', cursor: 'pointer'}}
-                                onMouseOver={e => (activeChannel !== 'thao-luan-chung' || mainView !== 'chat') && (e.currentTarget.style.background = '#F1F5F9')} 
-                                onMouseOut={e => (activeChannel !== 'thao-luan-chung' || mainView !== 'chat') && (e.currentTarget.style.background = 'transparent')}
-                            >
-                                <Hash size={18} color={activeChannel === 'thao-luan-chung' && mainView === 'chat' ? '#64748B' : '#94A3B8'} /> thao-luan-chung
-                            </div>
-                            <div 
-                                onClick={() => { setActiveChannel('chia-se-tai-lieu'); setMainView('chat'); }}
-                                style={{padding: '8px 12px', background: activeChannel === 'chia-se-tai-lieu' && mainView === 'chat' ? '#E2E8F0' : 'transparent', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8, color: activeChannel === 'chia-se-tai-lieu' && mainView === 'chat' ? '#0F172A' : '#475569', fontWeight: activeChannel === 'chia-se-tai-lieu' && mainView === 'chat' ? '600' : '500', cursor: 'pointer'}}
-                                onMouseOver={e => (activeChannel !== 'chia-se-tai-lieu' || mainView !== 'chat') && (e.currentTarget.style.background = '#F1F5F9')} 
-                                onMouseOut={e => (activeChannel !== 'chia-se-tai-lieu' || mainView !== 'chat') && (e.currentTarget.style.background = 'transparent')}
-                            >
-                                <Hash size={18} color={activeChannel === 'chia-se-tai-lieu' ? '#64748B' : '#94A3B8'} /> chia-se-tai-lieu
-                            </div>
-                        </div>
-                    </div>
-
                     {/* Resources */}
                     <div>
                         <div style={{color: '#64748B', fontSize: 12, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase', marginBottom: 8, paddingLeft: 8}}>Tài liệu đính kèm</div>
@@ -209,7 +350,7 @@ export function StudyGroupDetail() {
 
             {/* Center - Main Area */}
             {mainView === 'chat' ? (
-                <div style={{flex: 1, display: 'flex', flexDirection: 'column', background: 'white'}}>
+                <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: 'white'}}>
                     
                     {/* Chat Header */}
                     <div style={{height: 60, padding: '0 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
@@ -248,6 +389,7 @@ export function StudyGroupDetail() {
                                 </div>
                             </div>
                         ))}
+                        <div ref={chatEndRef} />
                     </div>
 
                     {/* Chat Input */}
@@ -268,7 +410,7 @@ export function StudyGroupDetail() {
                     </div>
                 </div>
             ) : (
-                <div style={{flex: 1, display: 'flex', flexDirection: 'column', background: '#F8FAFC'}}>
+                <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: '#F8FAFC'}}>
                     <div style={{height: 60, padding: '0 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', color: '#0F172A', fontSize: 18, fontWeight: '700', background: 'white'}}>
                         Danh sách Phòng học Live ({liveRooms.length})
                     </div>
@@ -302,12 +444,13 @@ export function StudyGroupDetail() {
             )}
 
             {/* Right Sidebar - Members */}
-            <div style={{width: 280, display: 'flex', flexDirection: 'column', background: '#F8FAFC', borderLeft: '1px solid #E2E8F0'}}>
+            <div style={{width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', background: '#F8FAFC', borderLeft: '1px solid #E2E8F0'}}>
                 
-                {/* Tabs */}
-                <div style={{display: 'flex', padding: '16px 16px 0 16px', gap: 8, borderBottom: '1px solid #E2E8F0'}}>
-                    <div style={{flex: 1, textAlign: 'center', padding: '8px 0', borderBottom: '2px solid #00236F', color: '#00236F', fontWeight: '600', fontSize: 14, cursor: 'pointer'}}>Thành viên (4)</div>
-                    <div style={{flex: 1, textAlign: 'center', padding: '8px 0', color: '#64748B', fontWeight: '500', fontSize: 14, cursor: 'pointer'}}>Ghim</div>
+                {/* Header */}
+                <div style={{padding: '16px 20px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white'}}>
+                    <div style={{color: '#0F172A', fontWeight: '700', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%'}}>
+                        <Users size={18} color="#00236F" /> Thành viên (4)
+                    </div>
                 </div>
 
                 {/* Members List */}
