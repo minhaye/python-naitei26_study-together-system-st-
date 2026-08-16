@@ -44,3 +44,6 @@ pnpm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# local file
+my_local_files/
