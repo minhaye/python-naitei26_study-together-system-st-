@@ -2,6 +2,8 @@
 
 Reconstructed from repository evidence (git history, code, tests, migrations, and docs) as of commit `1ee6910` (2026-08-16, `master`). This file is the source of truth for manually creating GitHub Project items and Issues — it is not itself a GitHub artifact.
 
+**MVP-completeness audit (2026-08-16, against `5e3d732`):** no application code changed between `1ee6910` and `5e3d732` (only this file, `README.md`, `.gitignore`, and `dev.py` were touched in between), so every Done/Ready/Backlog finding below remains accurate. This pass added tasks for end-to-end gaps evidenced directly against the current code and `docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` (Resource file upload/download, Profile/Account-Settings frontend integration, Resources frontend integration, Notifications frontend integration), and expanded five existing tasks' Scope/Acceptance Criteria where completing them exactly as originally written would still have left a feature end-to-end incomplete or a security question unresolved (Group self-join, Study Room moderation-action wiring, the `POST /notifications` public-endpoint question, Realtime security-check coverage, and the Resource signed-upload cross-reference). See the individual tasks for details.
+
 ## Summary
 
 ### Done
@@ -41,12 +43,16 @@ Reconstructed from repository evidence (git history, code, tests, migrations, an
 - Secure Resource authorization
 - Secure Profile authorization
 - Secure Notification authorization
+- Implement Resource file upload/download with Supabase Storage
 - Set up frontend API client and backend CORS
 - Integrate Supabase Auth into frontend
+- Integrate Profile / Account Settings API into frontend
 - Integrate Study Group & Channel APIs into frontend
 - Integrate Study Room APIs into frontend
+- Integrate Resources into frontend
 - Integrate Forum APIs into frontend
 - Integrate messaging with backend and Supabase Realtime
+- Integrate Notifications into frontend
 - Fix broken links to deleted integration docs
 
 ### Backlog
@@ -1029,8 +1035,9 @@ Every rule below is stated as a concrete, citable decision rather than left open
 - `PUT/DELETE /groups/{id}` (edit group info / delete group): **owner-only**. Spec §6.1 lists "Sửa thông tin group" ("edit group info") and "Xóa group" ("delete group") explicitly under Owner's capabilities; §6.2's parallel Moderator capability list omits both — the two lists are presented side by side in the same section specifically to delineate what each role can/can't do, so the omission is meaningful, not an oversight.
 - `PUT /groups/{id}/members/{user_id}/role` (Member ↔ Moderator role change): **owner-only**. Spec §6.2 states this as an explicit recommendation: "Owner: có quyền thay đổi role Member <-> Moderator. Moderator: không có quyền thay đổi role" ("Owner may change role Member↔Moderator. Moderator has no role-change permission").
 - `POST/PUT/DELETE /channels*` (create/update/delete a channel): **owner OR moderator**. Spec §6.1 and §6.2 both explicitly list "Quản lý channel" ("manage channels") — this is one of the few capabilities granted to both roles.
-- `POST /groups/{id}/members` (add a member) and `PUT /groups/{id}/members/{user_id}/status` (ban/reactivate/remove a member): **owner OR moderator**, per §6.2's "Quản lý thành viên" ("manage members") — **except** see Risks below for a narrower, deliberately-conservative interim rule on the ban/kick sub-case.
+- `POST /groups/{id}/members` (adding **another** user directly, e.g. a private-group invite) and `PUT /groups/{id}/members/{user_id}/status` (ban/reactivate/remove a member): **owner OR moderator**, per §6.2's "Quản lý thành viên" ("manage members") — **except** see Risks below for a narrower, deliberately-conservative interim rule on the ban/kick sub-case, and **except** the public-group self-join case immediately below, which needs no owner/moderator authority at all.
 - A user may always self-serve `leave` (their own membership `status` → `left`) regardless of role — this needs no citation; it is definitionally always safe to let someone remove themselves.
+- A user may always self-serve **join**: `POST /groups/{id}/members` succeeds with no owner/moderator authority when the target group has `is_public = true` (the schema default), provided `user_id` is forced to the authenticated caller and `role` is forced to `member` (never client-supplied). This is not a guess — `Group.is_public`/`Group.invite_code` (`app/groups/entities/group_entity.py`) and `GroupsService.list_public()` (already the default behind `GET /groups`'s `public_only=true`) only make sense if a self-service join path exists, and spec §1.1 lists "Tham gia nhóm" ("join a group") as a first-class user action alongside "Tạo nhóm học" ("create a group"). Joining a **private** (`is_public = false`) group via `invite_code` is explicitly left open by spec §42 ("Private group join bằng invite code hay phải approve?") — do not guess at that flow here; until it's decided, joining a private group continues to require an owner/moderator to add the member directly.
 - Reuse the already-existing `is_active_group_member`/`is_group_manager` helpers in `app/core/permissions.py` rather than duplicating logic.
 
 **Out of Scope**
@@ -1044,6 +1051,7 @@ Every rule below is stated as a concrete, citable decision rather than left open
 - [ ] `groups.owner_id` is always the authenticated caller on creation; the DTO's `owner_id`/channel's `created_by` fields are ignored as an identity source in favor of the token.
 - [ ] An owner or moderator can create/update/delete channels within their group; a non-member/non-manager cannot.
 - [ ] Banning/reactivating a member requires owner authority (see Risks for why this is deliberately stricter than "owner or moderator" pending a product decision).
+- [ ] A user can self-join a group where `is_public = true` via `POST /groups/{id}/members` with no owner/moderator authority, always as `role = member` and always for themselves (never a client-supplied `user_id`); joining a private group still requires owner/moderator authority.
 - [ ] Full endpoint test coverage exists, matching the depth of `tests/test_study_rooms.py`.
 
 **Dependencies**
@@ -1061,6 +1069,9 @@ Every rule below is stated as a concrete, citable decision rather than left open
 - `app/channels/dto/channel_dto.py`: `ChannelCreate.created_by` is likewise client-supplied and unchecked.
 - Direct precedent: `1250d29` fixed the identical pattern (`StudyRoomCreate.host_id`) in Study Rooms one commit before this gap was identified.
 - `docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` §6.1/§6.2 role capability lists and §42's open-questions checklist, both quoted above, are the basis for every rule in Scope.
+- `app/groups/entities/group_entity.py`: `Group.is_public` (default `true`) and `Group.invite_code` columns, plus `GroupsService.list_public()` (`app/groups/services/group_service.py`, already wired to `GET /groups`'s default `public_only=true` in `group_router.py`) — confirm a self-service public-group-join path is an intended, partially-built feature, not an invented one.
+- `docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` §1.1 lists "Tham gia nhóm" as a core user action; the Group fields table documents `invite_code`/`is_public` explicitly ("Group công khai hay riêng tư" — "public or private group").
+- `frontend/src/pages/StudyGroup/StudyGroups.tsx` renders a "Tham gia" (Join) button on every group card today with no `onClick` handler — confirming the frontend already assumes a self-join action exists to wire up (see "Integrate Study Group & Channel APIs into frontend").
 
 **Testing**
 No `tests/test_groups.py` or `tests/test_channels.py` exist today (confirmed absent from `tests/`); this task should add both, at a similar depth to `tests/test_study_rooms.py` (which grew to 722 lines covering exactly this class of check).
@@ -1068,6 +1079,7 @@ No `tests/test_groups.py` or `tests/test_channels.py` exist today (confirmed abs
 **Risks / Edge Cases**
 - **Unresolved by spec — do not guess beyond the conservative default below.** Spec §42 explicitly lists three group-related questions the team has not yet agreed on: "Moderator có được kick member không?" ("can a moderator kick a member?"), "Moderator có được ban member không?" ("...ban a member?"), and "Moderator có được promote moderator khác không?" ("...promote another moderator?"). Because a real `moderator` role already exists in the schema (`GroupMemberRole.MODERATOR`), this is a genuine, currently-undecided product/security question — not something derivable from evidence. This task's Acceptance Criteria therefore deliberately restrict member-status changes (ban/kick) to **owner-only** as the strictest safe default, not as the final word: it closes the severe, unambiguous bug (today *anyone*, including non-members, can do this) without pre-empting the team's eventual decision on whether moderators should also get this power. Loosening it to include moderators is a follow-up, not a blocker for this task.
 - Similarly, spec §42 asks "Ai có quyền add user vào private channel?" ("who may add a user to a private channel?") without an answer. This task's private-channel-membership rule (owner/moderator, per the general "Quản lý channel" grant) is the narrowest viable reading, not a confirmed final policy — flag for revisit once the team answers §42.
+- The self-join rule above is deliberately scoped to **public** groups only; joining a private group by `invite_code` is a genuinely open product question (spec §42) and is not resolved by this task — do not extend self-join to private groups without a separate decision on how `invite_code` should be validated/consumed.
 - Existing seed/test data created via the currently-open endpoints (if any live data exists) may have `owner_id`/`created_by` values that don't correspond to real memberships; verify before tightening.
 
 **Notes**
@@ -1144,7 +1156,7 @@ Same bug class as the Study Room fix. Resource folders/files are group-scoped (p
 
 **Out of Scope**
 - Whether a group **owner or moderator** may also manage (update/delete) resources uploaded by *other* members. Spec §6.1 lists "Quản lý tài liệu" ("manage materials") under Owner's capabilities, but the phrase is generic enough (could mean "organizes the resource area" as much as "can delete anyone's individual upload") that treating it as a firm citation for a specific access-control rule would be over-reading it — unlike the group-update/delete or channel-management rules in "Secure Group & Channel authorization", where the owner/moderator capability lists are unambiguous and directly on-point. Leave cross-member resource management out of this task; revisit once the product clarifies what "manage materials" is meant to cover.
-- Actual signed-upload-URL flow for resources (resources currently accept a plain `file_path` string with no Storage-existence check, unlike `app/attachments/`) — no repository evidence this is planned; not proposed as a task here.
+- Actual signed-upload-URL flow for resources (resources currently accept a plain `file_path` string with no Storage-existence check, unlike `app/attachments/`) — tracked separately as "Implement Resource file upload/download with Supabase Storage" (Ready), since it's independent, larger-scoped work (a new Storage bucket + signed-URL service) than an authorization fix. This task should land first or alongside it so the new upload flow can reuse whatever caller-identity/ownership checks land here for path namespacing.
 
 **Acceptance Criteria**
 - [ ] A non-member of a group cannot create/read/update/delete that group's resource folders/files.
@@ -1237,7 +1249,7 @@ Same bug class as the other domains, here manifesting mainly as an information-d
 - `get_notification`/`mark_read`/`delete_notification` verify the notification's `user_id` matches the caller.
 
 **Out of Scope**
-- `POST /notifications` (create) authorization. This is a genuinely open question, not a restatement of the obvious: unlike every other domain in this catalog, a notification's whole purpose is that `actor_id` (who did something) and `user_id` (who is notified) are usually two *different* people — so the "caller must match the identity field" rule that resolves every other task in this catalog does not straightforwardly apply here, and no repository evidence (spec or code) says who should be allowed to create a notification on someone else's behalf. This will likely resolve naturally once "Wire up automatic notification creation for domain events" (Backlog) lands and clarifies whether `POST /notifications` needs to remain a public, directly-callable endpoint at all, versus becoming an internal-only call. Do not guess at this rule here.
+- `POST /notifications` (create) authorization. This is a genuinely open question, not a restatement of the obvious: unlike every other domain in this catalog, a notification's whole purpose is that `actor_id` (who did something) and `user_id` (who is notified) are usually two *different* people — so the "caller must match the identity field" rule that resolves every other task in this catalog does not straightforwardly apply here, and no repository evidence (spec or code) says who should be allowed to create a notification on someone else's behalf. **This is now concretely scoped, not just deferred:** "Wire up automatic notification creation for domain events" (Backlog) has been expanded to explicitly resolve `POST /notifications`'s fate (remove it, restrict it, or make it internal-only) once domain services create notifications internally — see that task's Scope. Do not guess at this rule here.
 - Automatic notification creation from real domain events — separate task below.
 
 **Acceptance Criteria**
@@ -1259,6 +1271,62 @@ No `tests/test_notifications.py` exists; add one covering per-user scoping.
 
 **Risks / Edge Cases**
 - `POST /notifications` is left exactly as it is today (unauthenticated) by this task, since securing it requires a policy decision this task deliberately does not make (see Out of Scope) — do not read the read/mark-read/delete fixes here as having also addressed creation.
+
+---
+
+### Implement Resource file upload/download with Supabase Storage
+
+**Status:** Ready
+**Type:** Feature
+**Priority:** High
+**Estimate:** Needs review
+**Suggested GitHub item:** GitHub Issue
+
+**Description**
+Add a real file-storage flow for the Resources domain: a private `group-resources` Supabase Storage bucket, signed upload/download URLs analogous to `app/attachments/`, and server-side verification that a `Resource.file_path` a client claims to have created actually exists in Storage. Today `ResourceCreate.file_path`/`file_type`/`file_size` are plain client-supplied strings/numbers with no relationship to any real object.
+
+**Motivation**
+`docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` §41 (MVP Scope) explicitly lists "Upload" and "Download" as required Resources functionality, alongside Folder/Delete (already implemented) — this is spec'd MVP scope, not a nice-to-have, and it is currently entirely missing. §40 (File Storage Architecture) explicitly recommends a `group-resources` Storage bucket, distinct from the already-implemented `message-attachments` bucket. Without this, "Implement Resource folders & files (metadata CRUD)" only ever produces metadata rows pointing at files that were never verified to exist — Resources cannot be genuinely usable end-to-end no matter how much frontend or authorization work is layered on top of it.
+
+**Scope**
+- Create a private `group-resources` Storage bucket via a new tracked migration (`docs/db/migrations/008_create_group_resources_bucket.sql`), following the exact pattern of `003_create_message_attachments_bucket.sql`.
+- Add a resources storage service with `build_object_path(group_id, folder_id, user_id, file_name)`, `create_signed_upload_url`, `create_signed_download_url`, `object_exists`, `delete_object` — mirroring `app/attachments/services/attachment_service.py`.
+- `POST /resources/files` (or a new `POST /resources/files/upload-url` request step) verifies the referenced object actually exists in the `group-resources` bucket before creating the metadata row (mirrors the `object_exists` gating already used for message attachments).
+- `GET /resources/files/{file_id}/download-url` issuing a short-lived signed download URL, mirroring `GET /messages/{id}/attachment-url`.
+- Deleting a resource file also deletes the underlying Storage object.
+
+**Out of Scope**
+- Frontend wiring of the upload/download UI — see "Integrate Resources into frontend" (separate Ready task).
+- Avatar (`avatars` bucket) or forum-image (`forum-images` bucket) storage — spec §40 lists these as separate future buckets; the avatar bucket is scoped instead under "Integrate Profile / Account Settings API into frontend", and no repository evidence supports a `forum-images` task yet.
+- Resource authorization (group-membership gating, uploader-only update/delete) — covered by "Secure Resource authorization" (Ready); this task should land alongside or after it, since signed-upload issuance needs the caller's verified identity the same way `AttachmentsService.build_object_path` does.
+
+**Acceptance Criteria**
+- [ ] A private `group-resources` bucket exists (migration tracked and applied, matching the `003`/`007` pattern).
+- [ ] A client can request a signed upload URL, upload directly to Storage, and only then create the `Resource` metadata row — the row is rejected if the object doesn't actually exist in Storage.
+- [ ] A client can request a signed, short-lived download URL for an existing resource file.
+- [ ] Deleting a resource file also removes the Storage object.
+- [ ] Test coverage mirrors `tests/test_attachments.py`'s depth for the new signed-URL flow.
+
+**Dependencies**
+"Implement Resource folders & files (metadata CRUD)" (Done); "Secure Resource authorization" (Ready — shares the caller-identity requirement for path namespacing).
+
+**Related Code**
+- `app/resources/routers/resource_router.py`, `app/resources/services/resource_service.py`, `app/resources/dto/resource_dto.py`
+- `app/attachments/services/attachment_service.py` (the pattern to mirror)
+- (new) `docs/db/migrations/008_create_group_resources_bucket.sql` + `_preflight.sql`/`_verify.sql`/`_rollback.sql` companions, matching the `003`/`007` convention
+- `docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` §24, §40, §41
+
+**Evidence**
+- `docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` §41 "Resources" lists `Folder`, `Upload`, `Download`, `Delete` as MVP scope — only `Folder`/`Delete` (as generic metadata CRUD) exist today.
+- §40 "File Storage Architecture" recommends four buckets (`avatars`, `group-resources`, `message-attachments`, `forum-images`); only `message-attachments` exists (`docs/db/migrations/003_create_message_attachments_bucket.sql`) — confirmed via `grep` across `docs/db/migrations/*.sql` for `bucket`, which returns no `group-resources` reference anywhere.
+- `app/resources/dto/resource_dto.py`: `ResourceCreate.file_path`/`file_type`/`file_size` are plain, unvalidated client-supplied fields — no call anywhere in `resource_service.py` to any Storage API (unlike `app/attachments/services/attachment_service.py`, which every message-attachment path goes through).
+- The "Implement Resource folders & files (metadata CRUD)" (Done) task's own Risks section already flags this exact gap: "`ResourceCreate.file_path` is an unvalidated string — nothing confirms the referenced object actually exists in storage, unlike the attachment flow's `object_exists` check."
+
+**Testing**
+No `tests/test_resources.py` exists yet (see "Secure Resource authorization"); this task's signed-URL flow should be covered in the same new test file, at a depth similar to `tests/test_attachments.py`.
+
+**Risks / Edge Cases**
+- Namespacing the object path by `group_id`/`folder_id`/`user_id` (mirroring `build_object_path`) is necessary so "Secure Resource authorization"'s group-membership and uploader-identity checks can be enforced the same structural way attachments already are — sequence this task's path-naming scheme to match whatever "Secure Resource authorization" lands with, to avoid rework.
 
 ---
 
@@ -1365,6 +1433,58 @@ The dead "forgot password" link (see Out of Scope) will remain non-functional af
 
 ---
 
+### Integrate Profile / Account Settings API into frontend
+
+**Status:** Ready
+**Type:** Feature
+**Priority:** Medium
+**Estimate:** Needs review
+**Suggested GitHub item:** GitHub Issue
+
+**Description**
+Wire `AccountSettingsPage` to the real `/profiles/{id}` backend endpoints: load the authenticated user's actual `username`/`display_name`/`avatar_url`/`bio` on mount, and persist edits via `PUT /profiles/{id}` instead of the current local-only `saved` boolean toggle.
+
+**Motivation**
+The backend Profile domain has existed since the very first backend commit and is explicitly listed under Authentication in `docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` §41 MVP Scope ("Login, Register, Profile"). Every other domain with a real backend counterpart has (or, after this catalog's other Ready tasks, will have) a frontend-integration task — Profile is the one exception: neither "Secure Profile authorization" (which only secures the backend) nor "Build mock Account Settings & Goal ('Aim') frontend UI" (Done, explicitly mock) nor any other catalog task wires `AccountSettingsPage` to real data. Without this task, the account settings screen remains permanently non-functional even after every other Ready/Backlog task is completed.
+
+**Scope**
+- On mount, fetch the authenticated user's profile via `GET /profiles/{id}` (using the ID from the real Supabase session established by "Integrate Supabase Auth into frontend") and populate the "Thông tin cá nhân" (personal info) fields from it.
+- "Lưu thay đổi" ("Save changes") calls `PUT /profiles/{id}` with the edited `username`/`display_name`/`bio`, and reflects the backend's success/failure instead of unconditionally setting `saved = true`.
+- Avatar upload ("Thay đổi" button): add a minimal signed-upload flow for a new private `avatars` Storage bucket (mirroring `app/attachments/`'s pattern at a much smaller scope — single bucket, single object per user), so `avatar_url` can be updated to a real uploaded image. This is a small, evidenced backend addition (`docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` §40 explicitly lists `avatars` as one of four intended Storage buckets), not a new product feature.
+
+**Out of Scope**
+- The "Email", "Trường đại học / Tổ chức" (university/organization), "Xác thực hai yếu tố" (2FA), and "Ngôn ngữ" (language) fields currently rendered in `AccountSettingsPage` — none of these have any backing column on `Profile` (`app/profiles/entities/profile_entity.py` has only `id`/`username`/`display_name`/`avatar_url`/`bio`) or anywhere else in the schema, and no spec section proposes adding them. Email specifically belongs to Supabase Auth, not the `profiles` table, and updating it is an Auth operation, not a Profile one. Leave these fields either visually disabled/removed or explicitly marked "not yet supported" — do not fabricate backend support for them in this task.
+- Password change ("Mật khẩu › Thay đổi") — no reset/change-password flow exists anywhere in this catalog's scope (see "Integrate Supabase Auth into frontend"'s Risks re: the dead "forgot password" link); not proposed here either.
+- Deleting one's own account/profile via the UI — `DELETE /profiles/{id}` exists and is secured by "Secure Profile authorization", but no UI control for it exists in `AccountSettingsPage` today and none is evidenced as intended; not proposed here.
+
+**Acceptance Criteria**
+- [ ] `/settings` loads and displays the authenticated user's real `username`/`display_name`/`bio` from `GET /profiles/{id}`, not hard-coded values ("Alex Rivers" etc.).
+- [ ] Editing and saving persists via `PUT /profiles/{id}` and survives a page reload.
+- [ ] Uploading a new avatar image updates `avatar_url` via a real signed-upload flow to the `avatars` bucket and is visible after reload.
+- [ ] Fields with no backend support (email/university/2FA/language) are not silently presented as if they save successfully.
+
+**Dependencies**
+"Integrate Supabase Auth into frontend" (Ready — needs the real session to know which profile to load); "Set up frontend API client and backend CORS" (Ready); "Secure Profile authorization" (Ready — this task should call the self-only-secured version of `PUT /profiles/{id}`, not the currently-open one).
+
+**Related Code**
+- `frontend/src/pages/AccountSettingsPage.tsx`
+- `app/profiles/routers/profile_router.py`, `app/profiles/dto/profile_dto.py`
+- `docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` §40, §41
+
+**Evidence**
+- Reading `frontend/src/pages/AccountSettingsPage.tsx` in full: every field uses `defaultValue`/local `useState`; "Lưu thay đổi" only calls `setSaved(true)`, no network call anywhere in the file.
+- `app/profiles/entities/profile_entity.py`: confirmed schema has no `email`/`university`/`two_factor`/`language` columns — those four rendered fields have no backend counterpart at all.
+- `docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` §41 lists "Profile" as required MVP scope under Authentication; no existing Ready/Backlog task wired it to the frontend prior to this audit.
+- `grep -riE "fetch\(|axios|/profiles" frontend/src` returns no matches — confirmed zero integration today.
+
+**Testing**
+No frontend test runner exists yet; verify manually (load real profile, edit, reload, confirm persistence; upload an avatar, confirm it renders after reload).
+
+**Risks / Edge Cases**
+- If "Secure Profile authorization" hasn't landed yet, this task can still be built and manually tested against the currently-open `PUT /profiles/{id}` — but should be re-verified once that task lands, since the self-only restriction changes what a caller can pass.
+
+---
+
 ### Integrate Study Group & Channel APIs into frontend
 
 **Status:** Ready
@@ -1383,6 +1503,7 @@ The backend Group/Channel domain ("Implement Group & Channel management", Done) 
 - List groups from `GET /groups`.
 - Create a group via `POST /groups`; view group detail via `GET /groups/{id}`.
 - List channels for a group via `GET /channels?group_id=...`.
+- Wire the "Tham gia" (Join) button on `StudyGroups.tsx`'s group cards to the self-join case of `POST /groups/{id}/members` (added to "Secure Group & Channel authorization"'s Scope) for groups where `is_public = true`.
 
 **Out of Scope**
 - Study Room-specific data (separate task: "Integrate Study Room APIs into frontend").
@@ -1393,9 +1514,10 @@ The backend Group/Channel domain ("Implement Group & Channel management", Done) 
 - [ ] `/groups` renders real groups from the backend, not mock data.
 - [ ] `/groups/:id` renders real group details and the real channel list for that group.
 - [ ] Creating a group via the frontend persists via `POST /groups` and is visible on reload.
+- [ ] Clicking "Tham gia" on a public group's card calls the real self-join endpoint and the user's membership is visible on the group detail page afterward.
 
 **Dependencies**
-"Integrate Supabase Auth into frontend"; "Set up frontend API client and backend CORS"; "Implement Group & Channel management (CRUD + membership)" (Done, backend).
+"Integrate Supabase Auth into frontend"; "Set up frontend API client and backend CORS"; "Implement Group & Channel management (CRUD + membership)" (Done, backend); "Secure Group & Channel authorization" (Ready — the public-group self-join rule this task's Join button relies on is defined there).
 
 **Related Code**
 - `frontend/src/pages/StudyGroup/StudyGroups.tsx`, `frontend/src/pages/StudyGroup/StudyGroupDetail.tsx`
@@ -1403,6 +1525,7 @@ The backend Group/Channel domain ("Implement Group & Channel management", Done) 
 
 **Evidence**
 - Reading `frontend/src/pages/StudyGroup/StudyGroups.tsx`/`StudyGroupDetail.tsx`: no network calls; `grep` for `fetch(`/`axios`/`supabase` across `frontend/src` returns no matches anywhere.
+- `frontend/src/pages/StudyGroup/StudyGroups.tsx` renders a "Tham gia" (Join) button on every group card with no `onClick` handler — confirmed via reading the file.
 
 **Testing**
 No frontend test runner exists yet; verify manually against the running backend.
@@ -1430,6 +1553,7 @@ The backend Study Room domain, including its authorization fix ("Implement Study
 - Wire room list/detail/join/leave/start/end to `/study-rooms/*`.
 - Replace `StudyRoom.tsx`'s mock `participants` array with real data from `GET /study-rooms/{id}/members`.
 - Handle the 403s the now-secured backend endpoints correctly return (e.g. only the host can start/end a room) by reflecting that in the UI rather than assuming every action always succeeds.
+- Wire the meeting page's mute/kick/raise-hand controls to `POST /study-rooms/{room_id}/moderation` (action types `mute`/`unmute`/`kick`/`raise_hand`/`lower_hand`) and member role changes to `PUT /study-rooms/{room_id}/members/{user_id}/role`, instead of leaving them as local-only toggle state. Reflect the backend's authority checks in the UI (e.g. a moderator cannot act on the host, per "Secure Study Room authorization", Done).
 
 **Out of Scope**
 - LiveKit video connection itself (separate Backlog task: "Integrate LiveKit video meetings into the Study Room frontend").
@@ -1440,6 +1564,7 @@ The backend Study Room domain, including its authorization fix ("Implement Study
 - [ ] Joining/leaving a room via the frontend calls the real `POST /study-rooms/{id}/join`/`leave` endpoints and updates UI state accordingly.
 - [ ] The meeting page's participant list reflects real `study_room_members` data instead of the hard-coded mock array.
 - [ ] A non-host attempting a host-only action (start/end/update) sees the backend's 403 reflected in the UI, not a silent failure.
+- [ ] Mute/kick/raise-hand controls in the meeting UI call the real moderation endpoint and persist (visible to other members/on reload), not just local component state.
 
 **Dependencies**
 "Integrate Supabase Auth into frontend"; "Set up frontend API client and backend CORS"; "Implement Study Rooms" (Done, backend); "Secure Study Room authorization" (Done, backend — the endpoints this task calls already enforce host-only/participant checks).
@@ -1450,12 +1575,62 @@ The backend Study Room domain, including its authorization fix ("Implement Study
 
 **Evidence**
 - Reading `frontend/src/pages/StudyGroup/StudyRoom.tsx`: `participants` is a hard-coded local array (`useState`); the session timer is a `setInterval` counting up from a fixed seed — confirms mock-only implementation, no backend calls.
+- `app/study_rooms/routers/study_room_router.py` exposes `POST`/`GET /{room_id}/moderation` (fully authorized, per "Secure Study Room authorization", Done) with no frontend caller anywhere in `frontend/src` (confirmed via repo-wide grep) — the meeting UI's mute/raise-hand buttons in `StudyRoom.tsx` are local `useState` toggles only.
 
 **Testing**
-No frontend test runner exists yet; verify manually against the running backend, including a non-host attempting a host-only action.
+No frontend test runner exists yet; verify manually against the running backend, including a non-host attempting a host-only action and a moderator attempting to act on the host.
 
 **Risks / Edge Cases**
 None identified beyond the noted 403-handling requirement.
+
+---
+
+### Integrate Resources into frontend
+
+**Status:** Ready
+**Type:** Feature
+**Priority:** Medium
+**Estimate:** Needs review
+**Suggested GitHub item:** GitHub Issue
+
+**Description**
+Build a real folder/file browser for a group's Resources, replacing the hard-coded "Tài liệu đính kèm" (attached files) list in `StudyGroupDetail.tsx` with data from `GET /resources/folders`/`GET /resources/files`, and wire uploading/downloading through the signed-URL flow added by "Implement Resource file upload/download with Supabase Storage".
+
+**Motivation**
+The Resources domain (folders + files) is Done on the backend and is explicitly listed as core MVP scope (§41), but has no frontend consumer of any kind today — not even a read-only, metadata-only browse view. `StudyGroupDetail.tsx`'s sidebar renders two entirely fake, hard-coded file entries ("Bai_Giang_Chuong_1.pdf", "Ghi_chep_nhom.docx") that are not backed by any state or click handler. Without this task, Resources would remain completely unreachable through normal product usage even after every other catalog task is completed.
+
+**Scope**
+- List a group's folders/files via `GET /resources/folders?group_id=...`/`GET /resources/files?group_id=...`, including subfolder navigation via `GET /resources/folders/{folder_id}/subfolders`.
+- Create a folder via `POST /resources/folders`.
+- Upload a file through the signed-upload-URL flow from "Implement Resource file upload/download with Supabase Storage"; download via the signed-download-URL endpoint.
+- Delete a folder/file the current user created (reflecting "Secure Resource authorization"'s uploader/creator-only rule).
+
+**Out of Scope**
+- The backend signed-URL flow itself — see "Implement Resource file upload/download with Supabase Storage" (this task consumes it, doesn't build it).
+- Cross-member resource management (owner/moderator managing another member's upload) — explicitly out of scope of "Secure Resource authorization" pending a product decision; this task should not build UI for a permission that doesn't exist yet.
+
+**Acceptance Criteria**
+- [ ] A group's real folders/files render in `StudyGroupDetail.tsx` (or an equivalent Resources view), replacing the two hard-coded mock entries.
+- [ ] A user can create a folder, upload a file into it, and download a file they or another member uploaded (subject to group membership).
+- [ ] A user can delete a file/folder they created; attempting to delete another member's file is rejected by the backend and reflected in the UI.
+
+**Dependencies**
+"Implement Resource file upload/download with Supabase Storage" (Ready); "Secure Resource authorization" (Ready); "Integrate Study Group & Channel APIs into frontend" (Ready — needs a real group to scope to); "Integrate Supabase Auth into frontend"; "Set up frontend API client and backend CORS".
+
+**Related Code**
+- `frontend/src/pages/StudyGroup/StudyGroupDetail.tsx`
+- `app/resources/routers/resource_router.py`
+
+**Evidence**
+- Reading `frontend/src/pages/StudyGroup/StudyGroupDetail.tsx`: the "Tài liệu đính kèm" list is two static `<div>` blocks with hard-coded filenames/sizes and no `onClick` handler wired to anything real, no `useState`/props driving it, and no reference anywhere in the file to `/resources`.
+- `grep -riE "resource" frontend/src` confirms the only two hits are this decorative sidebar and an unrelated mock chat message mentioning "tài liệu chương 4" in `StudyGroupDetail.tsx`'s hard-coded messages array.
+- No existing Ready/Backlog task in this catalog mentioned `/resources` prior to this audit.
+
+**Testing**
+No frontend test runner exists yet; verify manually against the running backend (folder create, file upload, download, delete-permission enforcement).
+
+**Risks / Edge Cases**
+None identified beyond the noted dependency sequencing.
 
 ---
 
@@ -1552,6 +1727,57 @@ No frontend test runner exists yet; manual two-browser verification is the reali
 **Risks / Edge Cases**
 - Supabase Realtime requires the frontend to hold its own Supabase client session (from "Integrate Supabase Auth into frontend") with a JWT that Postgres RLS can evaluate directly — per the README, "the frontend connects to Realtime directly with its own Supabase access token." This is a second, independent authorization path from the backend's own checks; both need to keep working.
 - This task is larger than the others in this split (message list + send + realtime + attachments + DM), kept as one unit since chat only becomes useful once all of history, sending, and live updates work together; if it proves too large for one PR in practice, splitting attachments and/or DM initiation into follow-up PRs is a reasonable implementation-time call, not a change to this catalog.
+
+---
+
+### Integrate Notifications into frontend
+
+**Status:** Ready
+**Type:** Feature
+**Priority:** Medium
+**Estimate:** Needs review
+**Suggested GitHub item:** GitHub Issue
+
+**Description**
+Build a real notification UI: a dropdown/panel off the header bell icon showing the authenticated user's notifications (`GET /notifications`), an unread-count badge, mark-as-read (`PUT /notifications/{id}/read`), and navigation to the relevant post/comment/group where applicable.
+
+**Motivation**
+`frontend/src/components/layout/Header.tsx` already renders a `<Bell>` icon next to the settings/avatar controls for logged-in users, but it has no `onClick`, no dropdown, no unread badge, and no state of any kind — a dead control implying a feature that was never built. The backend Notification CRUD ("Implement Notifications backend (CRUD)", Done) has zero frontend consumer today, and no existing Ready/Backlog task proposed building one — "Wire up automatic notification creation for domain events" (Backlog) only makes the backend feed meaningful, it doesn't render it anywhere.
+
+**Scope**
+- Fetch the authenticated user's notifications via `GET /notifications` (once "Secure Notification authorization" scopes it to the caller) with `unread_only` for the badge count.
+- Render a dropdown/panel from the header bell with the notification list (type, actor, relative time, read/unread state).
+- Mark-as-read on open/click via `PUT /notifications/{id}/read`.
+- Where a notification carries a `post_id`/`comment_id`/`group_id`, clicking it navigates to that content (e.g. `/forum/post/:id`, `/groups/:id`).
+
+**Out of Scope**
+- Realtime push delivery of new notifications (e.g. via Supabase Realtime) — spec §42 leaves this as an open, undecided question; this task is poll/fetch-on-open only, not push.
+- Automatic notification creation from domain events — separate Backlog task ("Wire up automatic notification creation for domain events"); this task will initially show a sparse/empty feed until that lands, which is expected and not a defect of this task.
+- Deleting notifications from the UI — `DELETE /notifications/{id}` exists but no UI affordance for it is evidenced as needed for MVP; not proposed here.
+
+**Acceptance Criteria**
+- [ ] The header bell shows an unread-count badge reflecting `GET /notifications?unread_only=true`.
+- [ ] Clicking the bell opens a panel listing the user's real notifications, not a no-op.
+- [ ] Opening/clicking a notification marks it read via the backend and updates the badge.
+- [ ] A notification with a `post_id` navigates to that forum post; one with a `group_id` navigates to that group.
+
+**Dependencies**
+"Secure Notification authorization" (Ready — this task should consume the caller-scoped version of `GET /notifications`, not the currently-open `user_id`-query-param version); "Integrate Supabase Auth into frontend"; "Set up frontend API client and backend CORS". Soft dependency (not blocking): "Wire up automatic notification creation for domain events" (Backlog) — needed for the feed to have realistic content, but this task can be built and tested against manually-created notifications in the meantime.
+
+**Related Code**
+- `frontend/src/components/layout/Header.tsx` (the existing, currently inert `<Bell>` icon)
+- `app/notifications/routers/notification_router.py`
+
+**Evidence**
+- Reading `frontend/src/components/layout/Header.tsx`: `<Bell size={20} color="#444651" />` is rendered inside a `<div style={{cursor: 'pointer'}}>` with no `onClick` prop and no surrounding state — confirmed inert.
+- `grep -riE "notif" frontend/src` returns no matches anywhere in the frontend — confirmed zero notification UI, hook, or API client exists.
+- No existing Ready/Backlog task in this catalog proposed frontend notification UI prior to this audit.
+
+**Testing**
+No frontend test runner exists yet; verify manually by creating notifications via `POST /notifications` (or once "Wire up automatic notification creation for domain events" lands, via real actions) and confirming they appear/mark-read correctly.
+
+**Risks / Edge Cases**
+- Until "Wire up automatic notification creation for domain events" lands, the panel will mostly be empty in normal usage — don't mistake that for a bug in this task once built.
 
 ---
 
@@ -1662,13 +1888,14 @@ None identified beyond the sequencing dependency noted above.
 `NotificationType` already enumerates `post_like`, `post_comment`, `comment_reply`, `group_invite`, `group_role_changed`, `room_kicked`, and `mention`, and the DB spec (§34, "create_comment()") explicitly describes creating a `comment_reply` notification for the parent comment's author — but nothing in `forum_service.py`, `group_service.py`, or `study_room_service.py` ever calls `NotificationsService.create`. Today a notification can only be created by directly calling `POST /notifications`.
 
 **Motivation**
-Without this, the Notifications feature ("Implement Notifications backend (CRUD)", Done) is unreachable by normal product usage — it's a fully-built CRUD layer with no caller, evidenced directly by the DB spec describing the intended behavior and the code not implementing it.
+Without this, the Notifications feature ("Implement Notifications backend (CRUD)", Done) is unreachable by normal product usage — it's a fully-built CRUD layer with no caller, evidenced directly by the DB spec describing the intended behavior and the code not implementing it. This task is also the natural place to resolve `POST /notifications`'s public-endpoint status, an open question "Secure Notification authorization" (Ready) deliberately leaves unresolved (see its Out of Scope) — see the last Scope bullet below.
 
 **Scope**
 - On post like/comment, create a `post_like`/`post_comment` notification for the post author (skip self-notifications).
 - On comment reply, create a `comment_reply` notification for the parent comment's author (per spec §34), skipping self-replies.
 - On group role change / member ban / invite, create `group_role_changed`/`group_invite` notifications as appropriate.
 - On study room kick, create a `room_kicked` notification for the target user.
+- Once domain services create notifications internally, resolve `POST /notifications`'s fate: either remove the public endpoint, restrict it to an internal/service-role-only caller, or otherwise ensure it can no longer be used by an arbitrary caller to fabricate a notification claiming to be from/to anyone. Do not leave it exactly as-is once internal creation exists — that would mean the real notification-creation path and a still-open bypass path both exist simultaneously.
 
 **Out of Scope**
 - Realtime push or email delivery of notifications — spec §42 leaves these as open questions, not committed scope.
@@ -1679,19 +1906,21 @@ Without this, the Notifications feature ("Implement Notifications backend (CRUD)
 - [ ] Replying to a comment creates a notification for the parent comment's author.
 - [ ] A study room kick creates a `room_kicked` notification for the kicked user.
 - [ ] A group role change creates a `group_role_changed` notification for the affected member.
+- [ ] `POST /notifications` is no longer callable by an arbitrary client to create an arbitrary notification for/from any user — it is either removed, made internal-only, or otherwise secured to match how the domain services above actually create notifications.
 
 **Dependencies**
 "Implement Notifications backend (CRUD)" (Done); "Secure Forum authorization" and "Secure Group & Channel authorization" (Ready) should land first so the triggering endpoints are already caller-authenticated.
 
 **Related Code**
 - `app/forum/services/forum_service.py`, `app/groups/services/group_service.py`, `app/study_rooms/services/study_room_service.py`
-- `app/notifications/services/notification_service.py`
+- `app/notifications/services/notification_service.py`, `app/notifications/routers/notification_router.py` (`POST /notifications`'s fate)
 - `docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` §30, §34
 
 **Evidence**
 - `grep -rn "NotificationsService\|notification_service\|create_notification" app` returns matches only inside `app/notifications/` itself — confirmed no other domain service creates a notification.
 - `docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` §34 documents `create_comment()` as needing to create a `comment_reply` notification when `parent_comment_id != NULL` — describing intended, not implemented, behavior.
 - `app/db/enums.py`'s `NotificationType` enum values (`GROUP_ROLE_CHANGED`, `ROOM_KICKED`, etc.) exist with no corresponding creation call anywhere.
+- "Secure Notification authorization" (Ready) explicitly leaves `POST /notifications` unauthenticated pending this task's resolution — see that task's Out of Scope.
 
 **Testing**
 Add coverage asserting a `Notification` row is created (with correct `type`/`actor_id`/`user_id`) as a side effect of the triggering action, for each event type in scope.
@@ -1713,21 +1942,23 @@ Add coverage asserting a `Notification` row is created (with correct `type`/`act
 `scripts/realtime_integration_check.py` is a standalone (non-pytest) script that verifies Supabase Realtime actually enforces RLS for channel messages — that a user with channel access receives Postgres Changes INSERT events, and that an outsider subscribed to the same table/filter does not. Its own docstring states it has never been run: "this script has NOT been executed against a live project in this environment — no SUPABASE_TEST_USER_* credentials were available."
 
 **Motivation**
-This verifies the one thing FastAPI-layer permission checks structurally cannot enforce — the frontend will eventually connect to Supabase Realtime directly with its own access token (per the README's documented Realtime architecture), so RLS on the `messages` table (`can_access_channel()`) is the only thing preventing an outsider from receiving another group's messages over that channel. It has been written but never verified.
+This verifies the one thing FastAPI-layer permission checks structurally cannot enforce — the frontend will eventually connect to Supabase Realtime directly with its own access token (per the README's documented Realtime architecture), so RLS on the `messages` table is the only thing preventing an outsider from receiving another conversation's messages. It has been written but never verified, and it currently only covers channel-type conversations even though the same RLS policy also governs room and direct conversations (see Scope).
 
 **Scope**
 - Provision the required Supabase Auth test users (`SUPABASE_TEST_USER_A/B/OUTSIDER_EMAIL/PASSWORD`), matching the pattern already used by `tests/integration/`.
 - Run `python scripts/realtime_integration_check.py` against a live project.
 - Fix up anything in the script that doesn't match the current `realtime-py` client API (the script's own docstring flags this as a real possibility, since it was "written against the documented ... API" without having been executed).
-- Record the verified result (pass/fail) somewhere durable (e.g. update the script's docstring status line, or fold the finding into `docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` §37 alongside the other RLS-verification notes).
+- Extend the script (or add sibling scenarios) to also cover **room**- and **direct**-type conversations, not just channel: verify a room member receives Postgres Changes INSERT events for their room's conversation and a non-member doesn't; verify the same for a DM participant vs. a non-participant. `can_access_conversation()` (`app/core/permissions.py`) is the single RLS dispatch function behind all three conversation types' `messages_select` policy (per "Refactor messaging to Conversation architecture"), so a bug specific to the room or direct branch would be invisible to channel-only verification — and this project has already found two real RLS bugs in adjacent policies (`002_fix_can_access_channel_active_membership.sql`, `007_fix_room_moderation_select_policy.sql`), making this a credible, not merely hypothetical, risk rather than routine extra-mile coverage.
+- Record the verified result (pass/fail, per conversation type) somewhere durable (e.g. update the script's docstring status line, or fold the finding into `docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` §37 alongside the other RLS-verification notes).
 
 **Out of Scope**
-- Extending the script to cover room or direct conversations — its current scope is explicitly "Scenario B/C from the chat backend spec" (channel chat only); expanding scope isn't proposed without further evidence of need.
+- Extending to conversation types beyond channel/room/direct — there are no others (`channel`/`room`/`direct` are the only `conversations.type` enum values, per spec §13); nor to tables beyond `messages` — no other table is exposed via Realtime today (per migration `001`).
 
 **Acceptance Criteria**
-- [ ] The script runs successfully against a live Supabase project and both scenarios (B: authorized user receives the event; C: outsider does not) pass.
+- [ ] The script runs successfully against a live Supabase project and both scenarios (B: authorized user receives the event; C: outsider does not) pass for **channel** conversations.
+- [ ] The same B/C scenarios pass for **room**-type and **direct**-type conversations, not just channel.
 - [ ] Any client-API mismatches found while running it are fixed.
-- [ ] The script's docstring no longer says "NOT been executed."
+- [ ] The script's docstring no longer says "NOT been executed," and no longer scopes itself to channel-only.
 
 **Dependencies**
 Requires Supabase test user credentials/environment access (external dependency, not code) — this is why it's Backlog rather than Ready.
@@ -1735,9 +1966,12 @@ Requires Supabase test user credentials/environment access (external dependency,
 **Related Code**
 - `scripts/realtime_integration_check.py`
 - `tests/integration/conftest.py` (existing pattern for `SUPABASE_TEST_USER_*` env vars)
+- `docs/db/migrations/004_refactor_chat_to_conversations.sql` (defines `can_access_conversation()` and the `messages_select` policy that delegates to it for all three conversation types)
 
 **Evidence**
-- `scripts/realtime_integration_check.py` docstring, lines 1-24: explicitly states it is "prepared-but-unverified tooling" and "has NOT been executed against a live project in this environment."
+- `scripts/realtime_integration_check.py` docstring, lines 1-24: explicitly states it is "prepared-but-unverified tooling," "has NOT been executed against a live project in this environment," and describes itself as covering "Scenario B/C from the chat backend spec" for **channel** chat only — no room or direct coverage exists in the script today.
+- `docs/db/migrations/004_refactor_chat_to_conversations.sql`: `create policy messages_select on public.messages ... using (public.can_access_conversation(conversation_id))` is the single policy/function pair governing SELECT access for channel, room, and direct messages alike — confirming a room- or direct-specific RLS bug would not be caught by the current channel-only script.
+- The project has already found and fixed two real RLS bugs in this exact area (`docs/db/migrations/002_fix_can_access_channel_active_membership.sql`, `007_fix_room_moderation_select_policy.sql`) — this is a demonstrated risk category, not a hypothetical one.
 
 **Testing**
 This task *is* the testing work; no separate test suite is proposed on top of it.
