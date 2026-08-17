@@ -3,6 +3,7 @@ import type {
   ModerationAction,
   RoomModerationAction,
   StudyRoom,
+  StudyRoomCreate,
   StudyRoomMember,
   StudyRoomMemberRole,
 } from './studyRoom.types';
@@ -14,6 +15,15 @@ export function getStudyRoom(roomId: string): Promise<StudyRoom> {
 /** Used by StudyGroupDetail.tsx to link to real room ids instead of mock ones. */
 export function listStudyRoomsByGroup(groupId: string): Promise<StudyRoom[]> {
   return apiClient.get<StudyRoom[]>(`/study-rooms/?group_id=${groupId}`);
+}
+
+/**
+ * Host is always the authenticated caller, derived server-side (see
+ * study_room_router.create_room) -- StudyRoomCreate has no host_id field to send. The
+ * backend also requires the caller to be an active member of `data.group_id` (any role).
+ */
+export function createStudyRoom(data: StudyRoomCreate): Promise<StudyRoom> {
+  return apiClient.post<StudyRoom>('/study-rooms/', data);
 }
 
 /** Caller is always derived from the bearer token on the backend; no user id is ever sent. */

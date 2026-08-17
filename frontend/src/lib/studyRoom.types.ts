@@ -27,6 +27,15 @@ export interface StudyRoomMember {
   left_at: string | null;
 }
 
+/** Mirrors StudyRoomCreate (app/study_rooms/dto/study_room_dto.py). No `host_id` field:
+ * the room host is always the authenticated caller, never client-supplied. */
+export interface StudyRoomCreate {
+  group_id: string;
+  name: string;
+  description?: string | null;
+  max_participants?: number;
+}
+
 /** Mirrors RoomModerationActionResponse */
 export interface RoomModerationAction {
   id: string;

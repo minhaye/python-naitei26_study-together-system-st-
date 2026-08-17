@@ -12,13 +12,14 @@ import {
     Globe,
     Lock,
     LogOut,
-    Users
+    Users,
+    Plus
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { ApiError } from '../../lib/apiClient';
 import { getGroup, listGroupMembers, leaveGroup, updateGroup } from '../../lib/group.api';
 import { listChannelsByGroup } from '../../lib/channel.api';
-import { listStudyRoomsByGroup } from '../../lib/studyRoom.api';
+import { createStudyRoom, listStudyRoomsByGroup } from '../../lib/studyRoom.api';
 import type { Group, GroupMember } from '../../lib/group.types';
 import type { Channel } from '../../lib/channel.types';
 import type { StudyRoom } from '../../lib/studyRoom.types';
@@ -55,6 +56,13 @@ export function StudyGroupDetail() {
   const [leaveError, setLeaveError] = useState<string | null>(null);
   const [isTogglingPublic, setIsTogglingPublic] = useState(false);
   const [toggleError, setToggleError] = useState<string | null>(null);
+
+  // Create Study Room modal state
+  const [isCreateRoomModalOpen, setIsCreateRoomModalOpen] = useState(false);
+  const [createRoomName, setCreateRoomName] = useState('');
+  const [createRoomDescription, setCreateRoomDescription] = useState('');
+  const [isCreatingRoom, setIsCreatingRoom] = useState(false);
+  const [createRoomError, setCreateRoomError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!groupId) return;
@@ -99,6 +107,9 @@ export function StudyGroupDetail() {
 
   const activeMembers = groupMembers.filter((m) => m.status === 'active');
   const isOwner = !!group && !!currentUserId && group.owner_id === currentUserId;
+  // Backend rule (POST /study-rooms/): any ACTIVE group member -- any role, not just
+  // owner/moderator -- may create a study room (STUDY_PLATFORM_DATABASE_SPEC.md §16).
+  const isActiveMember = isOwner || (!!currentUserId && activeMembers.some((m) => m.user_id === currentUserId));
 
   async function handleLeaveGroup() {
     if (!group || !currentUserId || isLeaving) return;
@@ -129,6 +140,29 @@ export function StudyGroupDetail() {
       setToggleError(err instanceof ApiError ? err.message : 'Không thể đổi chế độ công khai/riêng tư.');
     } finally {
       setIsTogglingPublic(false);
+    }
+  }
+
+  async function handleCreateRoom() {
+    if (!group || !currentUserId || !createRoomName.trim() || isCreatingRoom) return;
+    setIsCreatingRoom(true);
+    setCreateRoomError(null);
+    try {
+      const newRoom = await createStudyRoom({
+        group_id: group.id,
+        name: createRoomName.trim(),
+        description: createRoomDescription.trim() || null,
+      });
+      // Real, persisted room returned by the backend -- append to reflect it immediately;
+      // a refresh re-fetches from the backend and will show the same room.
+      setStudyRooms((prev) => [...prev, newRoom]);
+      setIsCreateRoomModalOpen(false);
+      setCreateRoomName('');
+      setCreateRoomDescription('');
+    } catch (err) {
+      setCreateRoomError(err instanceof ApiError ? err.message : 'Không thể tạo phòng học.');
+    } finally {
+      setIsCreatingRoom(false);
     }
   }
 
@@ -441,7 +475,20 @@ export function StudyGroupDetail() {
 
                     {/* Voice / Video Rooms */}
                     <div style={{marginBottom: 24}}>
-                        <div style={{color: '#64748B', fontSize: 12, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase', marginBottom: 8, paddingLeft: 8}}>Phòng học</div>
+                        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingLeft: 8, paddingRight: 4}}>
+                            <div style={{color: '#64748B', fontSize: 12, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase'}}>Phòng học</div>
+                            {isActiveMember && (
+                                <button
+                                    onClick={() => { setCreateRoomError(null); setIsCreateRoomModalOpen(true); }}
+                                    title="Tạo phòng học mới"
+                                    style={{width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#64748B'}}
+                                    onMouseOver={e => { e.currentTarget.style.background = '#E2E8F0'; e.currentTarget.style.color = '#0B1C30'; }}
+                                    onMouseOut={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#64748B'; }}
+                                >
+                                    <Plus size={14} />
+                                </button>
+                            )}
+                        </div>
 
                         <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
                             {openRooms.length === 0 && (
@@ -728,6 +775,70 @@ export function StudyGroupDetail() {
             </div>
 
         </div>
+
+        {/* Modal: Tạo phòng học mới */}
+        {isCreateRoomModalOpen && (
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.4)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
+                <div style={{ background: 'white', borderRadius: 12, width: 440, padding: 32, display: 'flex', flexDirection: 'column', position: 'relative', boxShadow: '0px 10px 25px rgba(0, 0, 0, 0.1)' }}>
+                    <button
+                        onClick={() => { if (!isCreatingRoom) { setIsCreateRoomModalOpen(false); setCreateRoomError(null); } }}
+                        disabled={isCreatingRoom}
+                        style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', cursor: isCreatingRoom ? 'not-allowed' : 'pointer', color: '#64748B', fontSize: 18 }}
+                    >
+                        ✕
+                    </button>
+
+                    <h2 style={{ fontSize: 18, fontWeight: 600, color: '#0F172A', marginBottom: 20, fontFamily: 'Inter' }}>Tạo phòng học mới</h2>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+                        <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', fontFamily: 'Inter' }}>Tên phòng học *</label>
+                        <input
+                            type="text"
+                            value={createRoomName}
+                            onChange={(e) => setCreateRoomName(e.target.value)}
+                            placeholder="VD: Ôn tập Chương 3"
+                            disabled={isCreatingRoom}
+                            style={{ width: '100%', padding: '10px 14px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: 'Inter' }}
+                            autoFocus
+                        />
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 24 }}>
+                        <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', fontFamily: 'Inter' }}>Mô tả</label>
+                        <textarea
+                            value={createRoomDescription}
+                            onChange={(e) => setCreateRoomDescription(e.target.value)}
+                            placeholder="Mô tả ngắn về nội dung buổi học (không bắt buộc)"
+                            disabled={isCreatingRoom}
+                            style={{ width: '100%', padding: '10px 14px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: 'Inter', resize: 'vertical', minHeight: 72 }}
+                        />
+                    </div>
+
+                    {createRoomError && (
+                        <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: 12, color: '#B91C1C', fontSize: 13, marginBottom: 16 }}>
+                            {createRoomError}
+                        </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                        <button
+                            onClick={() => { if (!isCreatingRoom) { setIsCreateRoomModalOpen(false); setCreateRoomError(null); } }}
+                            disabled={isCreatingRoom}
+                            style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: '#F1F5F9', color: '#475569', border: 'none', fontSize: 14, fontWeight: 600, cursor: isCreatingRoom ? 'not-allowed' : 'pointer', fontFamily: 'Inter' }}
+                        >
+                            Hủy
+                        </button>
+                        <button
+                            onClick={handleCreateRoom}
+                            disabled={isCreatingRoom || !createRoomName.trim()}
+                            style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: (isCreatingRoom || !createRoomName.trim()) ? '#93A4C7' : '#00236F', color: 'white', border: 'none', fontSize: 14, fontWeight: 600, cursor: (isCreatingRoom || !createRoomName.trim()) ? 'not-allowed' : 'pointer', fontFamily: 'Inter' }}
+                        >
+                            {isCreatingRoom ? 'Đang tạo...' : 'Tạo phòng học'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
     </div>
   );
 }
