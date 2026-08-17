@@ -1,67 +1,202 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { 
-  Mic, 
-  MicOff, 
-  Video as VideoIcon, 
-  VideoOff, 
-  Monitor, 
-  Hand, 
-  PhoneOff, 
-  MessageSquare, 
-  Users, 
-  FileText, 
-  Send, 
-  Pencil, 
-  Type, 
-  Eraser, 
-  Square, 
-  RotateCcw, 
-  Trash2, 
+import {
+  Mic,
+  MicOff,
+  Video as VideoIcon,
+  VideoOff,
+  Monitor,
+  Hand,
+  PhoneOff,
+  MessageSquare,
+  Users,
+  FileText,
+  Send,
+  Pencil,
+  Type,
+  Eraser,
+  Square,
+  RotateCcw,
+  Trash2,
   ArrowLeft,
   Share2,
   ChevronLeft,
   ChevronRight,
   Sparkles,
-  Download
+  Download,
+  UserX,
+  ShieldCheck,
+  ShieldOff
 } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { useAuth } from '../../hooks/useAuth';
+import { useStudyRoom } from '../../hooks/useStudyRoom';
+import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
+
+interface CenteredRoomMessageProps {
+  title: string;
+  subtitle?: string;
+  onBack?: () => void;
+  children?: ReactNode;
+}
+
+function CenteredRoomMessage({ title, subtitle, onBack, children }: CenteredRoomMessageProps) {
+  return (
+    <div style={{width: '100vw', height: '100vh', background: '#0F172A', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24, fontFamily: 'Inter, sans-serif', textAlign: 'center'}}>
+      <h1 style={{color: 'white', fontSize: 20, fontWeight: '700', margin: 0}}>{title}</h1>
+      {subtitle && <p style={{color: '#94A3B8', fontSize: 14, margin: '4px 0 12px', maxWidth: 420}}>{subtitle}</p>}
+      {children}
+      {onBack && (
+        <button
+          onClick={onBack}
+          style={{marginTop: 16, background: '#334155', border: 'none', color: 'white', padding: '10px 18px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: '500'}}
+        >
+          Quay lại
+        </button>
+      )}
+    </div>
+  );
+}
 
 export function StudyRoom() {
   const navigate = useNavigate();
-  const { id } = useParams();
+  const { id: roomId } = useParams();
+  const { currentUser } = useAuth();
+
+  const {
+    room,
+    members,
+    loading,
+    roomError,
+    membersError,
+    actionError,
+    clearActionError,
+    currentUserId,
+    isCurrentUserHost,
+    canModerate,
+    isCurrentUserMember,
+    handRaisedUserIds,
+    moderationMutedUserIds,
+    join,
+    leave,
+    start,
+    end,
+    moderate,
+    changeMemberRole,
+  } = useStudyRoom(roomId);
 
   // Room states
   const [activeMode, setActiveMode] = useState<'video' | 'whiteboard'>('video');
   const [activeRightTab, setActiveRightTab] = useState<'chat' | 'participants' | 'notes'>('chat');
   const [activeBoardTab, setActiveBoardTab] = useState<'whiteboard' | 'presentation'>('whiteboard');
-  
-  // Media controls
+
+  // Media controls (local UI-only placeholders — no LiveKit/WebRTC integration yet, so these
+  // never touch the backend and do not represent real microphone/camera state).
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(true);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [isHandRaised, setIsHandRaised] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isJoining, setIsJoining] = useState(false);
+  const [isLifecycleBusy, setIsLifecycleBusy] = useState(false);
 
   // Whiteboard tools
   const [selectedTool, setSelectedTool] = useState<'pen' | 'text' | 'eraser' | 'shape'>('pen');
   const [penColor, setPenColor] = useState('#00236F');
 
-  const handleLeaveRoom = () => {
+  const handleLeaveRoom = async () => {
     if (document.fullscreenElement && document.exitFullscreen) {
       document.exitFullscreen().catch(() => {});
     }
-    navigate(`/groups/${id || 1}`);
+    try {
+      await leave();
+    } catch {
+      // Best-effort: still navigate away even if the leave call failed (e.g. already left).
+    }
+    navigate(room ? `/groups/${room.group_id}` : '/groups');
   };
 
-  // Timer simulation
-  const [seconds, setSeconds] = useState(6322); // ~01:45:22
+  const handleJoinRoom = async () => {
+    setIsJoining(true);
+    try {
+      await join();
+    } catch {
+      // actionError is already populated by the hook.
+    } finally {
+      setIsJoining(false);
+    }
+  };
 
+  const handleStartRoom = async () => {
+    setIsLifecycleBusy(true);
+    try {
+      await start();
+    } catch {
+      // actionError is already populated by the hook.
+    } finally {
+      setIsLifecycleBusy(false);
+    }
+  };
+
+  const handleEndRoom = async () => {
+    setIsLifecycleBusy(true);
+    try {
+      await end();
+    } catch {
+      // actionError is already populated by the hook.
+    } finally {
+      setIsLifecycleBusy(false);
+    }
+  };
+
+  const currentUserHandRaised = currentUserId ? handRaisedUserIds.has(currentUserId) : false;
+
+  const handleToggleHand = async () => {
+    if (!currentUserId) return;
+    try {
+      await moderate(currentUserId, currentUserHandRaised ? 'lower_hand' : 'raise_hand');
+    } catch {
+      // actionError is already populated by the hook.
+    }
+  };
+
+  const handleKick = async (targetUserId: string) => {
+    try {
+      await moderate(targetUserId, 'kick');
+    } catch {
+      // actionError is already populated by the hook.
+    }
+  };
+
+  const handleToggleMute = async (targetUserId: string, currentlyMuted: boolean) => {
+    try {
+      await moderate(targetUserId, currentlyMuted ? 'unmute' : 'mute');
+    } catch {
+      // actionError is already populated by the hook.
+    }
+  };
+
+  const handleToggleModerator = async (targetUserId: string, isModerator: boolean) => {
+    try {
+      await changeMemberRole(targetUserId, isModerator ? 'participant' : 'moderator');
+    } catch {
+      // actionError is already populated by the hook.
+    }
+  };
+
+  // Real session timer, derived from the backend's started_at/ended_at (no fabricated duration).
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const timer = setInterval(() => {
-      setSeconds(prev => prev + 1);
-    }, 1000);
+    if (room?.status !== 'active') return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [room?.status]);
+
+  const elapsedSeconds = useMemo(() => {
+    if (!room?.started_at) return null;
+    const startMs = new Date(room.started_at).getTime();
+    const endMs = room.status === 'ended' && room.ended_at ? new Date(room.ended_at).getTime() : now;
+    return Math.max(0, Math.floor((endMs - startMs) / 1000));
+  }, [room, now]);
 
   const formatTime = (totalSec: number) => {
     const hrs = Math.floor(totalSec / 3600);
@@ -70,20 +205,33 @@ export function StudyRoom() {
     return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Participant mock data
-  const [participants, setParticipants] = useState([
-    { id: 1, name: 'Minh Anh (Bạn)', initial: 'MA', color: '#2563EB', isHost: false, isMuted: isMuted, isCameraOn: isCameraOn, handRaised: isHandRaised, isSpeaking: true },
-    { id: 2, name: 'Thầy Hoàng', initial: 'TH', color: '#7C3AED', isHost: true, isMuted: false, isCameraOn: true, handRaised: false, isSpeaking: false },
-    { id: 3, name: 'David Chen', initial: 'DC', color: '#059669', isHost: false, isMuted: true, isCameraOn: true, handRaised: false, isSpeaking: false },
-    { id: 4, name: 'Elena Rodriguez', initial: 'ER', color: '#D97706', isHost: false, isMuted: false, isCameraOn: false, handRaised: true, isSpeaking: false },
-    { id: 5, name: 'Marcus Johnson', initial: 'MJ', color: '#DC2626', isHost: false, isMuted: true, isCameraOn: false, handRaised: false, isSpeaking: false },
-    { id: 6, name: 'Priya Patel', initial: 'PP', color: '#DB2777', isHost: false, isMuted: false, isCameraOn: true, handRaised: false, isSpeaking: false }
-  ]);
-
-  // Sync user state with participants list
-  useEffect(() => {
-    setParticipants(prev => prev.map(p => p.id === 1 ? { ...p, isMuted, isCameraOn, handRaised: isHandRaised } : p));
-  }, [isMuted, isCameraOn, isHandRaised]);
+  // Real active member roster from the Study Room membership API. Camera/mic/speaking flags stay
+  // local UI placeholders (no LiveKit yet); hand-raise and moderation-mute are derived from the
+  // real moderation audit log, not fabricated.
+  const participants = useMemo(() => {
+    return members
+      .filter((m) => !m.left_at)
+      .map((m) => {
+        const isSelf = m.user_id === currentUserId;
+        const name = isSelf ? `${currentUser.name} (Bạn)` : `Người dùng #${m.user_id.slice(0, 4).toUpperCase()}`;
+        const moderationMuted = moderationMutedUserIds.has(m.user_id);
+        return {
+          id: m.user_id,
+          userId: m.user_id,
+          role: m.role,
+          name,
+          initial: isSelf ? currentUser.initials : getAvatarInitials(m.user_id),
+          color: isSelf ? currentUser.color : getAvatarColor(m.user_id),
+          isHost: m.role === 'host',
+          isModerator: m.role === 'moderator',
+          isSelf,
+          isMuted: isSelf ? isMuted || moderationMuted : moderationMuted,
+          isCameraOn: isSelf ? isCameraOn : true,
+          handRaised: handRaisedUserIds.has(m.user_id),
+          isSpeaking: false,
+        };
+      });
+  }, [members, currentUserId, currentUser, isMuted, isCameraOn, moderationMutedUserIds, handRaisedUserIds]);
 
   // Chat mock data
   const [messages, setMessages] = useState([
@@ -110,27 +258,83 @@ export function StudyRoom() {
     setChatInput('');
   };
 
+  // --- Loading / error / not-yet-joined states (real backend data drives all of these) ---
+
+  if (!roomId) {
+    return (
+      <CenteredRoomMessage title="Liên kết phòng học không hợp lệ" subtitle="Không tìm thấy mã phòng học trong đường dẫn." onBack={() => navigate('/groups')} />
+    );
+  }
+
+  if (loading) {
+    return <CenteredRoomMessage title="Đang tải phòng học..." />;
+  }
+
+  if (roomError || !room) {
+    return (
+      <CenteredRoomMessage
+        title={roomError?.status === 404 ? 'Không tìm thấy phòng học' : 'Không thể tải phòng học'}
+        subtitle={roomError?.message}
+        onBack={() => navigate('/groups')}
+      />
+    );
+  }
+
+  if (!isCurrentUserMember) {
+    return (
+      <CenteredRoomMessage
+        title={room.name}
+        subtitle={room.description || undefined}
+        onBack={() => navigate(`/groups/${room.group_id}`)}
+      >
+        <div style={{color: '#94A3B8', fontSize: 13, marginBottom: 16}}>
+          {room.status === 'ended'
+            ? 'Phòng học này đã kết thúc.'
+            : membersError?.status === 403
+              ? 'Bạn cần tham gia để xem và tương tác trong phòng học này.'
+              : membersError?.message}
+        </div>
+        {room.status !== 'ended' && (
+          <button
+            onClick={handleJoinRoom}
+            disabled={isJoining}
+            style={{padding: '12px 24px', background: '#2563EB', color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: '600', cursor: isJoining ? 'default' : 'pointer', opacity: isJoining ? 0.7 : 1}}
+          >
+            {isJoining ? 'Đang tham gia...' : 'Tham gia phòng'}
+          </button>
+        )}
+        {actionError && (
+          <div style={{color: '#F87171', fontSize: 13, marginTop: 12}}>{actionError.message}</div>
+        )}
+      </CenteredRoomMessage>
+    );
+  }
+
+  const statusColor = room.status === 'active' ? '#10B981' : room.status === 'waiting' ? '#F59E0B' : '#64748B';
+  const statusLabel = room.status === 'active' ? 'Đang diễn ra' : room.status === 'waiting' ? 'Chưa bắt đầu' : 'Đã kết thúc';
+  const isRoomEnded = room.status === 'ended';
+
   return (
     <div style={{width: '100vw', height: '100vh', background: '#0F172A', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: 'Inter, sans-serif'}}>
-      
+
       {/* Top Header Bar */}
       <header style={{height: 64, background: '#1E293B', borderBottom: '1px solid #334155', padding: '0 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 20, position: 'relative'}}>
-        
+
         {/* Left Info & Back button */}
         <div style={{display: 'flex', alignItems: 'center', gap: 16}}>
-          <button 
-            onClick={handleLeaveRoom} 
+          <button
+            onClick={handleLeaveRoom}
             style={{background: '#334155', border: 'none', color: 'white', padding: '8px 12px', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: '500'}}
           >
             <ArrowLeft size={16} /> Rời phòng
           </button>
-          
+
           <div style={{height: 24, width: 1, background: '#475569'}} />
 
           <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
-            <div style={{width: 10, height: 10, borderRadius: '50%', background: '#10B981', boxShadow: '0 0 10px #10B981'}} />
+            <div style={{width: 10, height: 10, borderRadius: '50%', background: statusColor, boxShadow: room.status === 'active' ? `0 0 10px ${statusColor}` : 'none'}} />
             <h1 style={{fontSize: 16, fontWeight: '600', color: 'white', margin: 0, whiteSpace: 'nowrap'}}>
-              Advanced Physics Study Group • <span style={{color: '#94A3B8', fontWeight: '400'}}>Phòng học 101</span>
+              {room.name} • <span style={{color: '#94A3B8', fontWeight: '400'}}>{statusLabel}</span>
             </h1>
           </div>
         </div>
@@ -179,8 +383,35 @@ export function StudyRoom() {
 
         {/* Right Timer & Status */}
         <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
+          {actionError && (
+            <div
+              onClick={clearActionError}
+              title="Bấm để ẩn thông báo"
+              style={{color: '#F87171', fontSize: 12, maxWidth: 220, cursor: 'pointer'}}
+            >
+              {actionError.message}
+            </div>
+          )}
+          {isCurrentUserHost && room.status === 'waiting' && (
+            <button
+              onClick={handleStartRoom}
+              disabled={isLifecycleBusy}
+              style={{background: '#10B981', border: 'none', color: 'white', padding: '8px 14px', borderRadius: 8, cursor: isLifecycleBusy ? 'default' : 'pointer', fontSize: 13, fontWeight: '600', opacity: isLifecycleBusy ? 0.7 : 1}}
+            >
+              Bắt đầu phòng
+            </button>
+          )}
+          {isCurrentUserHost && room.status === 'active' && (
+            <button
+              onClick={handleEndRoom}
+              disabled={isLifecycleBusy}
+              style={{background: '#DC2626', border: 'none', color: 'white', padding: '8px 14px', borderRadius: 8, cursor: isLifecycleBusy ? 'default' : 'pointer', fontSize: 13, fontWeight: '600', opacity: isLifecycleBusy ? 0.7 : 1}}
+            >
+              Kết thúc phòng
+            </button>
+          )}
           <div style={{background: '#334155', padding: '6px 14px', borderRadius: 8, color: '#38BDF8', fontSize: 14, fontFamily: 'monospace', fontWeight: '600'}}>
-            {formatTime(seconds)}
+            {elapsedSeconds !== null ? formatTime(elapsedSeconds) : statusLabel}
           </div>
         </div>
       </header>
@@ -630,28 +861,59 @@ export function StudyRoom() {
             {activeRightTab === 'participants' && (
               <div style={{flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12}}>
                 <span style={{color: '#94A3B8', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5}}>Danh sách đang tham gia</span>
-                {participants.map((p) => (
-                  <div key={p.id} style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: '#0F172A', borderRadius: 10, border: '1px solid #334155'}}>
-                    <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
-                      <div style={{width: 36, height: 36, borderRadius: '50%', background: p.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 13}}>
+                {participants.map((p) => {
+                  const canActOnThisMember = canModerate && !p.isSelf && !p.isHost;
+                  return (
+                  <div key={p.id} style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: '#0F172A', borderRadius: 10, border: '1px solid #334155', gap: 8}}>
+                    <div style={{display: 'flex', alignItems: 'center', gap: 10, minWidth: 0}}>
+                      <div style={{width: 36, height: 36, borderRadius: '50%', background: p.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 13, flexShrink: 0}}>
                         {p.initial}
                       </div>
-                      <div>
+                      <div style={{minWidth: 0}}>
                         <div style={{color: 'white', fontSize: 13, fontWeight: '600', display: 'flex', alignItems: 'center', gap: 6}}>
                           {p.name}
-                          {p.isHost && <span style={{background: '#3B82F6', color: 'white', fontSize: 10, padding: '1px 5px', borderRadius: 4}}>Host</span>}
+                          {p.isHost && <span style={{background: '#3B82F6', color: 'white', fontSize: 10, padding: '1px 5px', borderRadius: 4, flexShrink: 0}}>Host</span>}
+                          {p.isModerator && <span style={{background: '#7C3AED', color: 'white', fontSize: 10, padding: '1px 5px', borderRadius: 4, flexShrink: 0}}>Điều hành</span>}
                         </div>
-                        <div style={{color: '#94A3B8', fontSize: 11}}>{p.isSpeaking ? '🔊 Đang nói' : 'Chờ'}</div>
+                        <div style={{color: '#94A3B8', fontSize: 11}}>{p.handRaised ? '✋ Đang giơ tay' : 'Đang tham gia'}</div>
                       </div>
                     </div>
 
-                    <div style={{display: 'flex', gap: 8, color: '#94A3B8'}}>
+                    <div style={{display: 'flex', alignItems: 'center', gap: 6, color: '#94A3B8', flexShrink: 0}}>
                       {p.handRaised && <Hand size={16} color="#F59E0B" />}
+                      {/* Reflects Study Room moderation-mute state (audit log), not a real WebRTC mic mute. */}
                       {p.isMuted ? <MicOff size={16} color="#EF4444" /> : <Mic size={16} color="#10B981" />}
-                      {p.isCameraOn ? <VideoIcon size={16} color="#10B981" /> : <VideoOff size={16} color="#EF4444" />}
+                      {canActOnThisMember && (
+                        <>
+                          <button
+                            onClick={() => handleToggleMute(p.userId, p.isMuted)}
+                            title={p.isMuted ? 'Bỏ tắt tiếng (moderation)' : 'Tắt tiếng (moderation)'}
+                            style={{background: 'transparent', border: 'none', color: '#94A3B8', cursor: 'pointer', padding: 4, display: 'flex'}}
+                          >
+                            {p.isMuted ? <Mic size={15} /> : <MicOff size={15} />}
+                          </button>
+                          {isCurrentUserHost && (
+                            <button
+                              onClick={() => handleToggleModerator(p.userId, p.isModerator)}
+                              title={p.isModerator ? 'Bỏ quyền điều hành' : 'Đặt làm điều hành viên'}
+                              style={{background: 'transparent', border: 'none', color: p.isModerator ? '#7C3AED' : '#94A3B8', cursor: 'pointer', padding: 4, display: 'flex'}}
+                            >
+                              {p.isModerator ? <ShieldOff size={15} /> : <ShieldCheck size={15} />}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleKick(p.userId)}
+                            title="Mời ra khỏi phòng"
+                            style={{background: 'transparent', border: 'none', color: '#EF4444', cursor: 'pointer', padding: 4, display: 'flex'}}
+                          >
+                            <UserX size={15} />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
@@ -723,17 +985,19 @@ export function StudyRoom() {
         {/* Center Control Buttons */}
         <div style={{position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 16}}>
           
-          {/* Mic */}
-          <button 
+          {/* Mic — local UI placeholder only (no LiveKit yet); does not call the backend. */}
+          <button
             onClick={() => setIsMuted(!isMuted)}
+            disabled={isRoomEnded}
             style={{
-              width: 48, 
-              height: 48, 
-              borderRadius: '50%', 
-              border: 'none', 
-              background: isMuted ? '#EF4444' : '#334155', 
-              color: 'white', 
-              cursor: 'pointer',
+              width: 48,
+              height: 48,
+              borderRadius: '50%',
+              border: 'none',
+              background: isMuted ? '#EF4444' : '#334155',
+              color: 'white',
+              cursor: isRoomEnded ? 'default' : 'pointer',
+              opacity: isRoomEnded ? 0.5 : 1,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -745,17 +1009,19 @@ export function StudyRoom() {
             {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
           </button>
 
-          {/* Camera */}
-          <button 
+          {/* Camera — local UI placeholder only (no LiveKit yet); does not call the backend. */}
+          <button
             onClick={() => setIsCameraOn(!isCameraOn)}
+            disabled={isRoomEnded}
             style={{
-              width: 48, 
-              height: 48, 
-              borderRadius: '50%', 
-              border: 'none', 
-              background: !isCameraOn ? '#EF4444' : '#334155', 
-              color: 'white', 
-              cursor: 'pointer',
+              width: 48,
+              height: 48,
+              borderRadius: '50%',
+              border: 'none',
+              background: !isCameraOn ? '#EF4444' : '#334155',
+              color: 'white',
+              cursor: isRoomEnded ? 'default' : 'pointer',
+              opacity: isRoomEnded ? 0.5 : 1,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -767,17 +1033,19 @@ export function StudyRoom() {
             {!isCameraOn ? <VideoOff size={20} /> : <VideoIcon size={20} />}
           </button>
 
-          {/* Screen Share */}
-          <button 
+          {/* Screen Share — local UI placeholder only (no LiveKit yet); does not call the backend. */}
+          <button
             onClick={() => setIsScreenSharing(!isScreenSharing)}
+            disabled={isRoomEnded}
             style={{
-              width: 48, 
-              height: 48, 
-              borderRadius: '50%', 
-              border: 'none', 
-              background: isScreenSharing ? '#2563EB' : '#334155', 
-              color: 'white', 
-              cursor: 'pointer',
+              width: 48,
+              height: 48,
+              borderRadius: '50%',
+              border: 'none',
+              background: isScreenSharing ? '#2563EB' : '#334155',
+              color: 'white',
+              cursor: isRoomEnded ? 'default' : 'pointer',
+              opacity: isRoomEnded ? 0.5 : 1,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -788,17 +1056,19 @@ export function StudyRoom() {
             <Monitor size={20} />
           </button>
 
-          {/* Raise Hand */}
-          <button 
-            onClick={() => setIsHandRaised(!isHandRaised)}
+          {/* Raise Hand — real moderation action (self-service raise_hand/lower_hand). */}
+          <button
+            onClick={handleToggleHand}
+            disabled={isRoomEnded}
             style={{
-              width: 48, 
-              height: 48, 
-              borderRadius: '50%', 
-              border: 'none', 
-              background: isHandRaised ? '#F59E0B' : '#334155', 
-              color: 'white', 
-              cursor: 'pointer',
+              width: 48,
+              height: 48,
+              borderRadius: '50%',
+              border: 'none',
+              background: currentUserHandRaised ? '#F59E0B' : '#334155',
+              color: 'white',
+              cursor: isRoomEnded ? 'default' : 'pointer',
+              opacity: isRoomEnded ? 0.5 : 1,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',

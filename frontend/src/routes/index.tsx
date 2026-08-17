@@ -33,7 +33,7 @@ export function AppRoutes() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
-      <Route path="/room/:id" element={<StudyRoom />} />
+      <Route path="/room/:id" element={<ProtectedRoute><StudyRoom /></ProtectedRoute>} />
       <Route path="/" element={<Layout />}>
         <Route index element={<HomePage />} />
         <Route path="forum/post/:id" element={<ForumPostDetail />} />
