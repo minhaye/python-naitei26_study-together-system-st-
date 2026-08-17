@@ -7,6 +7,7 @@ from app.channels.services.channel_service import ChannelsService
 from app.conversations.entities.conversation_entity import Conversation
 from app.conversations.services.conversation_service import ConversationsService
 from app.db.enums import ConversationType, GroupMemberRole, MemberStatus, StudyRoomMemberRole, StudyRoomStatus
+from app.groups.entities.group_entity import Group
 from app.groups.services.group_service import GroupsService
 from app.study_rooms.entities.study_room_entity import StudyRoom
 from app.study_rooms.services.study_room_service import StudyRoomsService
@@ -29,6 +30,15 @@ async def is_group_manager(session: AsyncSession, group_id: uuid.UUID, user_id: 
         and member.status == MemberStatus.ACTIVE
         and member.role in (GroupMemberRole.OWNER, GroupMemberRole.MODERATOR)
     )
+
+
+def is_group_owner(group: Group, user_id: uuid.UUID) -> bool:
+    """Stricter than `is_group_manager` (owner-only, not owner-or-moderator). Reads the
+    denormalized `groups.owner_id` directly rather than re-querying group_members --
+    mirrors `is_room_host` below. Used for operations the spec keeps conservative/owner-only:
+    group update/delete, member role changes, and ban/reactivate/remove (moderator authority
+    over these is explicitly left unresolved by the spec, so it is not granted here)."""
+    return group.owner_id == user_id
 
 
 async def can_access_channel(session: AsyncSession, channel: Channel, user_id: uuid.UUID) -> bool:

@@ -11,12 +11,14 @@ conversations_service = ConversationsService()
 
 
 class ChannelsService:
-    async def create(self, session: AsyncSession, data: ChannelCreate) -> Channel:
-        channel = Channel(**data.model_dump())
+    async def create(self, session: AsyncSession, data: ChannelCreate, created_by: uuid.UUID) -> Channel:
+        """`created_by` is the authenticated caller, passed explicitly by the router --
+        never trust a client-supplied created_by as the acting/attributed identity."""
+        channel = Channel(**data.model_dump(), created_by=created_by)
         session.add(channel)
         await session.flush()
 
-        conversation = await conversations_service.create_for_channel(session, channel.id, channel.created_by)
+        conversation = await conversations_service.create_for_channel(session, channel.id, created_by)
         # Sync in-memory relationship so the response (built in this same session, no
         # refetch) can read channel.conversation_id without a lazy-load round trip.
         channel.conversation = conversation

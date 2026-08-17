@@ -8,14 +8,16 @@ from app.groups.dto.group_dto import GroupCreate, GroupUpdate
 
 
 class GroupsService:
-    async def create(self, session: AsyncSession, data: GroupCreate) -> Group:
-        group = Group(**data.model_dump())
+    async def create(self, session: AsyncSession, data: GroupCreate, owner_id: uuid.UUID) -> Group:
+        """`owner_id` is the authenticated caller, passed explicitly by the router --
+        never trust a client-supplied owner id as the group owner."""
+        group = Group(**data.model_dump(), owner_id=owner_id)
         session.add(group)
         await session.flush()
 
         owner_membership = GroupMember(
             group_id=group.id,
-            user_id=data.owner_id,
+            user_id=owner_id,
             role=GroupMemberRole.OWNER,
             status=MemberStatus.ACTIVE,
         )
@@ -45,15 +47,12 @@ class GroupsService:
         await session.flush()
 
     # --- group_members ---
-    async def add_member(
-        self,
-        session: AsyncSession,
-        group_id: uuid.UUID,
-        user_id: uuid.UUID,
-        role: GroupMemberRole = GroupMemberRole.MEMBER,
-        status: MemberStatus = MemberStatus.ACTIVE
-    ) -> GroupMember:
-        member = GroupMember(group_id=group_id, user_id=user_id, role=role, status=status)
+    async def add_member(self, session: AsyncSession, group_id: uuid.UUID, user_id: uuid.UUID) -> GroupMember:
+        """Always creates a plain active member -- role/status escalation only happens
+        through the dedicated, separately-authorized endpoints (never at add-time)."""
+        member = GroupMember(
+            group_id=group_id, user_id=user_id, role=GroupMemberRole.MEMBER, status=MemberStatus.ACTIVE
+        )
         session.add(member)
         await session.flush()
         return member
