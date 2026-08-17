@@ -42,10 +42,17 @@ def is_group_owner(group: Group, user_id: uuid.UUID) -> bool:
 
 
 async def can_access_channel(session: AsyncSession, channel: Channel, user_id: uuid.UUID) -> bool:
-    """Mirrors the `can_access_channel` RLS helper used by Supabase policies."""
+    """Mirrors the `can_access_channel` RLS helper used by Supabase policies (see
+    `public.can_access_channel` in docs/db/migrations/004_refactor_chat_to_conversations.sql
+    § 8): private channels grant access to an explicit `channel_members` row OR group-manager
+    authority (owner/moderator), not membership alone. The manager branch matters because
+    channel creation never inserts the creator into `channel_members` -- without it, a
+    manager who just created a private channel would be locked out of their own channel."""
     if not await is_active_group_member(session, channel.group_id, user_id):
         return False
     if channel.is_private:
+        if await is_group_manager(session, channel.group_id, user_id):
+            return True
         member = await channels_service.get_member(session, channel.id, user_id)
         return member is not None
     return True

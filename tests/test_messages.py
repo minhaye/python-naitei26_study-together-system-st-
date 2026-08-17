@@ -192,6 +192,104 @@ async def test_create_message_forbidden_private_channel_without_channel_membersh
     assert response.status_code == 403
 
 
+async def test_create_message_owner_allowed_private_channel_without_channel_membership_row(
+    async_client, monkeypatch, as_fake_user
+):
+    """Regression test: the group owner who created a private channel is never inserted into
+    channel_members (see ChannelsService.create), so they must still be able to send via the
+    is_group_manager implicit-access branch of can_access_channel."""
+    channel = _make_channel(is_private=True)
+    conversation = _make_conversation(channel)
+    _wire_conversation(monkeypatch, channel, conversation)
+    monkeypatch.setattr(
+        permissions.groups_service,
+        "get_member",
+        AsyncMock(return_value=_active_member(channel.group_id, as_fake_user.id, role=GroupMemberRole.OWNER)),
+    )
+    get_channel_member_mock = AsyncMock(return_value=None)
+    monkeypatch.setattr(permissions.channels_service, "get_member", get_channel_member_mock)
+    created = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="Hello")
+    monkeypatch.setattr(message_router.message_service, "create", AsyncMock(return_value=created))
+
+    response = await async_client.post(
+        f"/conversations/{conversation.id}/messages", json={"content": "Hello"}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 201
+    get_channel_member_mock.assert_not_awaited()
+
+
+async def test_create_message_moderator_allowed_private_channel_without_channel_membership_row(
+    async_client, monkeypatch, as_fake_user
+):
+    channel = _make_channel(is_private=True)
+    conversation = _make_conversation(channel)
+    _wire_conversation(monkeypatch, channel, conversation)
+    monkeypatch.setattr(
+        permissions.groups_service,
+        "get_member",
+        AsyncMock(return_value=_active_member(channel.group_id, as_fake_user.id, role=GroupMemberRole.MODERATOR)),
+    )
+    monkeypatch.setattr(permissions.channels_service, "get_member", AsyncMock(return_value=None))
+    created = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="Hello")
+    monkeypatch.setattr(message_router.message_service, "create", AsyncMock(return_value=created))
+
+    response = await async_client.post(
+        f"/conversations/{conversation.id}/messages", json={"content": "Hello"}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 201
+
+
+async def test_create_message_explicit_private_channel_member_allowed(async_client, monkeypatch, as_fake_user):
+    """A plain (non-manager) active group member with an explicit channel_members row must
+    still be able to send -- the manager branch is additive, not a replacement."""
+    from app.channels.entities.channel_entity import ChannelMember
+
+    channel = _make_channel(is_private=True)
+    conversation = _make_conversation(channel)
+    _wire_conversation(monkeypatch, channel, conversation)
+    monkeypatch.setattr(
+        permissions.groups_service, "get_member", AsyncMock(return_value=_active_member(channel.group_id, as_fake_user.id))
+    )
+    monkeypatch.setattr(
+        permissions.channels_service,
+        "get_member",
+        AsyncMock(return_value=ChannelMember(channel_id=channel.id, user_id=as_fake_user.id)),
+    )
+    created = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="Hello")
+    monkeypatch.setattr(message_router.message_service, "create", AsyncMock(return_value=created))
+
+    response = await async_client.post(
+        f"/conversations/{conversation.id}/messages", json={"content": "Hello"}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 201
+
+
+async def test_create_message_forbidden_banned_owner_private_channel_even_with_stale_membership_row(
+    async_client, monkeypatch, as_fake_user
+):
+    """A banned/left group member must be denied even if they held the owner role and still
+    have a stale channel_members row -- is_active_group_member gates both branches."""
+    from app.channels.entities.channel_entity import ChannelMember
+
+    channel = _make_channel(is_private=True)
+    conversation = _make_conversation(channel)
+    _wire_conversation(monkeypatch, channel, conversation)
+    banned_owner = GroupMember(
+        group_id=channel.group_id, user_id=as_fake_user.id, role=GroupMemberRole.OWNER, status=MemberStatus.BANNED
+    )
+    monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock(return_value=banned_owner))
+    monkeypatch.setattr(
+        permissions.channels_service,
+        "get_member",
+        AsyncMock(return_value=ChannelMember(channel_id=channel.id, user_id=as_fake_user.id)),
+    )
+
+    response = await async_client.post(
+        f"/conversations/{conversation.id}/messages", json={"content": "hi"}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 403
+
+
 async def test_create_message_valid_member_returns_201(async_client, monkeypatch, as_fake_user):
     channel = _make_channel(is_private=False)
     conversation = _make_conversation(channel)
