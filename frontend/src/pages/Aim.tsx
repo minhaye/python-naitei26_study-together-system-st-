@@ -1,210 +1,39 @@
+import { useMemo, useState } from 'react';
+import type { FormEvent } from 'react';
+
+type Priority = 'HIGH' | 'MEDIUM' | 'LOW';
+type Group = 'today' | 'upcoming';
+type Task = { id: number; label: string; priority: Priority; time: string; group: Group; done: boolean };
+type Status = 'Chưa bắt đầu' | 'Đang thực hiện' | 'Hoàn thành';
+type Phase = { name: string; progress: number };
+type Roadmap = { id: number; title: string; goal: string; dueDate: string; phases: Phase[] };
+
+const tasksSeed: Task[] = [
+  { id: 1, label: 'Hoàn thiện bài tập Cấu trúc dữ liệu', priority: 'HIGH', time: '14:00', group: 'today', done: false },
+  { id: 2, label: 'Review code Project Cuối Kì', priority: 'MEDIUM', time: '20:00', group: 'today', done: false },
+  { id: 3, label: 'Đọc chương 4 - HĐH', priority: 'MEDIUM', time: '14/11 · 09:00', group: 'upcoming', done: false },
+];
+const roadmapSeed: Roadmap[] = [
+  { id: 1, title: 'Chinh phục IELTS 7.5', goal: 'Nâng band IELTS lên 7.5', dueDate: '20/01/2024', phases: [{ name: 'Nền tảng', progress: 100 }, { name: 'Nghe & Đọc', progress: 50 }, { name: 'Luyện đề', progress: 0 }] },
+  { id: 2, title: 'Lập trình Python', goal: 'Hoàn thành nền tảng Python cho Data Analysis', dueDate: '31/03/2024', phases: [{ name: 'Cú pháp', progress: 0 }, { name: 'Pandas', progress: 0 }, { name: 'Dự án', progress: 0 }] },
+];
+const control = { border: '1px solid #CBD5E1', background: 'white', borderRadius: 7, padding: '9px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#0F172A' } as const;
+const statuses: Status[] = ['Chưa bắt đầu', 'Đang thực hiện', 'Hoàn thành'];
+const progressOf = (roadmap: Roadmap) => Math.round(roadmap.phases.reduce((total, phase) => total + phase.progress, 0) / roadmap.phases.length);
+const statusOf = (roadmap: Roadmap): Status => progressOf(roadmap) === 100 ? 'Hoàn thành' : progressOf(roadmap) > 0 ? 'Đang thực hiện' : 'Chưa bắt đầu';
+
 export function AimPage() {
-  const todayTasks = [
-    { label: 'Hoàn thiện bài tập Cấu trúc dữ liệu', priority: 'HIGH', time: '14:00' },
-    { label: 'Review Code Project Cuối Kì', priority: 'MEDIUM', time: '20:00' },
-  ];
-
-  const upcomingTasks = [
-    { label: 'Đọc chương 4 - HĐH', time: 'Ngày mai' },
-    { label: 'Tìm hiểu Next.js App Router', time: 'Thứ 6' },
-  ];
-
-  const phases = [
-    { code: 'PHASE 1', label: 'Nền tảng & Tư duy', active: false },
-    { code: 'PHASE 2', label: 'Kỹ năng Nghe & Đọc', active: true },
-    { code: 'PHASE 3', label: 'Luyện đề & Phân xạ', active: false },
-  ];
-
-  return (
-    <div style={{ width: '100%', minHeight: '100vh', background: '#F8FAFC', padding: '28px', boxSizing: 'border-box' }}>
-      <div style={{ maxWidth: 1280, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#0F172A' }}>Mục tiêu & Tiến độ</h1>
-            <div style={{ width: 1, height: 20, background: '#E2E8F0' }} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#475569', fontSize: 14 }}>
-              <span>Computer Science Senior</span>
-              <span style={{ color: '#94A3B8' }}>•</span>
-              <span>Chuỗi: <strong style={{ color: '#0F172A' }}>12 ngày</strong></span>
-            </div>
-          </div>
-          <button style={{ border: 'none', background: '#1E3A8A', color: 'white', borderRadius: 8, padding: '10px 16px', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span>＋</span> Thêm mới
-          </button>
-        </header>
-
-        <section style={{ background: 'white', border: '1px solid #E2E8F0', borderRadius: 16, padding: 20 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, gap: 12, flexWrap: 'wrap' }}>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#0F172A' }}>Quản lý Công việc chi tiết</h2>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <button style={{ border: '1px solid #E2E8F0', background: 'white', borderRadius: 6, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#0F172A', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span>⎇</span> Lọc
-              </button>
-              <button style={{ border: '1px solid #E2E8F0', background: 'white', borderRadius: 6, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#0F172A' }}>
-                Xem tất cả
-              </button>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: 320, display: 'flex', flexDirection: 'column', gap: 20 }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', color: '#0F172A' }}>HÔM NAY</span>
-                  <span style={{ fontSize: 12, color: '#64748B' }}>2</span>
-                </div>
-                <div style={{ borderLeft: '2px solid #E2E8F0', paddingLeft: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {todayTasks.map((task) => (
-                    <div key={task.label} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <input type="checkbox" style={{ width: 16, height: 16, borderRadius: 4, border: '1px solid #C7D2FE', cursor: 'pointer' }} />
-                      <span style={{ flex: 1, fontSize: 14, color: '#0F172A' }}>{task.label}</span>
-                      <span style={{
-                        background: task.priority === 'HIGH' ? 'rgba(186, 26, 26, 0.1)' : 'rgba(16, 185, 129, 0.1)',
-                        color: task.priority === 'HIGH' ? '#BA1A1A' : '#10B981',
-                        borderRadius: 4,
-                        padding: '3px 8px',
-                        fontSize: 11,
-                        fontWeight: 700,
-                      }}>
-                        {task.priority}
-                      </span>
-                      <span style={{ fontSize: 12, color: '#475569' }}>{task.time}</span>
-                    </div>
-                  ))}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#475569', fontSize: 14, marginTop: 4 }}>
-                    <span>＋</span> Thêm việc
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', color: '#0F172A' }}>SẮP TỚI</span>
-                  <span style={{ fontSize: 12, color: '#64748B' }}>2</span>
-                </div>
-                <div style={{ borderLeft: '2px solid #E2E8F0', paddingLeft: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {upcomingTasks.map((task) => (
-                    <div key={task.label} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <input type="checkbox" style={{ width: 16, height: 16, borderRadius: 4, border: '1px solid #C7D2FE', cursor: 'pointer' }} />
-                      <span style={{ flex: 1, fontSize: 14, color: '#0F172A' }}>{task.label}</span>
-                      <span style={{ fontSize: 12, color: '#475569' }}>{task.time}</span>
-                    </div>
-                  ))}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#475569', fontSize: 14, marginTop: 4 }}>
-                    <span>＋</span> Thêm việc
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', color: '#475569' }}>ĐÃ HOÀN THÀNH</span>
-                  <span style={{ fontSize: 12, color: '#64748B' }}>1</span>
-                </div>
-                <div style={{ borderLeft: '2px solid #E2E8F0', paddingLeft: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, opacity: 0.7 }}>
-                    <div style={{ width: 16, height: 16, borderRadius: 4, background: '#1E3A8A', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 12 }}>✓</div>
-                    <span style={{ fontSize: 14, color: '#0F172A', textDecoration: 'line-through' }}>Họp nhóm đồ án</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ width: 340, minWidth: 300, background: '#EEF4FF', border: '1px solid #E2E8F0', borderRadius: 12, padding: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <span style={{ fontSize: 14, fontWeight: 700, color: '#0F172A' }}>Tháng 11, 2023</span>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 8, textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#475569' }}>
-                {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map(day => <div key={day}>{day}</div>)}
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, textAlign: 'center', fontSize: 13 }}>
-                {[30,31,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,1,2,3].map((day, idx) => {
-                  const isSelected = day === 13;
-                  const hasEvent = day === 14;
-                  const isOtherMonth = (day > 15 && idx < 7) || (day < 10 && idx > 20);
-                  return (
-                    <div key={idx} style={{ position: 'relative', padding: '6px 0', borderRadius: 4, background: isSelected ? '#1E3A8A' : 'transparent', color: isSelected ? 'white' : '#334155', fontWeight: isSelected ? 700 : 400, opacity: isOtherMonth ? 0.3 : 1, cursor: 'pointer' }}>
-                      {day}
-                      {hasEvent && <div style={{ position: 'absolute', bottom: 1, left: '50%', transform: 'translateX(-50%)', width: 4, height: 4, background: '#BA1A1A', borderRadius: '50%' }} />}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section style={{ background: 'white', border: '1px solid #E2E8F0', borderRadius: 16, padding: 20 }}>
-          <div style={{ marginBottom: 20 }}>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#0F172A' }}>Lộ trình & Mục tiêu</h2>
-            <p style={{ margin: '6px 0 0', fontSize: 13, color: '#64748B' }}>Theo dõi và tối ưu hóa hành trình phát triển bản thân</p>
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
-            <button style={{ border: '1px solid #CBD5E1', background: 'white', borderRadius: 8, padding: '10px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#1E3A8A' }}>
-              ✦ Gợi ý lộ trình AI
-            </button>
-            <button style={{ border: 'none', background: '#1E3A8A', color: 'white', borderRadius: 8, padding: '10px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-              ＋ Tạo lộ trình mới
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', gap: 20, alignItems: 'stretch', flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: 360, background: 'linear-gradient(180deg, #F7FBFF 0%, #EEF6FF 100%)', border: '1px solid #D9E8FF', borderRadius: 14, padding: 20 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, gap: 12 }}>
-                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 8, background: 'linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: 16 }}>AI</div>
-                  <div>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: '#0F172A' }}>Chinh phục IELTS 7.5</div>
-                    <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>MỤC TIÊU HIỆN TẠI</div>
-                  </div>
-                </div>
-                <div style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#047857', borderRadius: 20, padding: '6px 12px', fontSize: 12, fontWeight: 700 }}>
-                  65% Hoàn thành
-                </div>
-              </div>
-
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}>
-                <span>TIẾN ĐỘ TỔNG THỂ</span>
-                <span>Dự kiến: 20/01/2024</span>
-              </div>
-
-              <div style={{ height: 10, background: '#DDE7F7', borderRadius: 20, overflow: 'hidden', marginBottom: 18 }}>
-                <div style={{ width: '65%', height: '100%', background: 'linear-gradient(90deg, #22C55E 0%, #10B981 100%)', borderRadius: 20 }} />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-                {phases.map(phase => (
-                  <div key={phase.code} style={{ border: phase.active ? '2px solid #1E3A8A' : '1px solid #CBD5E1', background: phase.active ? 'white' : '#F8FAFC', borderRadius: 10, padding: 12, minHeight: 80, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <div style={{ width: 6, height: 6, borderRadius: '50%', background: phase.active ? '#1E3A8A' : '#94A3B8' }} />
-                      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: phase.active ? '#1E3A8A' : '#475569' }}>{phase.code}</span>
-                    </div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: '#0F172A', lineHeight: 1.3 }}>{phase.label}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ width: 320, minWidth: 280, background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 14, padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 36, height: 36, borderRadius: 8, background: '#D9E8FF', color: '#1E3A8A', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>✦</div>
-                <span style={{ fontSize: 16, fontWeight: 700, color: '#0F172A' }}>Trợ lý Lộ trình AI</span>
-              </div>
-
-              <p style={{ margin: 0, fontSize: 13, color: '#475569', lineHeight: 1.5 }}>Bạn muốn học gì tiếp theo? Hãy để AI thiết kế lộ trình cá nhân hóa dựa trên mục tiêu của bạn.</p>
-
-              <div style={{ background: '#EEF4FF', border: '1px solid #CFDDFB', borderRadius: 10, padding: 12, fontSize: 13, color: '#334155', lineHeight: 1.5 }}>
-                Ví dụ: Tôi muốn học lập trình Python trong 3 tháng để làm Data Analysis.
-              </div>
-
-              <button style={{ marginTop: 'auto', border: 'none', background: '#1E3A8A', color: 'white', borderRadius: 8, padding: '12px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>✦ Tạo lộ trình ngay</button>
-            </div>
-          </div>
-        </section>
-      </div>
-    </div>
-  );
+  const [tasks, setTasks] = useState(tasksSeed); const [filter, setFilter] = useState<'ALL' | Priority>('ALL'); const [showDone, setShowDone] = useState(true); const [selectedDate, setSelectedDate] = useState(13); const [addingTask, setAddingTask] = useState(false); const [taskName, setTaskName] = useState(''); const [priority, setPriority] = useState<Priority>('MEDIUM'); const [schedule, setSchedule] = useState('');
+  const [todayOpen, setTodayOpen] = useState(true); const [upcomingOpen, setUpcomingOpen] = useState(true); const [completedOpen, setCompletedOpen] = useState(true);
+  const [roadmaps, setRoadmaps] = useState(roadmapSeed); const [addingRoadmap, setAddingRoadmap] = useState(false); const [title, setTitle] = useState(''); const [goal, setGoal] = useState(''); const [dueDate, setDueDate] = useState(''); const [phaseInput, setPhaseInput] = useState('');
+  const visibleTasks = useMemo(() => tasks.filter(task => (filter === 'ALL' || task.priority === filter) && (showDone || !task.done)), [tasks, filter, showDone]);
+  const toggleTask = (id: number) => setTasks(items => items.map(task => task.id === id ? { ...task, done: !task.done } : task));
+  const addTask = (event: FormEvent) => { event.preventDefault(); if (!taskName.trim()) return; const upcoming = Boolean(schedule); const time = upcoming ? new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(schedule)).replace(',', ' ·') : 'Hôm nay'; setTasks(items => [...items, { id: Date.now(), label: taskName.trim(), priority, time, group: upcoming ? 'upcoming' : 'today', done: false }]); setTaskName(''); setSchedule(''); setAddingTask(false); };
+  const addRoadmap = (event: FormEvent) => { event.preventDefault(); if (!title.trim() || !goal.trim()) return; const phases = phaseInput.split(/\n|,/).map(name => name.trim()).filter(Boolean).map(name => ({ name, progress: 0 })); setRoadmaps(items => [...items, { id: Date.now(), title: title.trim(), goal: goal.trim(), dueDate: dueDate ? new Intl.DateTimeFormat('vi-VN').format(new Date(`${dueDate}T00:00:00`)) : 'Chưa đặt hạn', phases: phases.length ? phases : [{ name: 'Chặng 1', progress: 0 }] }]); setTitle(''); setGoal(''); setDueDate(''); setPhaseInput(''); setAddingRoadmap(false); };
+  const advancePhase = (roadmapId: number, phaseIndex: number) => setRoadmaps(items => items.map(item => item.id !== roadmapId ? item : { ...item, phases: item.phases.map((phase, index) => index === phaseIndex ? { ...phase, progress: phase.progress === 100 ? 0 : phase.progress + 25 } : phase) }));
+  const taskGroup = (name: string, items: Task[], open: boolean, toggle: () => void) => <div style={{ marginBottom: 22 }}><button onClick={toggle} aria-expanded={open} style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, color: '#0F172A' }}><span aria-hidden="true" style={{ fontSize: 14, width: 12 }}>{open ? '⌄' : '›'}</span><b style={{ fontSize: 12, letterSpacing: '.08em' }}>{name} <span style={{ color: '#64748B' }}>{items.length}</span></b><span style={{ color: '#64748B', fontSize: 12 }}>{open ? 'Thu gọn' : 'Mở rộng'}</span></button>{open && <div style={{ borderLeft: '2px solid #E2E8F0', paddingLeft: 12, display: 'grid', gap: 10, marginTop: 10 }}>{items.length ? items.map(task => <label key={task.id} style={{ display: 'flex', gap: 12, alignItems: 'center', opacity: task.done ? .6 : 1 }}><input type="checkbox" checked={task.done} onChange={() => toggleTask(task.id)} /><span style={{ flex: 1, fontSize: 14, textDecoration: task.done ? 'line-through' : 'none' }}>{task.label}</span><b style={{ fontSize: 11, color: task.priority === 'HIGH' ? '#BA1A1A' : task.priority === 'MEDIUM' ? '#B45309' : '#047857' }}>{task.priority}</b><small>{task.time}</small></label>) : <small style={{ color: '#64748B' }}>Không có công việc.</small>}</div>}</div>;
+  return <main style={{ minHeight: '100vh', padding: 32, background: '#F8FAFC', boxSizing: 'border-box', color: '#0F172A' }}><div style={{ display: 'grid', gap: 24 }}>
+    <section style={{ background: 'white', border: '1px solid #E2E8F0', borderRadius: 16, padding: 28 }}><div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}><h2 style={{ margin: 0, fontSize: 18 }}>Quản lý công việc chi tiết</h2><div><select value={filter} onChange={event => setFilter(event.target.value as 'ALL' | Priority)} style={control}><option value="ALL">Mọi mức ưu tiên</option><option value="HIGH">Cao</option><option value="MEDIUM">Trung bình</option><option value="LOW">Thấp</option></select><button onClick={() => setShowDone(value => !value)} style={{ ...control, marginLeft: 8 }}>{showDone ? 'Ẩn đã xong' : 'Xem đã xong'}</button><button onClick={() => setAddingTask(true)} style={{ ...control, marginLeft: 8 }}>＋ Thêm việc</button></div></div>{addingTask && <form onSubmit={addTask} style={{ display: 'grid', gridTemplateColumns: '1fr 150px 210px auto', gap: 8, marginBottom: 20 }}><input autoFocus value={taskName} onChange={event => setTaskName(event.target.value)} placeholder="Tên công việc" style={{ padding: 10, border: '1px solid #CBD5E1', borderRadius: 7 }} /><select value={priority} onChange={event => setPriority(event.target.value as Priority)} style={control}><option value="HIGH">Ưu tiên cao</option><option value="MEDIUM">Ưu tiên trung bình</option><option value="LOW">Ưu tiên thấp</option></select><input type="datetime-local" value={schedule} onChange={event => setSchedule(event.target.value)} style={{ padding: 9, border: '1px solid #CBD5E1', borderRadius: 7 }} /><button style={control}>Lưu</button></form>}<div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 420px', gap: 32 }}><div style={{ maxHeight: 380, overflowY: 'auto', paddingRight: 12 }}>{taskGroup('HÔM NAY', visibleTasks.filter(task => task.group === 'today' && !task.done), todayOpen, () => setTodayOpen(value => !value))}{taskGroup('SẮP TỚI', visibleTasks.filter(task => task.group === 'upcoming' && !task.done), upcomingOpen, () => setUpcomingOpen(value => !value))}{showDone && taskGroup('ĐÃ HOÀN THÀNH', visibleTasks.filter(task => task.done), completedOpen, () => setCompletedOpen(value => !value))}</div><aside style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, padding: 18 }}><b>Tháng 11, 2023</b><div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 5 }}>{Array.from({ length: 30 }, (_, index) => index + 1).map(day => <button key={day} onClick={() => setSelectedDate(day)} style={{ border: 0, borderRadius: 4, padding: 8, background: selectedDate === day ? '#1E3A8A' : 'transparent', color: selectedDate === day ? 'white' : '#334155', cursor: 'pointer' }}>{day}</button>)}</div><div style={{ borderTop: '1px solid #E2E8F0', marginTop: 16, paddingTop: 12, fontSize: 13 }}><b>Ngày {selectedDate}/11</b><p style={{ color: '#64748B', marginBottom: 0 }}>Chưa có sự kiện được lên lịch.</p></div></aside></div></section>
+    <section style={{ background: 'white', border: '1px solid #E2E8F0', borderRadius: 16, padding: 28 }}><div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}><div><h2 style={{ margin: 0, fontSize: 18 }}>Lộ trình & Mục tiêu</h2><p style={{ margin: '6px 0 0', color: '#64748B', fontSize: 13 }}>Tiến độ và trạng thái được tính tự động theo từng chặng học.</p></div><button onClick={() => setAddingRoadmap(true)} style={{ ...control, background: '#1E3A8A', color: 'white', border: 0 }}>＋ Tạo lộ trình mới</button></div>{addingRoadmap && <form onSubmit={addRoadmap} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 160px 1fr auto', gap: 8, padding: '18px 0' }}><input autoFocus required value={title} onChange={event => setTitle(event.target.value)} placeholder="Tên lộ trình" style={{ padding: 10, border: '1px solid #CBD5E1', borderRadius: 7 }} /><input required value={goal} onChange={event => setGoal(event.target.value)} placeholder="Mục tiêu cần đạt" style={{ padding: 10, border: '1px solid #CBD5E1', borderRadius: 7 }} /><input type="date" value={dueDate} onChange={event => setDueDate(event.target.value)} aria-label="Hạn hoàn thành" style={{ padding: 9, border: '1px solid #CBD5E1', borderRadius: 7 }} /><input value={phaseInput} onChange={event => setPhaseInput(event.target.value)} placeholder="Các chặng, ngăn cách bằng dấu phẩy" style={{ padding: 10, border: '1px solid #CBD5E1', borderRadius: 7 }} /><button style={control}>Tạo</button></form>}<div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(280px, 1fr))', gap: 16, marginTop: 20, overflowX: 'auto' }}>{statuses.map(status => <div key={status} style={{ background: '#F8FAFC', borderRadius: 12, padding: 14, minHeight: 260 }}><div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}><b>{status}</b><span style={{ color: '#64748B', fontSize: 13 }}>{roadmaps.filter(item => statusOf(item) === status).length}</span></div><div style={{ display: 'grid', gap: 12 }}>{roadmaps.filter(item => statusOf(item) === status).map(item => { const progress = progressOf(item); const completed = item.phases.filter(phase => phase.progress === 100).length; return <article key={item.id} style={{ background: 'white', border: '1px solid #E2E8F0', borderRadius: 10, padding: 14 }}><b>{item.title}</b><p style={{ fontSize: 13, color: '#64748B', margin: '6px 0' }}>{item.goal}</p><small>Hạn: {item.dueDate}</small><div style={{ height: 7, background: '#E2E8F0', borderRadius: 20, overflow: 'hidden', margin: '12px 0 6px' }}><div style={{ height: '100%', width: `${progress}%`, background: '#10B981' }} /></div><small>{progress}% · {completed}/{item.phases.length} chặng hoàn thành</small><div style={{ display: 'grid', gap: 6, marginTop: 12 }}>{item.phases.map((phase, index) => <button key={`${phase.name}-${index}`} onClick={() => advancePhase(item.id, index)} title="Nhấn để tăng 25%, nhấn ở 100% để đặt lại" style={{ ...control, padding: '7px 9px', textAlign: 'left', display: 'flex', justifyContent: 'space-between' }}><span>{phase.name}</span><b>{phase.progress}%</b></button>)}</div></article>})}</div></div>)}</div></section>
+  </div></main>;
 }
