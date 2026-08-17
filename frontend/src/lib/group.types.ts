@@ -24,3 +24,25 @@ export interface GroupMember {
   status: MemberStatus;
   joined_at: string;
 }
+
+/** Mirrors GroupCreate (app/groups/dto/group_dto.py) — no owner_id: the backend always
+ * derives the owner from the authenticated caller. */
+export interface GroupCreate {
+  name: string;
+  description?: string | null;
+  avatar_url?: string | null;
+  is_public?: boolean;
+}
+
+/** Mirrors GroupUpdate. All fields optional; only owner-authorized callers may use this. */
+export interface GroupUpdate {
+  name?: string;
+  description?: string | null;
+  avatar_url?: string | null;
+  is_public?: boolean;
+}
+
+/** Mirrors GroupMemberCreate — omit user_id to self-join as the authenticated caller. */
+export interface GroupMemberCreate {
+  user_id?: string;
+}

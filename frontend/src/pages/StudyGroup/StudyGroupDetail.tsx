@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { ApiError } from '../../lib/apiClient';
-import { getGroup, listGroupMembers } from '../../lib/group.api';
+import { getGroup, listGroupMembers, leaveGroup, updateGroup } from '../../lib/group.api';
 import { listChannelsByGroup } from '../../lib/channel.api';
 import { listStudyRoomsByGroup } from '../../lib/studyRoom.api';
 import type { Group, GroupMember } from '../../lib/group.types';
@@ -49,6 +49,12 @@ export function StudyGroupDetail() {
   const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<{ status: number | null; message: string } | null>(null);
+
+  // Leave-group and public/private-toggle mutation state
+  const [isLeaving, setIsLeaving] = useState(false);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
+  const [isTogglingPublic, setIsTogglingPublic] = useState(false);
+  const [toggleError, setToggleError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!groupId) return;
@@ -93,6 +99,38 @@ export function StudyGroupDetail() {
 
   const activeMembers = groupMembers.filter((m) => m.status === 'active');
   const isOwner = !!group && !!currentUserId && group.owner_id === currentUserId;
+
+  async function handleLeaveGroup() {
+    if (!group || !currentUserId || isLeaving) return;
+    const confirmMessage = isOwner
+      ? `Bạn là trưởng nhóm "${group.name}". Rời nhóm sẽ không chuyển quyền trưởng nhóm cho ai khác. Bạn vẫn muốn rời nhóm?`
+      : `Bạn có chắc muốn rời nhóm "${group.name}"?`;
+    if (!window.confirm(confirmMessage)) return;
+
+    setIsLeaving(true);
+    setLeaveError(null);
+    try {
+      await leaveGroup(group.id, currentUserId);
+      navigate('/groups');
+    } catch (err) {
+      setLeaveError(err instanceof ApiError ? err.message : 'Không thể rời nhóm học.');
+      setIsLeaving(false);
+    }
+  }
+
+  async function handleTogglePublic() {
+    if (!group || isTogglingPublic) return;
+    setIsTogglingPublic(true);
+    setToggleError(null);
+    try {
+      const updated = await updateGroup(group.id, { is_public: !group.is_public });
+      setGroup(updated);
+    } catch (err) {
+      setToggleError(err instanceof ApiError ? err.message : 'Không thể đổi chế độ công khai/riêng tư.');
+    } finally {
+      setIsTogglingPublic(false);
+    }
+  }
 
   // Mock data for chat messages across channels — chat/messages integration is a separate
   // task, so this stays purely local; only the channel *list* above is real.
@@ -262,19 +300,16 @@ export function StudyGroupDetail() {
 
                                     <div
                                         onClick={() => {
-                                            // PUT /groups/{id} has no auth dependency at all (no owner/host check,
-                                            // no bearer-token requirement), so toggling this here would either
-                                            // impersonate an unauthenticated write or fake a local success that
-                                            // never persists. Left inert until the backend secures this route.
-                                            alert('Chức năng đổi chế độ công khai/riêng tư hiện chưa khả dụng: máy chủ chưa xác thực thao tác này.');
+                                            if (isTogglingPublic) return;
                                             setShowGroupMenu(false);
+                                            handleTogglePublic();
                                         }}
-                                        style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#1E293B', cursor: 'pointer'}}
-                                        onMouseOver={e => e.currentTarget.style.background = '#F1F5F9'}
-                                        onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                                        style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: isTogglingPublic ? '#94A3B8' : '#1E293B', cursor: isTogglingPublic ? 'not-allowed' : 'pointer'}}
+                                        onMouseOver={e => !isTogglingPublic && (e.currentTarget.style.background = '#F1F5F9')}
+                                        onMouseOut={e => !isTogglingPublic && (e.currentTarget.style.background = 'transparent')}
                                     >
                                         {group.is_public ? <Lock size={16} color="#475569" /> : <Globe size={16} color="#475569" />}
-                                        {group.is_public ? 'Chuyển sang Riêng tư' : 'Chuyển sang Công khai'}
+                                        {isTogglingPublic ? 'Đang cập nhật...' : group.is_public ? 'Chuyển sang Riêng tư' : 'Chuyển sang Công khai'}
                                     </div>
                                 </>
                             )}
@@ -291,16 +326,26 @@ export function StudyGroupDetail() {
                             <div style={{height: 1, background: '#E2E8F0', margin: '4px 0'}} />
 
                             <div
-                                onClick={() => { navigate('/groups'); }}
-                                style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#DC2626', cursor: 'pointer'}}
-                                onMouseOver={e => e.currentTarget.style.background = '#FEF2F2'}
-                                onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                                onClick={() => {
+                                    if (isLeaving) return;
+                                    setShowGroupMenu(false);
+                                    handleLeaveGroup();
+                                }}
+                                style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: isLeaving ? '#F1A9A0' : '#DC2626', cursor: isLeaving ? 'not-allowed' : 'pointer'}}
+                                onMouseOver={e => !isLeaving && (e.currentTarget.style.background = '#FEF2F2')}
+                                onMouseOut={e => !isLeaving && (e.currentTarget.style.background = 'transparent')}
                             >
-                                <LogOut size={16} color="#DC2626" /> Rời nhóm học
+                                <LogOut size={16} color={isLeaving ? '#F1A9A0' : '#DC2626'} /> {isLeaving ? 'Đang rời nhóm...' : 'Rời nhóm học'}
                             </div>
                         </div>
                     )}
                 </div>
+
+                {(leaveError || toggleError) && (
+                    <div style={{ margin: '12px 12px 0 12px', padding: '10px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, color: '#B91C1C', fontSize: 12.5 }}>
+                        {leaveError || toggleError}
+                    </div>
+                )}
 
                 {/* Owner Note / Announcement Banner (local-only placeholder; no backend concept for this yet) */}
                 <div style={{

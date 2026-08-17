@@ -1,8 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { ChevronDown, ChevronRight, UserPlus, Users, ArrowRight } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { getGroups, listGroupMembers } from '../../lib/group.api';
+import { getGroups, listGroupMembers, createGroup, joinGroup } from '../../lib/group.api';
 import { ApiError } from '../../lib/apiClient';
 import type { Group, GroupMember, GroupMemberRole } from '../../lib/group.types';
 import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
@@ -34,6 +34,7 @@ function GroupCover({ group }: { group: Group }) {
 }
 
 export function StudyRooms() {
+    const navigate = useNavigate();
     const { user } = useAuth();
     const currentUserId = user?.id ?? null;
 
@@ -46,6 +47,17 @@ export function StudyRooms() {
     const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
     const [joinCode, setJoinCode] = useState('');
     const [groupToJoin, setGroupToJoin] = useState<Group | null>(null);
+    const [isJoining, setIsJoining] = useState(false);
+    const [joinActionError, setJoinActionError] = useState<string | null>(null);
+
+    // Create Group modal state
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+    const [createName, setCreateName] = useState('');
+    const [createDescription, setCreateDescription] = useState('');
+    const [createIsPublic, setCreateIsPublic] = useState(true);
+    const [isCreating, setIsCreating] = useState(false);
+    const [createError, setCreateError] = useState<string | null>(null);
+
     const menuRef = useRef<HTMLDivElement>(null);
 
     // Đóng dropdown khi click ra ngoài
@@ -67,49 +79,87 @@ export function StudyRooms() {
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
 
+    const loadGroups = useCallback(async () => {
+        setIsLoading(true);
+        setLoadError(null);
+        try {
+            const list = await getGroups(true);
+            const enriched = await Promise.all(
+                list.map(async (group): Promise<GroupWithMembership> => {
+                    let members: GroupMember[] = [];
+                    try {
+                        members = await listGroupMembers(group.id);
+                    } catch {
+                        // Membership is supplementary here (role badge / My-Groups split);
+                        // a failure to load it shouldn't hide the group itself.
+                    }
+                    const activeMembers = members.filter((m) => m.status === 'active');
+                    const mine = currentUserId ? activeMembers.find((m) => m.user_id === currentUserId) : undefined;
+                    return {
+                        group,
+                        activeMembersCount: activeMembers.length,
+                        isMember: !!mine,
+                        role: mine?.role ?? null,
+                    };
+                })
+            );
+            setGroups(enriched);
+        } catch (err) {
+            setLoadError(err instanceof ApiError ? err.message : 'Không thể tải danh sách nhóm học.');
+            setGroups(null);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [currentUserId]);
+
     useEffect(() => {
         let cancelled = false;
-
-        async function load() {
-            setIsLoading(true);
-            setLoadError(null);
-            try {
-                const list = await getGroups(true);
-                const enriched = await Promise.all(
-                    list.map(async (group): Promise<GroupWithMembership> => {
-                        let members: GroupMember[] = [];
-                        try {
-                            members = await listGroupMembers(group.id);
-                        } catch {
-                            // Membership is supplementary here (role badge / My-Groups split);
-                            // a failure to load it shouldn't hide the group itself.
-                        }
-                        const activeMembers = members.filter((m) => m.status === 'active');
-                        const mine = currentUserId ? activeMembers.find((m) => m.user_id === currentUserId) : undefined;
-                        return {
-                            group,
-                            activeMembersCount: activeMembers.length,
-                            isMember: !!mine,
-                            role: mine?.role ?? null,
-                        };
-                    })
-                );
-                if (!cancelled) setGroups(enriched);
-            } catch (err) {
-                if (!cancelled) {
-                    setLoadError(err instanceof ApiError ? err.message : 'Không thể tải danh sách nhóm học.');
-                    setGroups(null);
-                }
-            } finally {
-                if (!cancelled) setIsLoading(false);
-            }
-        }
-
-        load();
+        (async () => {
+            if (!cancelled) await loadGroups();
+        })();
         return () => {
             cancelled = true;
         };
-    }, [currentUserId]);
+    }, [loadGroups]);
+
+    async function handleConfirmJoin() {
+        if (!groupToJoin || isJoining) return;
+        setIsJoining(true);
+        setJoinActionError(null);
+        try {
+            await joinGroup(groupToJoin.id);
+            setGroupToJoin(null);
+            await loadGroups();
+        } catch (err) {
+            setJoinActionError(
+                err instanceof ApiError ? err.message : 'Không thể tham gia nhóm học.'
+            );
+        } finally {
+            setIsJoining(false);
+        }
+    }
+
+    async function handleCreateGroup() {
+        if (!createName.trim() || isCreating) return;
+        setIsCreating(true);
+        setCreateError(null);
+        try {
+            const newGroup = await createGroup({
+                name: createName.trim(),
+                description: createDescription.trim() || null,
+                is_public: createIsPublic,
+            });
+            setIsCreateModalOpen(false);
+            setCreateName('');
+            setCreateDescription('');
+            setCreateIsPublic(true);
+            navigate(`/groups/${newGroup.id}`);
+        } catch (err) {
+            setCreateError(err instanceof ApiError ? err.message : 'Không thể tạo nhóm học.');
+        } finally {
+            setIsCreating(false);
+        }
+    }
 
     const myGroups = groups?.filter((g) => g.isMember) ?? [];
     const discoverGroups = groups?.filter((g) => !g.isMember) ?? [];
@@ -171,8 +221,8 @@ export function StudyRooms() {
                                     <div
                                         onClick={() => {
                                             setIsMenuOpen(false);
-                                            // Group creation UI does not exist yet (backend POST /groups also has no
-                                            // auth dependency to attach a real owner to) — intentionally a no-op.
+                                            setCreateError(null);
+                                            setIsCreateModalOpen(true);
                                         }}
                                         style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', borderBottom: '1px solid #F1F5F9' }}
                                         onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F8FAFC'}
@@ -309,7 +359,7 @@ export function StudyRooms() {
                                                 </div>
                                             </div>
                                             <div
-                                                onClick={() => setGroupToJoin(group)}
+                                                onClick={() => { setJoinActionError(null); setGroupToJoin(group); }}
                                                 style={{ color: '#00236F', fontSize: 14, fontFamily: 'Inter', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, borderBottom: '1.5px solid #00236F', paddingBottom: 2 }}
                                             >
                                                 <Users size={16} /> Tham gia
@@ -392,8 +442,9 @@ export function StudyRooms() {
                 <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.4)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
                     <div style={{ background: 'white', borderRadius: 12, width: 400, padding: 32, display: 'flex', flexDirection: 'column', position: 'relative', boxShadow: '0px 10px 25px rgba(0, 0, 0, 0.1)' }}>
                         <button
-                            onClick={() => setGroupToJoin(null)}
-                            style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', cursor: 'pointer', color: '#64748B', fontSize: 18 }}
+                            onClick={() => { setGroupToJoin(null); setJoinActionError(null); }}
+                            disabled={isJoining}
+                            style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', cursor: isJoining ? 'not-allowed' : 'pointer', color: '#64748B', fontSize: 18 }}
                         >
                             ✕
                         </button>
@@ -403,19 +454,106 @@ export function StudyRooms() {
                             Bạn muốn tham gia nhóm học <strong>{groupToJoin.name}</strong>.
                         </p>
 
-                        {/* Same backend limitation as the join-by-code modal above. */}
-                        <div style={{ background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 8, padding: 12, color: '#92400E', fontSize: 13, marginBottom: 24 }}>
-                            Chức năng tham gia nhóm hiện chưa khả dụng: máy chủ chưa hỗ trợ xác thực người dùng cho thao tác này.
-                        </div>
+                        {joinActionError && (
+                            <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: 12, color: '#B91C1C', fontSize: 13, marginBottom: 16 }}>
+                                {joinActionError}
+                            </div>
+                        )}
 
                         <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
                             <button
-                                onClick={() => setGroupToJoin(null)}
-                                style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: '#F1F5F9', color: '#475569', border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'Inter', transition: 'background-color 0.2s' }}
-                                onMouseOver={e => e.currentTarget.style.backgroundColor = '#E2E8F0'}
-                                onMouseOut={e => e.currentTarget.style.backgroundColor = '#F1F5F9'}
+                                onClick={() => { setGroupToJoin(null); setJoinActionError(null); }}
+                                disabled={isJoining}
+                                style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: '#F1F5F9', color: '#475569', border: 'none', fontSize: 14, fontWeight: 600, cursor: isJoining ? 'not-allowed' : 'pointer', fontFamily: 'Inter', transition: 'background-color 0.2s' }}
+                                onMouseOver={e => !isJoining && (e.currentTarget.style.backgroundColor = '#E2E8F0')}
+                                onMouseOut={e => !isJoining && (e.currentTarget.style.backgroundColor = '#F1F5F9')}
                             >
-                                Đóng
+                                Hủy
+                            </button>
+                            <button
+                                onClick={handleConfirmJoin}
+                                disabled={isJoining}
+                                style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: isJoining ? '#93A4C7' : '#00236F', color: 'white', border: 'none', fontSize: 14, fontWeight: 600, cursor: isJoining ? 'not-allowed' : 'pointer', fontFamily: 'Inter' }}
+                            >
+                                {isJoining ? 'Đang tham gia...' : 'Tham gia'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal: Tạo nhóm học mới */}
+            {isCreateModalOpen && (
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.4)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
+                    <div style={{ background: 'white', borderRadius: 12, width: 440, padding: 32, display: 'flex', flexDirection: 'column', position: 'relative', boxShadow: '0px 10px 25px rgba(0, 0, 0, 0.1)' }}>
+                        <button
+                            onClick={() => { if (!isCreating) { setIsCreateModalOpen(false); setCreateError(null); } }}
+                            disabled={isCreating}
+                            style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', cursor: isCreating ? 'not-allowed' : 'pointer', color: '#64748B', fontSize: 18 }}
+                        >
+                            ✕
+                        </button>
+
+                        <h2 style={{ fontSize: 18, fontWeight: 600, color: '#0F172A', marginBottom: 20, fontFamily: 'Inter' }}>Tạo nhóm học mới</h2>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+                            <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', fontFamily: 'Inter' }}>Tên nhóm học *</label>
+                            <input
+                                type="text"
+                                value={createName}
+                                onChange={(e) => setCreateName(e.target.value)}
+                                placeholder="VD: Nhóm ôn thi Toán rời rạc"
+                                disabled={isCreating}
+                                style={{ width: '100%', padding: '10px 14px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: 'Inter' }}
+                                autoFocus
+                            />
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+                            <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', fontFamily: 'Inter' }}>Mô tả</label>
+                            <textarea
+                                value={createDescription}
+                                onChange={(e) => setCreateDescription(e.target.value)}
+                                placeholder="Mô tả ngắn về mục tiêu của nhóm học (không bắt buộc)"
+                                disabled={isCreating}
+                                style={{ width: '100%', padding: '10px 14px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: 'Inter', resize: 'vertical', minHeight: 72 }}
+                            />
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
+                            <input
+                                type="checkbox"
+                                id="create-group-public"
+                                checked={createIsPublic}
+                                onChange={(e) => setCreateIsPublic(e.target.checked)}
+                                disabled={isCreating}
+                                style={{ width: 16, height: 16, cursor: isCreating ? 'not-allowed' : 'pointer' }}
+                            />
+                            <label htmlFor="create-group-public" style={{ fontSize: 13, color: '#334155', fontFamily: 'Inter', cursor: isCreating ? 'not-allowed' : 'pointer' }}>
+                                Nhóm công khai (mọi người có thể tìm và tham gia)
+                            </label>
+                        </div>
+
+                        {createError && (
+                            <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: 12, color: '#B91C1C', fontSize: 13, marginBottom: 16 }}>
+                                {createError}
+                            </div>
+                        )}
+
+                        <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                            <button
+                                onClick={() => { if (!isCreating) { setIsCreateModalOpen(false); setCreateError(null); } }}
+                                disabled={isCreating}
+                                style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: '#F1F5F9', color: '#475569', border: 'none', fontSize: 14, fontWeight: 600, cursor: isCreating ? 'not-allowed' : 'pointer', fontFamily: 'Inter' }}
+                            >
+                                Hủy
+                            </button>
+                            <button
+                                onClick={handleCreateGroup}
+                                disabled={isCreating || !createName.trim()}
+                                style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: (isCreating || !createName.trim()) ? '#93A4C7' : '#00236F', color: 'white', border: 'none', fontSize: 14, fontWeight: 600, cursor: (isCreating || !createName.trim()) ? 'not-allowed' : 'pointer', fontFamily: 'Inter' }}
+                            >
+                                {isCreating ? 'Đang tạo...' : 'Tạo nhóm'}
                             </button>
                         </div>
                     </div>
