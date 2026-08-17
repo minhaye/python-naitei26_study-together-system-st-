@@ -16,6 +16,7 @@ import {
     Plus
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { useChannelMessagesRealtime } from '../../hooks/useChannelMessagesRealtime';
 import { ApiError } from '../../lib/apiClient';
 import { getGroup, listGroupMembers, leaveGroup, updateGroup } from '../../lib/group.api';
 import { createChannel, listChannelsByGroup } from '../../lib/channel.api';
@@ -26,6 +27,14 @@ import type { Channel } from '../../lib/channel.types';
 import type { StudyRoom } from '../../lib/studyRoom.types';
 import type { Message } from '../../lib/message.types';
 import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
+
+/** Appends `message` unless a message with the same id is already present. REST send
+ * responses and Realtime INSERT events for the sender's own message both resolve to the
+ * same persisted row, so both paths must go through this to avoid rendering it twice --
+ * regardless of which of the two arrives first. */
+function appendMessageDeduped(prev: Message[], message: Message): Message[] {
+  return prev.some((m) => m.id === message.id) ? prev : [...prev, message];
+}
 
 export function StudyGroupDetail() {
   const navigate = useNavigate();
@@ -255,6 +264,13 @@ export function StudyGroupDetail() {
     };
   }, [activeChannel, activeChannelObj?.conversation_id]);
 
+  // Live-appends new Channel messages (from any sender) as they're persisted, on top of
+  // the REST history load above. Scoped to the active channel's conversation only -- see
+  // useChannelMessagesRealtime for the RLS-backed access control this relies on.
+  useChannelMessagesRealtime(activeChannelObj?.conversation_id ?? null, (incoming) => {
+    setMessages((prev) => appendMessageDeduped(prev, incoming));
+  });
+
   // Auto-scroll chat to bottom on new message or channel change
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -281,9 +297,10 @@ export function StudyGroupDetail() {
     try {
       const sent = await sendConversationMessage(conversationId, { content: trimmed });
       // Only reflect it in the visible list if the user hasn't switched channels while
-      // the request was in flight; the message is still persisted either way.
+      // the request was in flight; the message is still persisted either way. Deduped
+      // against appendMessageDeduped since Realtime may also deliver this same row.
       if (activeChannelRef.current === targetChannelId) {
-        setMessages((prev) => [...prev, sent]);
+        setMessages((prev) => appendMessageDeduped(prev, sent));
       }
       setChatInput('');
     } catch (err) {
