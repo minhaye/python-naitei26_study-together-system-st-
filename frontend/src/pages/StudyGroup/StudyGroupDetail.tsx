@@ -6,7 +6,6 @@ import {
     FileText, 
     Mic, 
     MicOff, 
-    Headphones, 
     Settings, 
     Send, 
     UserPlus, 
@@ -31,7 +30,7 @@ export function StudyGroupDetail() {
   // Group Settings & Dropdown Menu States
   const [showGroupMenu, setShowGroupMenu] = useState(false);
   const [isPublic, setIsPublic] = useState(true);
-  const [ownerNote, setOwnerNote] = useState('📌 Nhắc nhở từ Thầy Hoàng: Đọc slide Bài 4 trước 15h hôm nay!');
+  const [ownerNote, setOwnerNote] = useState('Nhắc nhở từ Thầy Hoàng: Đọc slide Bài 4 trước 15h hôm nay!');
   const [isEditingNote, setIsEditingNote] = useState(false);
   const [newNote, setNewNote] = useState(ownerNote);
   const [userRole, setUserRole] = useState<'HOST' | 'ADMIN' | 'MEMBER'>('HOST');
@@ -208,32 +207,66 @@ export function StudyGroupDetail() {
                 </div>
 
                 {/* Owner Note / Announcement Banner */}
-                <div style={{padding: '10px 14px', background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', fontSize: 12, color: '#475569', lineHeight: '1.4'}}>
-                    <div style={{fontWeight: '700', marginBottom: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#1E293B'}}>
-                        <span>Ghi chú</span>
+                <div style={{
+                    margin: '12px 12px 4px 12px',
+                    padding: '12px 14px',
+                    background: '#F0F9FF',
+                    borderRadius: '8px',
+                    border: '1px solid #BAE6FD',
+                    borderLeft: '4px solid #0284C7',
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
+                }}>
+                    <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6}}>
+                        <span style={{fontSize: 11, fontWeight: '700', color: '#0369A1', textTransform: 'uppercase', letterSpacing: '0.5px'}}>
+                            Ghi chú
+                        </span>
                         {userRole === 'HOST' && (
-                            <span onClick={(e) => { e.stopPropagation(); setIsEditingNote(!isEditingNote); }} style={{fontSize: 10, color: '#2563EB', textDecoration: 'underline', cursor: 'pointer'}}>
+                            <span 
+                                onClick={(e) => { e.stopPropagation(); setIsEditingNote(!isEditingNote); }} 
+                                style={{fontSize: 11, fontWeight: '600', color: '#0284C7', cursor: 'pointer', textDecoration: 'underline'}}
+                            >
                                 {isEditingNote ? 'Hủy' : 'Sửa'}
                             </span>
                         )}
                     </div>
                     {isEditingNote ? (
-                        <div style={{marginTop: 4, display: 'flex', flexDirection: 'column', gap: 6}}>
-                            <input 
-                                type="text" 
+                        <div style={{marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6}}>
+                            <textarea 
                                 value={newNote} 
                                 onChange={e => setNewNote(e.target.value)}
-                                style={{padding: '4px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #CBD5E1', outline: 'none'}}
+                                style={{
+                                    padding: '6px 8px', 
+                                    fontSize: 12, 
+                                    borderRadius: 6, 
+                                    border: '1px solid #7DD3FC', 
+                                    outline: 'none',
+                                    resize: 'vertical',
+                                    minHeight: '54px',
+                                    fontFamily: 'inherit'
+                                }}
                             />
                             <button 
                                 onClick={() => { setOwnerNote(newNote); setIsEditingNote(false); }}
-                                style={{padding: '4px 8px', background: '#0F172A', color: 'white', border: 'none', borderRadius: 4, fontSize: 11, fontWeight: '600', cursor: 'pointer', alignSelf: 'flex-end'}}
+                                style={{
+                                    padding: '4px 12px', 
+                                    background: '#0284C7', 
+                                    color: 'white', 
+                                    border: 'none', 
+                                    borderRadius: 4, 
+                                    fontSize: 11, 
+                                    fontWeight: '600', 
+                                    cursor: 'pointer', 
+                                    alignSelf: 'flex-end',
+                                    transition: 'background 0.2s'
+                                }}
                             >
                                 Lưu
                             </button>
                         </div>
                     ) : (
-                        <div>{ownerNote}</div>
+                        <div style={{fontSize: 12.5, color: '#0F172A', lineHeight: '1.5', fontWeight: '450'}}>
+                            {ownerNote}
+                        </div>
                     )}
                 </div>
 
@@ -331,21 +364,7 @@ export function StudyGroupDetail() {
 
                 </div>
 
-                {/* Bottom User Controls */}
-                <div style={{padding: '12px 16px', background: '#F1F5F9', borderTop: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                    <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
-                        <img style={{width: 32, height: 32, borderRadius: '50%'}} src="https://i.pravatar.cc/150?img=11" alt="Avatar" />
-                        <div>
-                            <div style={{color: '#0F172A', fontSize: 13, fontWeight: '600'}}>Minh Anh</div>
-                            <div style={{color: '#10B981', fontSize: 11}}>Đang trực tuyến</div>
-                        </div>
-                    </div>
-                    <div style={{display: 'flex', gap: 12, color: '#475569'}}>
-                        <MicOff size={18} style={{cursor: 'pointer'}} color="#EF4444" />
-                        <Headphones size={18} style={{cursor: 'pointer'}} />
-                        <Settings size={18} style={{cursor: 'pointer'}} />
-                    </div>
-                </div>
+
             </div>
 
             {/* Center - Main Area */}
