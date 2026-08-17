@@ -25,7 +25,7 @@ export function StudyGroupDetail() {
   // Dynamic States
   const [activeChannel, setActiveChannel] = useState('thao-luan-chung');
   const [chatInput, setChatInput] = useState('');
-  const [mainView, setMainView] = useState<'chat' | 'rooms'>('chat');
+  const [mainView, setMainView] = useState<'chat' | 'rooms' | 'documents'>('chat');
 
   // Group Settings & Dropdown Menu States
   const [showGroupMenu, setShowGroupMenu] = useState(false);
@@ -360,6 +360,17 @@ export function StudyGroupDetail() {
                                 </div>
                             </div>
                         </div>
+                        {/* Nút Xem tất cả tài liệu đính kèm */}
+                        <div style={{marginTop: 12, borderTop: '1px solid #E2E8F0', paddingTop: 12}}>
+                            <div 
+                                onClick={() => setMainView('documents')}
+                                style={{padding: '8px', textAlign: 'center', color: '#4338CA', fontSize: 13, fontWeight: '600', cursor: 'pointer', borderRadius: 6, background: '#EEF2FF', border: '1px dashed #C7D2FE', transition: 'all 0.2s', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6}}
+                                onMouseOver={e => e.currentTarget.style.background = '#E0E7FF'} 
+                                onMouseOut={e => e.currentTarget.style.background = '#EEF2FF'}
+                            >
+                                Xem tất cả tài liệu
+                            </div>
+                        </div>
                     </div>
 
                 </div>
@@ -428,7 +439,7 @@ export function StudyGroupDetail() {
                         </div>
                     </div>
                 </div>
-            ) : (
+            ) : mainView === 'rooms' ? (
                 <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: '#F8FAFC'}}>
                     <div style={{height: 60, padding: '0 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', color: '#0F172A', fontSize: 18, fontWeight: '700', background: 'white'}}>
                         Danh sách Phòng học Live ({liveRooms.length})
@@ -458,6 +469,41 @@ export function StudyGroupDetail() {
                                 </div>
                             </div>
                         ))}
+                    </div>
+                </div>
+            ) : (
+                <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: 'white'}}>
+                    <div style={{height: 60, padding: '0 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', color: '#0F172A', fontSize: 18, fontWeight: '700', background: 'white'}}>
+                        Tất cả dữ liệu đính kèm
+                    </div>
+                    {/* Bảng danh sách tài liệu (Zalo Style) */}
+                    <div style={{display: 'grid', gridTemplateColumns: '1fr 100px 120px', padding: '16px 24px', borderBottom: '1px solid #E2E8F0', fontSize: 13, color: '#64748B', fontWeight: '500', background: '#F8FAFC'}}>
+                        <div>Tên</div>
+                        <div>Kích thước</div>
+                        <div>Ngày gửi</div>
+                    </div>
+                    {/* Danh sách file */}
+                    <div style={{flex: 1, overflowY: 'auto'}}>
+                        <div style={{display: 'grid', gridTemplateColumns: '1fr 100px 120px', padding: '16px 24px', borderBottom: '1px solid #F1F5F9', alignItems: 'center', transition: 'background 0.2s', cursor: 'pointer'}} onMouseOver={e => e.currentTarget.style.background = '#F8FAFC'} onMouseOut={e => e.currentTarget.style.background = 'white'}>
+                            <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
+                                <div style={{width: 36, height: 36, borderRadius: 8, background: '#EFF6FF', display: 'flex', justifyContent: 'center', alignItems: 'center'}}>
+                                    <FileText size={20} color="#3B82F6" />
+                                </div>
+                                <div style={{color: '#0F172A', fontSize: 14, fontWeight: '500'}}>Bai_Giang_Chuong_1.pdf</div>
+                            </div>
+                            <div style={{color: '#64748B', fontSize: 13}}>2.4 MB</div>
+                            <div style={{color: '#64748B', fontSize: 13}}>22/07/2026</div>
+                        </div>
+                        <div style={{display: 'grid', gridTemplateColumns: '1fr 100px 120px', padding: '16px 24px', borderBottom: '1px solid #F1F5F9', alignItems: 'center', transition: 'background 0.2s', cursor: 'pointer'}} onMouseOver={e => e.currentTarget.style.background = '#F8FAFC'} onMouseOut={e => e.currentTarget.style.background = 'white'}>
+                            <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
+                                <div style={{width: 36, height: 36, borderRadius: 8, background: '#ECFDF5', display: 'flex', justifyContent: 'center', alignItems: 'center'}}>
+                                    <FileText size={20} color="#10B981" />
+                                </div>
+                                <div style={{color: '#0F172A', fontSize: 14, fontWeight: '500'}}>Ghi_chep_nhom.docx</div>
+                            </div>
+                            <div style={{color: '#64748B', fontSize: 13}}>261 KB</div>
+                            <div style={{color: '#64748B', fontSize: 13}}>22/07/2026</div>
+                        </div>
                     </div>
                 </div>
             )}
