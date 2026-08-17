@@ -303,6 +303,18 @@ Insert group_members
 
 Hai thao tác nên được thực hiện trong **cùng một transaction**.
 
+**Cơ chế thực tế (xác nhận live 2026-08-17, xem migration 008):** invariant này
+được đảm bảo bởi trigger DB `groups_add_owner` (AFTER INSERT ON `groups`, gọi
+`add_group_owner()` — SECURITY DEFINER, dùng `INSERT ... ON CONFLICT (group_id,
+user_id) DO UPDATE`), **không phải** bởi application code. `GroupsService.create()`
+(app/groups/services/group_service.py) chỉ insert vào `groups` — nó **không được**
+tự insert `group_members(role=owner)` nữa. Trước đây `GroupsService.create()` từng
+làm việc này song song với trigger, và hai insert đó đụng độ, gây
+`UniqueViolation` trên `group_members_group_id_user_id_key` (mỗi INSERT vào
+`groups` chỉ nên dẫn tới đúng MỘT insert vào `group_members` cho owner). Nếu cần
+thay đổi cơ chế này trong tương lai, sửa ở tầng trigger (và cập nhật migration
+008), không thêm lại insert phía application.
+
 Không được để xảy ra trạng thái:
 
 ```text
@@ -1483,7 +1495,12 @@ Cần:
 2. Create group_members(role=owner)
 ```
 
-trong cùng transaction.
+trong cùng transaction — nhưng bước 2 do DB trigger `groups_add_owner` /
+`add_group_owner()` đảm nhiệm (xem § 8 và migration 008), **không phải**
+`GroupsService.create()`. Service chỉ làm bước 1 (insert `groups` với
+`owner_id` là caller đã xác thực); tự insert thêm `group_members` ở tầng
+application sẽ đụng độ với trigger và vi phạm unique constraint
+`group_members_group_id_user_id_key`.
 
 ## create_study_room()
 

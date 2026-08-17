@@ -9,8 +9,10 @@ from app.auth.dto.auth_dto import CurrentUser
 from app.core import permissions
 from app.db.enums import GroupMemberRole, MemberStatus
 from app.db.session import get_db_session
+from app.groups.dto.group_dto import GroupCreate
 from app.groups.entities.group_entity import Group, GroupMember
 from app.groups.routers import group_router
+from app.groups.services.group_service import GroupsService
 from app.main import app
 
 AUTH_HEADERS = {"Authorization": "Bearer testtoken"}
@@ -103,6 +105,37 @@ async def test_create_group_caller_becomes_owner_even_if_owner_id_spoofed(async_
     assert response.json()["owner_id"] == str(as_fake_user.id)
     assert captured["owner_id"] == as_fake_user.id
     assert captured["owner_id"] != spoofed_owner_id
+
+
+async def test_service_create_does_not_insert_owner_membership_itself():
+    """Regression test for the group_members_group_id_user_id_key UniqueViolation:
+    a live DB trigger (groups_add_owner -> add_group_owner(), AFTER INSERT ON groups)
+    already inserts the owner's group_members row for every group insert. The service
+    must add exactly one object to the session (the Group itself) and must never also
+    construct/add a GroupMember for the owner -- doing so races the trigger and hits the
+    unique constraint on (group_id, user_id). See GroupsService.create's docstring."""
+    session = _fake_session()
+    owner_id = uuid.uuid4()
+
+    async def fake_flush():
+        # The trigger runs server-side as part of the `groups` INSERT that this flush
+        # sends; simulate it having assigned the server-generated id.
+        for call in session.add.call_args_list:
+            obj = call.args[0]
+            if isinstance(obj, Group) and obj.id is None:
+                obj.id = uuid.uuid4()
+
+    session.flush = fake_flush
+
+    service = GroupsService()
+    group = await service.create(session, GroupCreate(name="Group"), owner_id=owner_id)
+
+    assert session.add.call_count == 1
+    added = session.add.call_args_list[0].args[0]
+    assert isinstance(added, Group)
+    assert added.owner_id == owner_id
+    assert not any(isinstance(call.args[0], GroupMember) for call in session.add.call_args_list)
+    assert group is added
 
 
 # --- Discovery stays public ---
