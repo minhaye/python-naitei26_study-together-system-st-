@@ -1,11 +1,14 @@
 import React from 'react';
+import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
 
 export type AvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 
 export interface AvatarProps {
+  /** Tên đầy đủ người dùng. Nếu truyền `name`, Avatar tự tính initials & color chuẩn */
+  name?: string;
   /** URL ảnh đại diện. Nếu không có sẽ hiển thị fallback initials */
   src?: string | null;
-  /** Chữ viết tắt hiển thị khi không có ảnh (vd: "HM" cho Hải Minh) */
+  /** Chữ viết tắt hiển thị khi không có ảnh */
   initials?: string;
   /** Màu nền khi hiển thị initials */
   color?: string;
@@ -19,7 +22,7 @@ const SIZE_MAP: Record<AvatarSize, number> = {
   xs: 24,
   sm: 32,
   md: 40,
-  lg: 48,
+  lg: 44,
   xl: 64,
 };
 
@@ -27,19 +30,23 @@ const FONT_SIZE_MAP: Record<AvatarSize, number> = {
   xs: 10,
   sm: 12,
   md: 14,
-  lg: 18,
+  lg: 16,
   xl: 24,
 };
 
-/** Avatar — Hiển thị ảnh đại diện người dùng. Fallback về chữ tắt màu nền nếu không có ảnh */
+/** Avatar — Hiển thị ảnh đại diện người dùng. Fallback về chữ tắt màu nền nhất quán nếu không có ảnh */
 export const Avatar: React.FC<AvatarProps> = ({
+  name,
   src,
-  initials = '?',
-  color = '#00236F',
+  initials,
+  color,
   size = 'md',
   alt = 'avatar',
   style,
 }) => {
+  const computedInitials = initials ?? (name ? getAvatarInitials(name) : '?');
+  const computedColor = color ?? (name ? getAvatarColor(name) : '#2563EB');
+
   const px = SIZE_MAP[size];
   const fontSize = FONT_SIZE_MAP[size];
 
@@ -69,7 +76,7 @@ export const Avatar: React.FC<AvatarProps> = ({
     <div
       style={{
         ...baseStyle,
-        background: color,
+        background: computedColor,
         color: 'white',
         fontWeight: '700',
         fontSize,
@@ -77,7 +84,7 @@ export const Avatar: React.FC<AvatarProps> = ({
         userSelect: 'none',
       }}
     >
-      {initials.substring(0, 2).toUpperCase()}
+      {computedInitials.substring(0, 2).toUpperCase()}
     </div>
   );
 };
@@ -85,7 +92,7 @@ export const Avatar: React.FC<AvatarProps> = ({
 // ─── Avatar Group ─────────────────────────────────────────────────────────────
 
 export interface AvatarGroupProps {
-  avatars: Pick<AvatarProps, 'src' | 'initials' | 'color'>[];
+  avatars: Pick<AvatarProps, 'name' | 'src' | 'initials' | 'color'>[];
   /** Số lượng avatar tối đa trước khi hiện "+N" */
   max?: number;
   size?: AvatarSize;

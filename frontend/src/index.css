@@ -48,10 +48,7 @@ h1, h2, h3, h4, h5, h6, p {
   margin: 0;
 }
 
-/* ─── Hover-To-Show Scrollbars (Pure CSS Best Practice) ───────────────────────
- * Bình thường thanh cuộn ẨN 100%. Rê chuột vào vùng nào (sidebar, feed...)
- * thì thanh cuộn của RIÊNG vùng đó mới hiện lên mượt mà.
- */
+/* ─── Hover-To-Show Scrollbars (Pure CSS Best Practice) ─────────────────────── */
 
 ::-webkit-scrollbar {
   width: 5px;
@@ -62,14 +59,12 @@ h1, h2, h3, h4, h5, h6, p {
   background: transparent;
 }
 
-/* Mặc định thumb ẩn hoàn toàn */
 ::-webkit-scrollbar-thumb {
   background: transparent;
   border-radius: 999px;
   transition: background 0.25s ease;
 }
 
-/* Rê chuột vào vùng nào thì hiện thanh cuộn vùng đó */
 *:hover::-webkit-scrollbar-thumb {
   background: rgba(148, 163, 184, 0.45);
 }
@@ -78,7 +73,6 @@ h1, h2, h3, h4, h5, h6, p {
   background: rgba(100, 116, 139, 0.85);
 }
 
-/* Firefox support */
 * {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
@@ -86,6 +80,27 @@ h1, h2, h3, h4, h5, h6, p {
 
 *:hover {
   scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+}
+
+/* ─── Skeleton Pulse Shimmer Animation ──────────────────────────────────────── */
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-color: #E2E8F0;
+    opacity: 0.6;
+  }
+  50% {
+    background-color: #CBD5E1;
+    opacity: 1;
+  }
+  100% {
+    background-color: #E2E8F0;
+    opacity: 0.6;
+  }
+}
+
+.skeleton-pulse {
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
 }
 
 /* Spin animation cho icon loading */
@@ -97,3 +112,20 @@ h1, h2, h3, h4, h5, h6, p {
     transform: rotate(360deg);
   }
 }
+
+/* ─── TipTap Editor Focus Outline Reset ──────────────────────────────────────── */
+
+.ProseMirror {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.ProseMirror:focus,
+.ProseMirror:focus-visible,
+.ProseMirror-focused {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+

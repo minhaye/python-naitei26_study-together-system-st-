@@ -1,27 +1,30 @@
 import { useNavigate } from 'react-router-dom';
+import { getAvatarInitials, getAvatarColor } from '../utils/avatarUtils';
+
+export interface AuthUser {
+  id: string;
+  name: string;
+  initials: string;
+  color: string;
+}
 
 /**
- * useAuth — Hook toàn cục kiểm tra trạng thái đăng nhập ở cấp độ action.
- *
- * Khác với `ProtectedRoute` (chặn toàn bộ trang khi chưa đăng nhập),
- * hook này dùng để bảo vệ các hành động cụ thể BÊN TRONG trang
- * (like bài viết, đăng bình luận, đặt câu hỏi...).
- *
- * Cách dùng:
- * ```tsx
- * const { isLoggedIn, requireAuth } = useAuth();
- *
- * const handleLike = () => {
- *   requireAuth(() => {
- *     // Chỉ chạy nếu đã đăng nhập
- *     likePost(postId);
- *   });
- * };
- * ```
+ * useAuth — Hook toàn cục kiểm tra trạng thái đăng nhập và thông tin người dùng hiện tại.
  */
 export function useAuth() {
   const navigate = useNavigate();
   const isLoggedIn = localStorage.getItem('auth') === 'true';
+
+  // Lấy thông tin user từ localStorage hoặc mặc định khi đăng nhập
+  const storedName = localStorage.getItem('user_name') || 'Người dùng';
+  const storedId = localStorage.getItem('user_id') || 'user-current';
+
+  const currentUser: AuthUser = {
+    id: storedId,
+    name: storedName,
+    initials: getAvatarInitials(storedName),
+    color: getAvatarColor(storedName),
+  };
 
   /**
    * Bọc một action cần đăng nhập.
@@ -36,5 +39,5 @@ export function useAuth() {
     action();
   };
 
-  return { isLoggedIn, requireAuth };
+  return { isLoggedIn, currentUser, requireAuth };
 }

@@ -2,6 +2,7 @@
  * ForumPostDetail — Trang xem chi tiết 1 bài viết / câu hỏi.
  *
  * Route: /forum/post/:id
+ * Tự động mở sẵn phần bình luận khi xem chi tiết.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -78,8 +79,10 @@ export const ForumPostDetail: React.FC = () => {
             </div>
           )}
 
-          {/* Post Card */}
-          {!isLoading && post && <PostCard post={post} onToggleLike={handleToggleLike} />}
+          {/* Post Card — Tự động mở sẵn bình luận */}
+          {!isLoading && post && (
+            <PostCard post={post} onToggleLike={handleToggleLike} defaultShowComments={true} isDetailPage={true} />
+          )}
 
           {/* Not Found */}
           {!isLoading && !post && (

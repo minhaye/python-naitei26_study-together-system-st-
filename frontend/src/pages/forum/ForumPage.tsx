@@ -1,19 +1,14 @@
 /**
  * ForumPage — Trang Diễn đàn chính.
  *
- * Giao diện 3 Cột Scroll Độc Lập (Independent 3-Column Scroll Area):
- *   - Cột 1 (Trái): ForumSidebar (280px, scroll nội bộ)
- *   - Cột 2 (Giữa): Main Feed bài viết (flex: 1, scroll nội bộ, kích hoạt infinite scroll)
- *   - Cột 3 (Phải): ForumRightSidebar (300px, scroll nội bộ)
- *
- * Thanh cuộn chính của trang (window scrollbar) đã được ẩn hoàn toàn.
+ * Tích hợp bộ lọc 4 tùy chọn (Mới nhất, Chưa trả lời, Câu hỏi hay, Câu hỏi của tôi).
  */
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { ForumSidebar } from './components/ForumSidebar';
-import { ForumFilterBar } from './components/ForumFilterBar';
+import { ForumFilterBar, type FilterOption } from './components/ForumFilterBar';
 import { PostCard } from './components/PostCard';
 import { ForumRightSidebar } from './components/ForumRightSidebar';
 import { CreatePostModal } from './components/CreatePostModal';
@@ -22,15 +17,22 @@ import { usePostActions } from './hooks/usePostActions';
 import { useAuth } from '../../hooks/useAuth';
 import { forumApi } from './lib/forum.api';
 import type { ForumCategoryResponse } from './types/forum.types';
+import { PostSkeleton } from '../../components/ui/Skeleton';
 
 export const ForumPage: React.FC = () => {
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, currentUser } = useAuth();
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const [selectedFilter, setSelectedFilter] = useState<FilterOption>('latest');
   const [search, setSearch] = useState('');
   const [categories, setCategories] = useState<ForumCategoryResponse[]>([]);
 
-  // Hooks
-  const { posts, setPosts, isLoading, hasMore, fetchNextPage } = useForumPosts(selectedCategoryId, search);
+  // Hooks với bộ lọc selectedFilter
+  const { posts, setPosts, isLoading, hasMore, fetchNextPage } = useForumPosts(
+    selectedCategoryId,
+    search,
+    selectedFilter,
+    currentUser.id
+  );
   const { showCreateModal, setShowCreateModal, handleCreatePost, handleToggleLike } = usePostActions(setPosts);
 
   // Trigger div cho Infinite Scroll
@@ -83,7 +85,7 @@ export const ForumPage: React.FC = () => {
         }}
       >
         {/* CỘT 1: Left Sidebar (280px - Scroll độc lập) */}
-        <div style={{ width: 290, flexShrink: 0, height: '100%', overflowY: 'auto', paddingRight: 4 }}>
+        <div style={{ width: 295, flexShrink: 0, height: '100%', overflowY: 'auto', paddingRight: 4 }}>
           <ForumSidebar
             selectedCategoryId={selectedCategoryId}
             onSelectCategory={setSelectedCategoryId}
@@ -107,6 +109,8 @@ export const ForumPage: React.FC = () => {
           {/* Header Filter Bar */}
           <ForumFilterBar
             categoryName={selectedCategoryName}
+            selectedFilter={selectedFilter}
+            onSelectFilter={setSelectedFilter}
             onOpenCreateModal={() => setShowCreateModal(true)}
           />
 
@@ -136,9 +140,21 @@ export const ForumPage: React.FC = () => {
 
           {/* Posts List */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            {posts.length === 0 && !isLoading && (
+            {/* Lần đầu tải: Hiển thị 3 PostSkeleton */}
+            {isLoading && posts.length === 0 && (
+              <>
+                <PostSkeleton />
+                <PostSkeleton />
+                <PostSkeleton />
+              </>
+            )}
+
+            {/* Khi không có dữ liệu */}
+            {!isLoading && posts.length === 0 && (
               <div
                 style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
                   background: 'white',
                   borderRadius: 16,
                   padding: 40,
@@ -151,6 +167,7 @@ export const ForumPage: React.FC = () => {
               </div>
             )}
 
+            {/* Dữ liệu thật */}
             {posts.map((post) => (
               <PostCard key={post.id} post={post} onToggleLike={handleToggleLike} />
             ))}
@@ -158,7 +175,7 @@ export const ForumPage: React.FC = () => {
 
           {/* Infinite Scroll Trigger & Loader */}
           <div ref={observerRef} style={{ textAlign: 'center', padding: '24px 0', minHeight: 40 }}>
-            {isLoading && (
+            {isLoading && posts.length > 0 && (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, color: '#64748B' }}>
                 <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
                 <span style={{ fontSize: 14, fontWeight: '500' }}>Tải thêm câu hỏi...</span>

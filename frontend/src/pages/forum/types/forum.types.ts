@@ -86,6 +86,7 @@ export interface Comment {
   content: string;
   createdAt: string;
   timeAgo: string;           // Tính client-side
+  likesCount: number;        // Số lượt thích của comment
   isLiked: boolean;          // Client-side toggle
   replies: Comment[];        // FE tự nhóm: comment có parentCommentId = id này
 }

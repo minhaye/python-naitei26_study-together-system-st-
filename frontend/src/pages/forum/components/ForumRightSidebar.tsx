@@ -1,25 +1,24 @@
 /**
  * ForumRightSidebar — Sidebar bên phải trang Forum.
  *
- * Sắp xếp thứ tự Widget:
- *   1. Bạn cần trợ giúp? (banner gradient dẫn tới /groups)
- *   2. Chủ đề nổi bật (#Toán12, #GiảiTích, #Java...)
- *   3. BÀI VIẾT ĐÃ THÍCH (chỉ hiển thị khi đã đăng nhập, có toggle "Xem thêm / Thu gọn")
+ * Tích hợp <Avatar name={...} size="sm" /> đồng bộ.
  */
 
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../../hooks/useAuth';
+import { LikedPostSkeleton, TrendingTopicSkeleton } from '../../../components/ui/Skeleton';
+import { Avatar } from '../../../components/ui/Avatar';
 
 export const ForumRightSidebar: React.FC = () => {
   const { isLoggedIn } = useAuth();
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isLoadingLiked] = useState(false);
+  const [isLoadingTrending] = useState(false);
 
   const likedPosts = [
     {
-      id: 'liked-1',
-      authorInitial: 'HM',
-      authorColor: '#2563EB',
+      id: 'post-1',
       authorName: 'Hải Minh',
       timeAgo: '4 ngày trước',
       title: 'most useful barrier oat',
@@ -27,9 +26,7 @@ export const ForumRightSidebar: React.FC = () => {
       comments: 1,
     },
     {
-      id: 'liked-2',
-      authorInitial: 'TT',
-      authorColor: '#10B981',
+      id: 'post-2',
       authorName: 'Tuấn Tú',
       timeAgo: '6 ngày trước',
       title: 'Sự khác biệt giữa Abstract Class',
@@ -37,9 +34,7 @@ export const ForumRightSidebar: React.FC = () => {
       comments: 33,
     },
     {
-      id: 'liked-3',
-      authorInitial: 'NA',
-      authorColor: '#F59E0B',
+      id: 'post-3',
       authorName: 'Ngọc Anh',
       timeAgo: '1 tuần trước',
       title: 'Giải thích hiện tượng giao thoa ánh sáng',
@@ -48,8 +43,6 @@ export const ForumRightSidebar: React.FC = () => {
     },
     {
       id: 'liked-4',
-      authorInitial: 'KH',
-      authorColor: '#8B5CF6',
       authorName: 'Khánh Hoàng',
       timeAgo: '2 tuần trước',
       title: 'Ôn thi Cấu trúc dữ liệu & Giải thuật',
@@ -99,7 +92,10 @@ export const ForumRightSidebar: React.FC = () => {
             cursor: 'pointer',
             textDecoration: 'none',
             boxSizing: 'border-box',
+            transition: 'background 0.2s',
           }}
+          onMouseOver={(e) => (e.currentTarget.style.background = '#F8FAFC')}
+          onMouseOut={(e) => (e.currentTarget.style.background = 'white')}
         >
           Khám phá nhóm học
         </Link>
@@ -119,20 +115,31 @@ export const ForumRightSidebar: React.FC = () => {
           Chủ đề nổi bật
         </h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {['#Toán12', '#GiảiTích', '#Java', '#IELTS', '#VậtLýĐạiCương'].map((tag, idx) => (
-            <div
-              key={idx}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                cursor: 'pointer',
-              }}
-            >
-              <span style={{ color: '#3B82F6', fontSize: 14, fontWeight: '500' }}>{tag}</span>
-              <span style={{ color: '#94A3B8', fontSize: 12 }}>+120 bài</span>
-            </div>
-          ))}
+          {isLoadingTrending && (
+            <>
+              <TrendingTopicSkeleton />
+              <TrendingTopicSkeleton />
+              <TrendingTopicSkeleton />
+              <TrendingTopicSkeleton />
+              <TrendingTopicSkeleton />
+            </>
+          )}
+
+          {!isLoadingTrending &&
+            ['#Toán12', '#GiảiTích', '#Java', '#IELTS', '#VậtLýĐạiCương'].map((tag, idx) => (
+              <div
+                key={idx}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  cursor: 'pointer',
+                }}
+              >
+                <span style={{ color: '#3B82F6', fontSize: 14, fontWeight: '500' }}>{tag}</span>
+                <span style={{ color: '#94A3B8', fontSize: 12 }}>+120 bài</span>
+              </div>
+            ))}
         </div>
       </div>
 
@@ -184,54 +191,59 @@ export const ForumRightSidebar: React.FC = () => {
           </div>
 
           <div style={{ alignSelf: 'stretch', flexDirection: 'column', gap: 16, display: 'flex' }}>
-            {visiblePosts.map((post) => (
-              <div key={post.id} style={{ alignSelf: 'stretch', gap: 12, display: 'flex' }}>
-                <div
-                  style={{
-                    width: 32,
-                    height: 32,
-                    background: post.authorColor,
-                    borderRadius: 9999,
-                    display: 'flex',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    color: 'white',
-                    fontSize: 12,
-                    fontWeight: '600',
-                    flexShrink: 0,
-                  }}
-                >
-                  {post.authorInitial}
-                </div>
-                <div style={{ flex: 1, flexDirection: 'column', gap: 2, display: 'flex' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#64748B' }}>
-                    <span style={{ color: '#0F172A', fontWeight: '500' }}>{post.authorName}</span>
-                    <span>•</span>
-                    <span>{post.timeAgo}</span>
+            {isLoadingLiked && (
+              <>
+                <LikedPostSkeleton />
+                <LikedPostSkeleton />
+              </>
+            )}
+
+            {!isLoadingLiked &&
+              visiblePosts.map((post) => (
+                <div key={post.id} style={{ alignSelf: 'stretch', gap: 12, display: 'flex' }}>
+                  <Avatar name={post.authorName} size="sm" />
+                  <div style={{ flex: 1, flexDirection: 'column', gap: 2, display: 'flex' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#64748B' }}>
+                      <span style={{ color: '#0F172A', fontWeight: '500' }}>{post.authorName}</span>
+                      <span>•</span>
+                      <span>{post.timeAgo}</span>
+                    </div>
+                    <Link
+                      to={`/forum/post/${post.id}`}
+                      style={{
+                        color: '#0F172A',
+                        fontSize: 14,
+                        fontWeight: '500',
+                        textDecoration: 'none',
+                        transition: 'color 0.2s',
+                      }}
+                      onMouseOver={(e) => (e.currentTarget.style.color = '#1D4ED8')}
+                      onMouseOut={(e) => (e.currentTarget.style.color = '#0F172A')}
+                    >
+                      {post.title}
+                    </Link>
+                    <div style={{ display: 'flex', gap: 12, fontSize: 11, color: '#64748B', paddingTop: 2 }}>
+                      <span>{post.likes} thích</span>
+                      <span>{post.comments} bình luận</span>
+                    </div>
                   </div>
-                  <div style={{ color: '#0F172A', fontSize: 14, fontWeight: '500' }}>{post.title}</div>
-                  <div style={{ display: 'flex', gap: 12, fontSize: 11, color: '#64748B', paddingTop: 2 }}>
-                    <span>{post.likes} thích</span>
-                    <span>{post.comments} bình luận</span>
+                  <div
+                    style={{
+                      width: 48,
+                      height: 48,
+                      background: '#F1F5F9',
+                      borderRadius: 6,
+                      border: '1px #E2E8F0 solid',
+                      display: 'flex',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div style={{ width: 18, height: 18, background: '#CBD5E1', borderRadius: 2 }} />
                   </div>
                 </div>
-                <div
-                  style={{
-                    width: 48,
-                    height: 48,
-                    background: '#F1F5F9',
-                    borderRadius: 6,
-                    border: '1px #E2E8F0 solid',
-                    display: 'flex',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    flexShrink: 0,
-                  }}
-                >
-                  <div style={{ width: 18, height: 18, background: '#CBD5E1', borderRadius: 2 }} />
-                </div>
-              </div>
-            ))}
+              ))}
           </div>
         </div>
       )}
