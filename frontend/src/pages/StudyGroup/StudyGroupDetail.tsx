@@ -1,15 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { 
-    Hash, 
-    Video, 
-    FileText, 
-    Mic, 
-    MicOff, 
-    Settings, 
-    Send, 
-    UserPlus, 
-    MoreVertical,
+import { useNavigate, useParams } from 'react-router-dom';
+import {
+    Hash,
+    Video,
+    FileText,
+    Settings,
+    Send,
+    UserPlus,
     ChevronDown,
     Shield,
     Globe,
@@ -17,52 +14,97 @@ import {
     LogOut,
     Users
 } from 'lucide-react';
+import { useAuth } from '../../hooks/useAuth';
+import { ApiError } from '../../lib/apiClient';
+import { getGroup, listGroupMembers } from '../../lib/group.api';
+import { listChannelsByGroup } from '../../lib/channel.api';
+import { listStudyRoomsByGroup } from '../../lib/studyRoom.api';
+import type { Group, GroupMember } from '../../lib/group.types';
+import type { Channel } from '../../lib/channel.types';
+import type { StudyRoom } from '../../lib/studyRoom.types';
+import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
 
 export function StudyGroupDetail() {
   const navigate = useNavigate();
+  const { id: groupId } = useParams();
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const { user, currentUser } = useAuth();
+  const currentUserId = user?.id ?? null;
 
   // Dynamic States
-  const [activeChannel, setActiveChannel] = useState('thao-luan-chung');
+  const [activeChannel, setActiveChannel] = useState('');
   const [chatInput, setChatInput] = useState('');
   const [mainView, setMainView] = useState<'chat' | 'rooms' | 'documents'>('chat');
 
   // Group Settings & Dropdown Menu States
   const [showGroupMenu, setShowGroupMenu] = useState(false);
-  const [isPublic, setIsPublic] = useState(true);
   const [ownerNote, setOwnerNote] = useState('Nhắc nhở từ Thầy Hoàng: Đọc slide Bài 4 trước 15h hôm nay!');
   const [isEditingNote, setIsEditingNote] = useState(false);
   const [newNote, setNewNote] = useState(ownerNote);
-  const [userRole, setUserRole] = useState<'HOST' | 'ADMIN' | 'MEMBER'>('HOST');
 
-  // Mock data for chat messages across channels
-  const [messages, setMessages] = useState<Record<string, any[]>>({
-    'thao-luan-chung': [
-      { id: 1, sender: 'Thầy Hoàng', role: 'HOST', time: 'Hôm nay lúc 10:30 AM', text: 'Chào cả nhà, mình mới tham gia nhóm. Chúc mọi người học tập tốt! Nhớ đọc tài liệu chương 4 trước buổi học chiều nay nhé.', avatar: 'https://i.pravatar.cc/150?img=12' },
-      { id: 2, sender: 'Minh Anh', time: 'Hôm nay lúc 10:32 AM', text: 'Dạ vâng ạ. Mọi người đã xem tài liệu chương 4 chưa? Có phần phương trình Schrödinger hơi khó hiểu, ai giải thích giúp mình được không?', avatar: 'https://i.pravatar.cc/150?img=11' },
-      { id: 3, sender: 'Tuấn Kiệt', time: 'Hôm nay lúc 10:35 AM', text: 'Mình cũng đang kẹt phần đó đây 😭 Hay lát nữa vào phòng Live anh em cùng thảo luận luôn đi?', avatar: 'https://i.pravatar.cc/150?img=13' }
-    ],
-    'chia-se-tai-lieu': [
-      { id: 1, sender: 'Lan Phương', time: 'Hôm qua lúc 08:00 PM', text: 'Mình vừa upload slide bài giảng tuần trước, mọi người tải về tham khảo nhé!', avatar: 'https://i.pravatar.cc/150?img=9' }
-    ]
-  });
+  // Real Group/Channel/Study Room domain state (replaces the previous hard-coded mock group).
+  const [group, setGroup] = useState<Group | null>(null);
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [studyRooms, setStudyRooms] = useState<StudyRoom[]>([]);
+  const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<{ status: number | null; message: string } | null>(null);
+
+  useEffect(() => {
+    if (!groupId) return;
+    let cancelled = false;
+
+    async function load() {
+      setIsLoading(true);
+      setLoadError(null);
+      try {
+        const [groupData, channelsData, roomsData, membersData] = await Promise.all([
+          getGroup(groupId as string),
+          listChannelsByGroup(groupId as string),
+          listStudyRoomsByGroup(groupId as string),
+          listGroupMembers(groupId as string),
+        ]);
+        if (cancelled) return;
+        setGroup(groupData);
+        setChannels(channelsData);
+        setStudyRooms(roomsData);
+        setGroupMembers(membersData);
+        setActiveChannel((prev) =>
+          channelsData.some((c) => c.id === prev) ? prev : (channelsData[0]?.id ?? '')
+        );
+      } catch (err) {
+        if (cancelled) return;
+        if (err instanceof ApiError) {
+          setLoadError({ status: err.status, message: err.message });
+        } else {
+          setLoadError({ status: null, message: 'Không thể tải dữ liệu nhóm học.' });
+        }
+        setGroup(null);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [groupId]);
+
+  const activeMembers = groupMembers.filter((m) => m.status === 'active');
+  const isOwner = !!group && !!currentUserId && group.owner_id === currentUserId;
+
+  // Mock data for chat messages across channels — chat/messages integration is a separate
+  // task, so this stays purely local; only the channel *list* above is real.
+  const [messages, setMessages] = useState<Record<string, any[]>>({});
 
   // Auto-scroll chat to bottom on new message or channel change
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, activeChannel, mainView]);
 
-  // Mock data for multiple live rooms
-  const rooms = [
-    { id: '101', name: 'Phòng 101', isLive: true, members: 6, subject: 'Cơ học lượng tử' },
-    { id: '103', name: 'Phòng 103', isLive: true, members: 3, subject: 'Giải bài tập nhóm' },
-    { id: '104', name: 'Phòng 104', isLive: true, members: 8, subject: 'Ôn tập giữa kỳ' },
-    { id: '105', name: 'Phòng 105', isLive: true, members: 15, subject: 'Thảo luận tự do' },
-    { id: '106', name: 'Phòng 106', isLive: true, members: 2, subject: 'Hỏi đáp bài tập' },
-    { id: '102', name: 'Phòng 102', isLive: false, members: 12, subject: '' }
-  ];
-
-  const liveRooms = rooms.filter(r => r.isLive);
+  // Study Rooms that can still be joined/watched (mirrors the backend's can_join_room lifecycle gate).
+  const openRooms = studyRooms.filter((r) => r.status !== 'ended');
 
   const handleJoinRoom = (roomId: string) => {
     if (document.documentElement.requestFullscreen) {
@@ -72,21 +114,21 @@ export function StudyGroupDetail() {
   };
 
   const handleSendMessage = () => {
-    if (!chatInput.trim()) return;
-    
+    if (!chatInput.trim() || !activeChannel) return;
+
     const newMessage = {
       id: Date.now(),
-      sender: 'Minh Anh (Bạn)',
+      sender: `${currentUser.name} (Bạn)`,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       text: chatInput,
-      avatar: 'https://i.pravatar.cc/150?img=11'
+      avatar: null,
     };
 
     setMessages(prev => ({
       ...prev,
       [activeChannel]: [...(prev[activeChannel] || []), newMessage]
     }));
-    
+
     setChatInput('');
   };
 
@@ -96,22 +138,69 @@ export function StudyGroupDetail() {
     }
   };
 
+  const activeChannelObj = channels.find((c) => c.id === activeChannel) ?? null;
+
+  const memberDisplay = (member: GroupMember) => {
+    const isSelf = member.user_id === currentUserId;
+    const name = isSelf ? `${currentUser.name} (Bạn)` : `Người dùng #${member.user_id.slice(0, 4).toUpperCase()}`;
+    return {
+      name,
+      initials: isSelf ? currentUser.initials : getAvatarInitials(member.user_id),
+      color: isSelf ? currentUser.color : getAvatarColor(member.user_id),
+    };
+  };
+
+  // --- Loading / error states (real backend data drives all of these) ---
+
+  if (!groupId) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 'calc(100vh - 64px)', gap: 12, color: '#64748B' }}>
+        <div style={{ fontSize: 18, fontWeight: 600, color: '#0F172A' }}>Thiếu mã nhóm học</div>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 'calc(100vh - 64px)', color: '#64748B', fontSize: 15 }}>
+        Đang tải nhóm học...
+      </div>
+    );
+  }
+
+  if (loadError || !group) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 'calc(100vh - 64px)', gap: 12, textAlign: 'center', padding: 24 }}>
+        <div style={{ fontSize: 18, fontWeight: 600, color: '#0F172A' }}>
+          {loadError?.status === 404 ? 'Không tìm thấy nhóm học' : 'Không thể tải nhóm học'}
+        </div>
+        {loadError?.message && <div style={{ color: '#64748B', fontSize: 14, maxWidth: 420 }}>{loadError.message}</div>}
+        <button
+          onClick={() => navigate('/groups')}
+          style={{ marginTop: 8, padding: '10px 18px', background: '#00236F', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
+        >
+          Quay lại danh sách nhóm
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div style={{display: 'flex', flexDirection: 'column', height: 'calc(100vh - 64px)', width: '100%', overflow: 'hidden'}}>
         {/* Main Content - Discord-like 3-pane layout */}
         <div style={{display: 'flex', flex: 1, overflow: 'hidden', background: 'white', width: '100%'}}>
-            
+
             {/* Left Sidebar - Channels & Rooms */}
             <div style={{width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', background: '#F8FAFC', borderRight: '1px solid #E2E8F0'}}>
                 {/* Group Info Header with Discord-style Menu */}
                 <div style={{position: 'relative', borderBottom: '1px solid #E2E8F0'}}>
-                    <div 
+                    <div
                         onClick={() => setShowGroupMenu(!showGroupMenu)}
                         style={{
-                            padding: '16px', 
-                            cursor: 'pointer', 
-                            display: 'flex', 
-                            justify: 'space-between', 
+                            padding: '16px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            justifyContent: 'space-between',
                             alignItems: 'center',
                             background: showGroupMenu ? '#F1F5F9' : 'transparent',
                             transition: 'background 0.2s'
@@ -119,13 +208,13 @@ export function StudyGroupDetail() {
                     >
                         <div style={{flex: 1, minWidth: 0, paddingRight: 8}}>
                             <div style={{color: '#0B1C30', fontSize: 16, fontFamily: 'Inter', fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>
-                                Cơ học lượng tử 101
+                                {group.name}
                             </div>
                             <div style={{color: '#64748B', fontSize: 12, fontFamily: 'Inter', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6}}>
-                                <span style={{padding: '2px 6px', background: isPublic ? '#DCFCE7' : '#FEF3C7', color: isPublic ? '#15803D' : '#B45309', borderRadius: 4, fontSize: 10, fontWeight: '700'}}>
-                                    {isPublic ? 'Public' : 'Private'}
+                                <span style={{padding: '2px 6px', background: group.is_public ? '#DCFCE7' : '#FEF3C7', color: group.is_public ? '#15803D' : '#B45309', borderRadius: 4, fontSize: 10, fontWeight: '700'}}>
+                                    {group.is_public ? 'Public' : 'Private'}
                                 </span>
-                                <span>• 4 thành viên</span>
+                                <span>• {activeMembers.length} thành viên</span>
                             </div>
                         </div>
                         <ChevronDown size={18} color="#64748B" style={{transform: showGroupMenu ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s'}} />
@@ -133,25 +222,25 @@ export function StudyGroupDetail() {
 
                     {/* Discord-style Dropdown Menu */}
                     {showGroupMenu && (
-                        <div 
+                        <div
                             style={{
-                                position: 'absolute', 
-                                top: '100%', 
-                                left: 8, 
-                                right: 8, 
-                                zIndex: 50, 
-                                background: 'white', 
-                                borderRadius: 8, 
-                                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)', 
-                                border: '1px solid #E2E8F0', 
-                                padding: '6px', 
+                                position: 'absolute',
+                                top: '100%',
+                                left: 8,
+                                right: 8,
+                                zIndex: 50,
+                                background: 'white',
+                                borderRadius: 8,
+                                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+                                border: '1px solid #E2E8F0',
+                                padding: '6px',
                                 marginTop: 4,
                                 display: 'flex',
                                 flexDirection: 'column',
                                 gap: 2
                             }}
                         >
-                            <div 
+                            <div
                                 onClick={() => { alert('Mở bảng Cài đặt nhóm học'); setShowGroupMenu(false); }}
                                 style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#1E293B', cursor: 'pointer'}}
                                 onMouseOver={e => e.currentTarget.style.background = '#F1F5F9'}
@@ -160,9 +249,9 @@ export function StudyGroupDetail() {
                                 <Settings size={16} color="#475569" /> Cài đặt nhóm
                             </div>
 
-                            {userRole === 'HOST' && (
+                            {isOwner && (
                                 <>
-                                    <div 
+                                    <div
                                         onClick={() => { alert('Phân quyền và quản lý danh sách vai trò'); setShowGroupMenu(false); }}
                                         style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#1E293B', cursor: 'pointer'}}
                                         onMouseOver={e => e.currentTarget.style.background = '#F1F5F9'}
@@ -171,19 +260,26 @@ export function StudyGroupDetail() {
                                         <Shield size={16} color="#475569" /> Phân quyền & Vai trò
                                     </div>
 
-                                    <div 
-                                        onClick={() => { setIsPublic(!isPublic); setShowGroupMenu(false); }}
+                                    <div
+                                        onClick={() => {
+                                            // PUT /groups/{id} has no auth dependency at all (no owner/host check,
+                                            // no bearer-token requirement), so toggling this here would either
+                                            // impersonate an unauthenticated write or fake a local success that
+                                            // never persists. Left inert until the backend secures this route.
+                                            alert('Chức năng đổi chế độ công khai/riêng tư hiện chưa khả dụng: máy chủ chưa xác thực thao tác này.');
+                                            setShowGroupMenu(false);
+                                        }}
                                         style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#1E293B', cursor: 'pointer'}}
                                         onMouseOver={e => e.currentTarget.style.background = '#F1F5F9'}
                                         onMouseOut={e => e.currentTarget.style.background = 'transparent'}
                                     >
-                                        {isPublic ? <Lock size={16} color="#475569" /> : <Globe size={16} color="#475569" />} 
-                                        {isPublic ? 'Chuyển sang Riêng tư' : 'Chuyển sang Công khai'}
+                                        {group.is_public ? <Lock size={16} color="#475569" /> : <Globe size={16} color="#475569" />}
+                                        {group.is_public ? 'Chuyển sang Riêng tư' : 'Chuyển sang Công khai'}
                                     </div>
                                 </>
                             )}
 
-                            <div 
+                            <div
                                 onClick={() => { alert('Đã sao chép liên kết mời tham gia nhóm học!'); setShowGroupMenu(false); }}
                                 style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#1E293B', cursor: 'pointer'}}
                                 onMouseOver={e => e.currentTarget.style.background = '#F1F5F9'}
@@ -194,7 +290,7 @@ export function StudyGroupDetail() {
 
                             <div style={{height: 1, background: '#E2E8F0', margin: '4px 0'}} />
 
-                            <div 
+                            <div
                                 onClick={() => { navigate('/groups'); }}
                                 style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#DC2626', cursor: 'pointer'}}
                                 onMouseOver={e => e.currentTarget.style.background = '#FEF2F2'}
@@ -206,7 +302,7 @@ export function StudyGroupDetail() {
                     )}
                 </div>
 
-                {/* Owner Note / Announcement Banner */}
+                {/* Owner Note / Announcement Banner (local-only placeholder; no backend concept for this yet) */}
                 <div style={{
                     margin: '12px 12px 4px 12px',
                     padding: '12px 14px',
@@ -220,9 +316,9 @@ export function StudyGroupDetail() {
                         <span style={{fontSize: 11, fontWeight: '700', color: '#0369A1', textTransform: 'uppercase', letterSpacing: '0.5px'}}>
                             Ghi chú
                         </span>
-                        {userRole === 'HOST' && (
-                            <span 
-                                onClick={(e) => { e.stopPropagation(); setIsEditingNote(!isEditingNote); }} 
+                        {isOwner && (
+                            <span
+                                onClick={(e) => { e.stopPropagation(); setIsEditingNote(!isEditingNote); }}
                                 style={{fontSize: 11, fontWeight: '600', color: '#0284C7', cursor: 'pointer', textDecoration: 'underline'}}
                             >
                                 {isEditingNote ? 'Hủy' : 'Sửa'}
@@ -231,31 +327,31 @@ export function StudyGroupDetail() {
                     </div>
                     {isEditingNote ? (
                         <div style={{marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6}}>
-                            <textarea 
-                                value={newNote} 
+                            <textarea
+                                value={newNote}
                                 onChange={e => setNewNote(e.target.value)}
                                 style={{
-                                    padding: '6px 8px', 
-                                    fontSize: 12, 
-                                    borderRadius: 6, 
-                                    border: '1px solid #7DD3FC', 
+                                    padding: '6px 8px',
+                                    fontSize: 12,
+                                    borderRadius: 6,
+                                    border: '1px solid #7DD3FC',
                                     outline: 'none',
                                     resize: 'vertical',
                                     minHeight: '54px',
                                     fontFamily: 'inherit'
                                 }}
                             />
-                            <button 
+                            <button
                                 onClick={() => { setOwnerNote(newNote); setIsEditingNote(false); }}
                                 style={{
-                                    padding: '4px 12px', 
-                                    background: '#0284C7', 
-                                    color: 'white', 
-                                    border: 'none', 
-                                    borderRadius: 4, 
-                                    fontSize: 11, 
-                                    fontWeight: '600', 
-                                    cursor: 'pointer', 
+                                    padding: '4px 12px',
+                                    background: '#0284C7',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: 4,
+                                    fontSize: 11,
+                                    fontWeight: '600',
+                                    cursor: 'pointer',
                                     alignSelf: 'flex-end',
                                     transition: 'background 0.2s'
                                 }}
@@ -272,53 +368,60 @@ export function StudyGroupDetail() {
 
                 {/* Scrollable Channels List */}
                 <div style={{flex: 1, overflowY: 'auto', padding: '16px 8px'}}>
-                    
+
                     {/* Text Channels */}
                     <div style={{marginBottom: 24}}>
                         <div style={{color: '#64748B', fontSize: 12, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase', marginBottom: 8, paddingLeft: 8}}>Kênh Chat</div>
                         <div style={{display: 'flex', flexDirection: 'column', gap: 2}}>
-                            <div 
-                                onClick={() => { setActiveChannel('thao-luan-chung'); setMainView('chat'); }}
-                                style={{padding: '8px 12px', background: activeChannel === 'thao-luan-chung' && mainView === 'chat' ? '#E2E8F0' : 'transparent', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8, color: activeChannel === 'thao-luan-chung' && mainView === 'chat' ? '#0F172A' : '#475569', fontWeight: activeChannel === 'thao-luan-chung' && mainView === 'chat' ? '600' : '500', cursor: 'pointer'}}
-                                onMouseOver={e => (activeChannel !== 'thao-luan-chung' || mainView !== 'chat') && (e.currentTarget.style.background = '#F1F5F9')} 
-                                onMouseOut={e => (activeChannel !== 'thao-luan-chung' || mainView !== 'chat') && (e.currentTarget.style.background = 'transparent')}
-                            >
-                                <Hash size={18} color={activeChannel === 'thao-luan-chung' && mainView === 'chat' ? '#64748B' : '#94A3B8'} /> thao-luan-chung
-                            </div>
-                            <div 
-                                onClick={() => { setActiveChannel('chia-se-tai-lieu'); setMainView('chat'); }}
-                                style={{padding: '8px 12px', background: activeChannel === 'chia-se-tai-lieu' && mainView === 'chat' ? '#E2E8F0' : 'transparent', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8, color: activeChannel === 'chia-se-tai-lieu' && mainView === 'chat' ? '#0F172A' : '#475569', fontWeight: activeChannel === 'chia-se-tai-lieu' && mainView === 'chat' ? '600' : '500', cursor: 'pointer'}}
-                                onMouseOver={e => (activeChannel !== 'chia-se-tai-lieu' || mainView !== 'chat') && (e.currentTarget.style.background = '#F1F5F9')} 
-                                onMouseOut={e => (activeChannel !== 'chia-se-tai-lieu' || mainView !== 'chat') && (e.currentTarget.style.background = 'transparent')}
-                            >
-                                <Hash size={18} color={activeChannel === 'chia-se-tai-lieu' ? '#64748B' : '#94A3B8'} /> chia-se-tai-lieu
-                            </div>
+                            {channels.length === 0 && (
+                                <div style={{padding: '8px 12px', color: '#94A3B8', fontSize: 13}}>Chưa có kênh nào.</div>
+                            )}
+                            {channels.map((channel) => {
+                                const isActive = activeChannel === channel.id && mainView === 'chat';
+                                return (
+                                    <div
+                                        key={channel.id}
+                                        onClick={() => { setActiveChannel(channel.id); setMainView('chat'); }}
+                                        style={{padding: '8px 12px', background: isActive ? '#E2E8F0' : 'transparent', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8, color: isActive ? '#0F172A' : '#475569', fontWeight: isActive ? '600' : '500', cursor: 'pointer'}}
+                                        onMouseOver={e => !isActive && (e.currentTarget.style.background = '#F1F5F9')}
+                                        onMouseOut={e => !isActive && (e.currentTarget.style.background = 'transparent')}
+                                    >
+                                        {channel.is_private ? <Lock size={16} color={isActive ? '#64748B' : '#94A3B8'} /> : <Hash size={18} color={isActive ? '#64748B' : '#94A3B8'} />}
+                                        {channel.name}
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
 
                     {/* Voice / Video Rooms */}
                     <div style={{marginBottom: 24}}>
-                        <div style={{color: '#64748B', fontSize: 12, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase', marginBottom: 8, paddingLeft: 8}}>Phòng học đang Live</div>
-                        
+                        <div style={{color: '#64748B', fontSize: 12, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase', marginBottom: 8, paddingLeft: 8}}>Phòng học</div>
+
                         <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
-                            {/* Limit Live Rooms to top 2 for Sidebar */}
-                            {liveRooms.slice(0, 2).map(room => (
+                            {openRooms.length === 0 && (
+                                <div style={{padding: '8px', color: '#94A3B8', fontSize: 13}}>Chưa có phòng học nào đang mở.</div>
+                            )}
+                            {/* Limit rooms to top 2 for Sidebar */}
+                            {openRooms.slice(0, 2).map(room => (
                                 <div key={room.id} style={{padding: '10px 12px', background: '#E0E7FF', borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 10, cursor: 'pointer', border: '1px solid #C7D2FE'}}>
                                     <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                                         <div style={{display: 'flex', alignItems: 'center', gap: 8, color: '#4338CA', fontWeight: '600'}}>
                                             <Video size={16} /> {room.name}
                                         </div>
-                                        <div style={{background: '#10B981', color: 'white', fontSize: 10, fontWeight: '700', padding: '2px 6px', borderRadius: 4}}>LIVE</div>
+                                        <div style={{background: room.status === 'active' ? '#10B981' : '#F59E0B', color: 'white', fontSize: 10, fontWeight: '700', padding: '2px 6px', borderRadius: 4}}>
+                                            {room.status === 'active' ? 'LIVE' : 'CHỜ'}
+                                        </div>
                                     </div>
-                                    {room.subject && (
+                                    {room.description && (
                                         <div style={{fontSize: 12, color: '#475569', paddingLeft: 24}}>
-                                            Chủ đề: {room.subject} ({room.members} tv)
+                                            {room.description}
                                         </div>
                                     )}
-                                    <div 
+                                    <div
                                       onClick={() => handleJoinRoom(room.id)}
                                       style={{padding: '8px 0', background: 'white', borderRadius: 6, textAlign: 'center', color: '#4338CA', fontSize: 12, fontWeight: '600', border: '1px solid #C7D2FE', cursor: 'pointer', transition: 'all 0.2s'}}
-                                      onMouseOver={e => e.currentTarget.style.background = '#EEF2FF'} 
+                                      onMouseOver={e => e.currentTarget.style.background = '#EEF2FF'}
                                       onMouseOut={e => e.currentTarget.style.background = 'white'}
                                     >
                                         Tham gia ngay
@@ -326,22 +429,22 @@ export function StudyGroupDetail() {
                                 </div>
                             ))}
 
-                            {/* View All Live Rooms Button */}
-                            {liveRooms.length > 2 && (
-                                <div 
+                            {/* View All rooms Button */}
+                            {openRooms.length > 2 && (
+                                <div
                                     onClick={() => setMainView('rooms')}
                                     style={{padding: '8px', textAlign: 'center', color: '#4338CA', fontSize: 13, fontWeight: '600', cursor: 'pointer', borderRadius: 6, background: '#EEF2FF', border: '1px dashed #C7D2FE', transition: 'all 0.2s'}}
-                                    onMouseOver={e => e.currentTarget.style.background = '#E0E7FF'} 
+                                    onMouseOver={e => e.currentTarget.style.background = '#E0E7FF'}
                                     onMouseOut={e => e.currentTarget.style.background = '#EEF2FF'}
                                 >
-                                    Xem tất cả {liveRooms.length} phòng Live
+                                    Xem tất cả {openRooms.length} phòng học
                                 </div>
                             )}
 
                         </div>
                     </div>
 
-                    {/* Resources */}
+                    {/* Resources — placeholder until Resources API integration (separate task) */}
                     <div>
                         <div style={{color: '#64748B', fontSize: 12, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase', marginBottom: 8, paddingLeft: 8}}>Tài liệu đính kèm</div>
                         <div style={{display: 'flex', flexDirection: 'column', gap: 2}}>
@@ -362,10 +465,10 @@ export function StudyGroupDetail() {
                         </div>
                         {/* Nút Xem tất cả tài liệu đính kèm */}
                         <div style={{marginTop: 12, borderTop: '1px solid #E2E8F0', paddingTop: 12}}>
-                            <div 
+                            <div
                                 onClick={() => setMainView('documents')}
                                 style={{padding: '8px', textAlign: 'center', color: '#4338CA', fontSize: 13, fontWeight: '600', cursor: 'pointer', borderRadius: 6, background: '#EEF2FF', border: '1px dashed #C7D2FE', transition: 'all 0.2s', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6}}
-                                onMouseOver={e => e.currentTarget.style.background = '#E0E7FF'} 
+                                onMouseOver={e => e.currentTarget.style.background = '#E0E7FF'}
                                 onMouseOut={e => e.currentTarget.style.background = '#EEF2FF'}
                             >
                                 Xem tất cả tài liệu
@@ -381,11 +484,11 @@ export function StudyGroupDetail() {
             {/* Center - Main Area */}
             {mainView === 'chat' ? (
                 <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: 'white'}}>
-                    
+
                     {/* Chat Header */}
                     <div style={{height: 60, padding: '0 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                         <div style={{display: 'flex', alignItems: 'center', gap: 8, color: '#0F172A', fontSize: 18, fontWeight: '700'}}>
-                            <Hash size={24} color="#64748B" /> {activeChannel}
+                            <Hash size={24} color="#64748B" /> {activeChannelObj?.name ?? 'Chưa chọn kênh'}
                         </div>
                         <div style={{display: 'flex', gap: 16, color: '#64748B'}}>
                         </div>
@@ -393,24 +496,25 @@ export function StudyGroupDetail() {
 
                     {/* Messages List */}
                     <div style={{flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: 20}}>
-                        
+
                         {/* Welcome Message */}
                         <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '32px 0', color: '#94A3B8'}}>
                             <Hash size={48} color="#CBD5E1" style={{marginBottom: 16}} />
-                            <div style={{fontSize: 24, fontWeight: '700', color: '#0F172A', marginBottom: 8}}>Chào mừng đến với #{activeChannel}!</div>
-                            <div style={{fontSize: 14}}>Đây là sự khởi đầu của kênh #{activeChannel}.</div>
+                            <div style={{fontSize: 24, fontWeight: '700', color: '#0F172A', marginBottom: 8}}>
+                                {activeChannelObj ? `Chào mừng đến với #${activeChannelObj.name}!` : 'Nhóm học chưa có kênh chat nào'}
+                            </div>
+                            {activeChannelObj && <div style={{fontSize: 14}}>Đây là sự khởi đầu của kênh #{activeChannelObj.name}.</div>}
                         </div>
 
-                        {/* Map through active channel messages */}
+                        {/* Map through active channel messages (local-only mock; chat integration is a separate task) */}
                         {(messages[activeChannel] || []).map((msg) => (
                             <div key={msg.id} style={{display: 'flex', gap: 16}}>
-                                <img style={{width: 40, height: 40, borderRadius: '50%'}} src={msg.avatar} alt="Avatar" />
+                                <div style={{width: 40, height: 40, borderRadius: '50%', background: '#00236F', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flexShrink: 0}}>
+                                    {getAvatarInitials(msg.sender)}
+                                </div>
                                 <div>
                                     <div style={{display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4}}>
                                         <span style={{color: '#0F172A', fontSize: 15, fontWeight: '600'}}>{msg.sender}</span>
-                                        {msg.role === 'HOST' && (
-                                            <span style={{background: '#EEF2FF', color: '#4338CA', fontSize: 10, fontWeight: '700', padding: '2px 6px', borderRadius: 4}}>HOST</span>
-                                        )}
                                         <span style={{color: '#94A3B8', fontSize: 12}}>{msg.time}</span>
                                     </div>
                                     <div style={{color: '#334155', fontSize: 15, lineHeight: '1.5', wordBreak: 'break-word'}}>
@@ -425,13 +529,14 @@ export function StudyGroupDetail() {
                     {/* Chat Input */}
                     <div style={{padding: '0 24px 24px 24px'}}>
                         <div style={{background: '#F1F5F9', borderRadius: 8, display: 'flex', alignItems: 'center', padding: '12px 16px', border: '1px solid #E2E8F0', transition: 'border-color 0.2s'}}>
-                            <input 
-                                type="text" 
+                            <input
+                                type="text"
                                 value={chatInput}
                                 onChange={(e) => setChatInput(e.target.value)}
                                 onKeyDown={handleKeyPress}
-                                placeholder={`Nhắn tin cho #${activeChannel}...`} 
-                                style={{border: 'none', background: 'transparent', flex: 1, outline: 'none', fontSize: 15, color: '#0F172A'}} 
+                                disabled={!activeChannel}
+                                placeholder={activeChannelObj ? `Nhắn tin cho #${activeChannelObj.name}...` : 'Chọn một kênh để bắt đầu'}
+                                style={{border: 'none', background: 'transparent', flex: 1, outline: 'none', fontSize: 15, color: '#0F172A'}}
                             />
                             <button onClick={handleSendMessage} style={{background: 'transparent', border: 'none', padding: 0, display: 'flex', cursor: chatInput.trim() ? 'pointer' : 'not-allowed', opacity: chatInput.trim() ? 1 : 0.5}}>
                               <Send size={20} color="#00236F" />
@@ -442,26 +547,24 @@ export function StudyGroupDetail() {
             ) : mainView === 'rooms' ? (
                 <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: '#F8FAFC'}}>
                     <div style={{height: 60, padding: '0 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', color: '#0F172A', fontSize: 18, fontWeight: '700', background: 'white'}}>
-                        Danh sách Phòng học Live ({liveRooms.length})
+                        Danh sách Phòng học ({openRooms.length})
                     </div>
                     <div style={{flex: 1, overflowY: 'auto', padding: 24, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 24, alignContent: 'flex-start'}}>
-                        {liveRooms.map(room => (
+                        {openRooms.map(room => (
                             <div key={room.id} style={{background: 'white', border: '1px solid #E2E8F0', borderRadius: 12, overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)', display: 'flex', flexDirection: 'column'}}>
                                 <div style={{height: 100, background: 'linear-gradient(135deg, #EFF6FF, #DBEAFE)', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid #E2E8F0'}}>
                                     <Video size={36} color="#60A5FA" />
-                                    <div style={{position: 'absolute', top: 12, right: 12, background: '#10B981', color: 'white', fontSize: 10, fontWeight: '700', padding: '4px 8px', borderRadius: 4, letterSpacing: 0.5}}>LIVE</div>
-                                    <div style={{position: 'absolute', bottom: 12, left: 16, color: '#334155', fontSize: 12, fontWeight: '600', display: 'flex', alignItems: 'center', gap: 6}}>
-                                        <div style={{width: 8, height: 8, borderRadius: '50%', background: '#10B981', boxShadow: '0 0 0 2px rgba(16, 185, 129, 0.2)'}}></div>
-                                        {room.members} đang học
+                                    <div style={{position: 'absolute', top: 12, right: 12, background: room.status === 'active' ? '#10B981' : '#F59E0B', color: 'white', fontSize: 10, fontWeight: '700', padding: '4px 8px', borderRadius: 4, letterSpacing: 0.5}}>
+                                        {room.status === 'active' ? 'LIVE' : 'CHỜ BẮT ĐẦU'}
                                     </div>
                                 </div>
                                 <div style={{padding: 20, flex: 1, display: 'flex', flexDirection: 'column'}}>
                                     <div style={{fontSize: 18, fontWeight: '700', color: '#0F172A', marginBottom: 6}}>{room.name}</div>
-                                    <div style={{fontSize: 14, color: '#64748B', marginBottom: 20, flex: 1}}>Chủ đề: <span style={{color: '#334155', fontWeight: '500'}}>{room.subject || 'Đang cập nhật'}</span></div>
-                                    <button 
-                                        onClick={() => handleJoinRoom(room.id)} 
+                                    <div style={{fontSize: 14, color: '#64748B', marginBottom: 20, flex: 1}}>{room.description || 'Chưa có mô tả.'}</div>
+                                    <button
+                                        onClick={() => handleJoinRoom(room.id)}
                                         style={{width: '100%', padding: '12px 0', background: '#3B82F6', color: 'white', borderRadius: 8, border: 'none', fontWeight: '600', cursor: 'pointer', transition: 'background 0.2s'}}
-                                        onMouseOver={e => e.currentTarget.style.background = '#2563EB'} 
+                                        onMouseOver={e => e.currentTarget.style.background = '#2563EB'}
                                         onMouseOut={e => e.currentTarget.style.background = '#3B82F6'}
                                     >
                                         Tham gia phòng
@@ -508,31 +611,37 @@ export function StudyGroupDetail() {
                 </div>
             )}
 
-            {/* Right Sidebar - Members */}
+            {/* Right Sidebar - Members (real backend group members) */}
             <div style={{width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', background: '#F8FAFC', borderLeft: '1px solid #E2E8F0'}}>
-                
+
                 {/* Header */}
                 <div style={{padding: '16px 20px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white'}}>
                     <div style={{color: '#0F172A', fontWeight: '700', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%'}}>
-                        <Users size={18} color="#00236F" /> Thành viên (4)
+                        <Users size={18} color="#00236F" /> Thành viên ({activeMembers.length})
                     </div>
                 </div>
 
                 {/* Members List */}
                 <div style={{flex: 1, overflowY: 'auto', padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: 24}}>
-                    
-                    {/* Role Group: Host */}
+
+                    {/* Role Group: Owner */}
                     <div>
-                        <div style={{color: '#64748B', fontSize: 11, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase', marginBottom: 12}}>Giảng viên / Trưởng nhóm</div>
-                        <div style={{display: 'flex', alignItems: 'center', gap: 12, padding: '8px', borderRadius: 6, cursor: 'pointer'}} onMouseOver={e => e.currentTarget.style.background = '#E2E8F0'} onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
-                            <div style={{position: 'relative'}}>
-                                <img style={{width: 36, height: 36, borderRadius: '50%'}} src="https://i.pravatar.cc/150?img=12" alt="Avatar" />
-                                <div style={{position: 'absolute', bottom: -2, right: -2, width: 12, height: 12, background: '#10B981', borderRadius: '50%', border: '2px solid #F8FAFC'}}></div>
-                            </div>
-                            <div style={{flex: 1}}>
-                                <div style={{color: '#0F172A', fontSize: 14, fontWeight: '600'}}>Thầy Hoàng</div>
-                                <div style={{color: '#64748B', fontSize: 12}}>Host</div>
-                            </div>
+                        <div style={{color: '#64748B', fontSize: 11, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase', marginBottom: 12}}>Trưởng nhóm</div>
+                        <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
+                            {activeMembers.filter(m => m.role === 'owner').map((member) => {
+                                const display = memberDisplay(member);
+                                return (
+                                    <div key={member.id} style={{display: 'flex', alignItems: 'center', gap: 12, padding: '8px', borderRadius: 6, cursor: 'default'}} onMouseOver={e => e.currentTarget.style.background = '#E2E8F0'} onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
+                                        <div style={{width: 36, height: 36, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: '700', fontSize: 13}}>
+                                            {display.initials}
+                                        </div>
+                                        <div style={{flex: 1}}>
+                                            <div style={{color: '#0F172A', fontSize: 14, fontWeight: '600'}}>{display.name}</div>
+                                            <div style={{color: '#64748B', fontSize: 12}}>Host</div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
 
@@ -540,43 +649,23 @@ export function StudyGroupDetail() {
                     <div>
                         <div style={{color: '#64748B', fontSize: 11, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase', marginBottom: 12}}>Thành viên</div>
                         <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
-                            
-                            {/* Member 1 (You) */}
-                            <div style={{display: 'flex', alignItems: 'center', gap: 12, padding: '8px', borderRadius: 6, cursor: 'pointer'}} onMouseOver={e => e.currentTarget.style.background = '#E2E8F0'} onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
-                                <div style={{position: 'relative'}}>
-                                    <img style={{width: 36, height: 36, borderRadius: '50%'}} src="https://i.pravatar.cc/150?img=11" alt="Avatar" />
-                                    <div style={{position: 'absolute', bottom: -2, right: -2, width: 12, height: 12, background: '#10B981', borderRadius: '50%', border: '2px solid #F8FAFC'}}></div>
-                                </div>
-                                <div style={{flex: 1}}>
-                                    <div style={{color: '#0F172A', fontSize: 14, fontWeight: '600'}}>Minh Anh <span style={{color: '#94A3B8', fontWeight: '400'}}>(Bạn)</span></div>
-                                    <div style={{color: '#10B981', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4}}><Mic size={12}/> Đang nói</div>
-                                </div>
-                            </div>
-
-                            {/* Member 2 */}
-                            <div style={{display: 'flex', alignItems: 'center', gap: 12, padding: '8px', borderRadius: 6, cursor: 'pointer'}} onMouseOver={e => e.currentTarget.style.background = '#E2E8F0'} onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
-                                <div style={{position: 'relative'}}>
-                                    <img style={{width: 36, height: 36, borderRadius: '50%'}} src="https://i.pravatar.cc/150?img=13" alt="Avatar" />
-                                    <div style={{position: 'absolute', bottom: -2, right: -2, width: 12, height: 12, background: '#EF4444', borderRadius: '50%', border: '2px solid #F8FAFC'}}></div>
-                                </div>
-                                <div style={{flex: 1}}>
-                                    <div style={{color: '#0F172A', fontSize: 14, fontWeight: '600'}}>Tuấn Kiệt</div>
-                                    <div style={{color: '#EF4444', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4}}><MicOff size={12}/> Tắt mic</div>
-                                </div>
-                            </div>
-
-                            {/* Member 3 (Offline) */}
-                            <div style={{display: 'flex', alignItems: 'center', gap: 12, padding: '8px', borderRadius: 6, cursor: 'pointer', opacity: 0.6}} onMouseOver={e => e.currentTarget.style.background = '#E2E8F0'} onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
-                                <div style={{position: 'relative'}}>
-                                    <div style={{width: 36, height: 36, borderRadius: '50%', background: '#CBD5E1', color: 'white', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: '700'}}>L</div>
-                                    <div style={{position: 'absolute', bottom: -2, right: -2, width: 12, height: 12, background: '#94A3B8', borderRadius: '50%', border: '2px solid #F8FAFC'}}></div>
-                                </div>
-                                <div style={{flex: 1}}>
-                                    <div style={{color: '#0F172A', fontSize: 14, fontWeight: '600'}}>Lan Phương</div>
-                                    <div style={{color: '#64748B', fontSize: 12}}>Ngoại tuyến</div>
-                                </div>
-                            </div>
-
+                            {activeMembers.filter(m => m.role !== 'owner').length === 0 && (
+                                <div style={{color: '#94A3B8', fontSize: 13, padding: '8px'}}>Chưa có thành viên khác.</div>
+                            )}
+                            {activeMembers.filter(m => m.role !== 'owner').map((member) => {
+                                const display = memberDisplay(member);
+                                return (
+                                    <div key={member.id} style={{display: 'flex', alignItems: 'center', gap: 12, padding: '8px', borderRadius: 6, cursor: 'default'}} onMouseOver={e => e.currentTarget.style.background = '#E2E8F0'} onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
+                                        <div style={{width: 36, height: 36, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: '700', fontSize: 13}}>
+                                            {display.initials}
+                                        </div>
+                                        <div style={{flex: 1}}>
+                                            <div style={{color: '#0F172A', fontSize: 14, fontWeight: '600'}}>{display.name}</div>
+                                            {member.role === 'moderator' && <div style={{color: '#7C3AED', fontSize: 12}}>Điều hành viên</div>}
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
 
@@ -584,7 +673,10 @@ export function StudyGroupDetail() {
 
                 {/* Invite Button */}
                 <div style={{padding: '16px', borderTop: '1px solid #E2E8F0', background: 'white'}}>
-                    <button style={{width: '100%', padding: '10px', background: '#00236F', color: 'white', border: 'none', borderRadius: 6, fontWeight: '600', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, cursor: 'pointer'}}>
+                    <button
+                        onClick={() => alert('Đã sao chép liên kết mời tham gia nhóm học!')}
+                        style={{width: '100%', padding: '10px', background: '#00236F', color: 'white', border: 'none', borderRadius: 6, fontWeight: '600', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, cursor: 'pointer'}}
+                    >
                         <UserPlus size={18} /> Mời thêm người
                     </button>
                 </div>

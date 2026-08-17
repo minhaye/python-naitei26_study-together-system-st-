@@ -11,6 +11,11 @@ export function getStudyRoom(roomId: string): Promise<StudyRoom> {
   return apiClient.get<StudyRoom>(`/study-rooms/${roomId}`);
 }
 
+/** Used by StudyGroupDetail.tsx to link to real room ids instead of mock ones. */
+export function listStudyRoomsByGroup(groupId: string): Promise<StudyRoom[]> {
+  return apiClient.get<StudyRoom[]>(`/study-rooms/?group_id=${groupId}`);
+}
+
 /** Caller is always derived from the bearer token on the backend; no user id is ever sent. */
 export function joinStudyRoom(roomId: string): Promise<StudyRoomMember> {
   return apiClient.post<StudyRoomMember>(`/study-rooms/${roomId}/join`);
