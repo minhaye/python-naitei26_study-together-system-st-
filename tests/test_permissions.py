@@ -6,12 +6,16 @@ from app.channels.entities.channel_entity import Channel, ChannelMember
 from app.conversations.entities.conversation_entity import Conversation
 from app.core import permissions
 from app.db.enums import ConversationType, GroupMemberRole, MemberStatus, StudyRoomMemberRole, StudyRoomStatus
-from app.groups.entities.group_entity import GroupMember
+from app.groups.entities.group_entity import Group, GroupMember
 from app.study_rooms.entities.study_room_entity import StudyRoom, StudyRoomMember
 
 
 def _group_member(role: GroupMemberRole, status: MemberStatus) -> GroupMember:
     return GroupMember(group_id=uuid.uuid4(), user_id=uuid.uuid4(), role=role, status=status)
+
+
+def _group(owner_id: uuid.UUID | None = None) -> Group:
+    return Group(id=uuid.uuid4(), name="Group", owner_id=owner_id or uuid.uuid4(), is_public=True)
 
 
 def _channel(is_private: bool) -> Channel:
@@ -70,6 +74,19 @@ async def test_is_group_manager_false_for_plain_member(monkeypatch):
     monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock(return_value=member))
 
     assert not await permissions.is_group_manager(session=None, group_id=uuid.uuid4(), user_id=uuid.uuid4())
+
+
+def test_is_group_owner_true_for_owner():
+    owner_id = uuid.uuid4()
+    group = _group(owner_id=owner_id)
+
+    assert permissions.is_group_owner(group, owner_id)
+
+
+def test_is_group_owner_false_for_non_owner():
+    group = _group(owner_id=uuid.uuid4())
+
+    assert not permissions.is_group_owner(group, uuid.uuid4())
 
 
 async def test_can_access_channel_public_requires_only_group_membership(monkeypatch):

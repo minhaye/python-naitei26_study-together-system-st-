@@ -1,5 +1,7 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
+from app.core.config import settings
 from app.attachments.routers.attachment_router import router as attachments_router
 from app.auth.routers.auth_router import router as auth_router
 from app.conversations.routers.conversation_router import router as conversations_router
@@ -13,6 +15,14 @@ from app.forum.routers.forum_router import router as forum_router
 from app.notifications.routers.notification_router import router as notifications_router
 
 app = FastAPI(title="Study Platform API", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
+)
 
 app.include_router(auth_router)
 app.include_router(profiles_router)

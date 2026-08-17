@@ -11,9 +11,9 @@ from app.study_rooms.dto.study_room_dto import RoomModerationActionCreate, Study
 class StudyRoomsService:
     async def create(self, session: AsyncSession, data: StudyRoomCreate, host_id: uuid.UUID) -> StudyRoom:
         """`host_id` is the authenticated caller, passed explicitly by the router --
-        never trust `data.host_id` (client-supplied) as the room owner."""
-        room_fields = data.model_dump(exclude={"host_id"})
-        room = StudyRoom(**room_fields, host_id=host_id)
+        `StudyRoomCreate` has no host_id field at all, so there is no client-supplied
+        value to trust or ignore."""
+        room = StudyRoom(**data.model_dump(), host_id=host_id)
         session.add(room)
         await session.flush()
 

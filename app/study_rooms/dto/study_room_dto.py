@@ -7,10 +7,12 @@ from app.db.enums import ModerationAction, StudyRoomMemberRole, StudyRoomStatus
 
 
 class StudyRoomCreate(BaseModel):
+    """No `host_id` field: the room host is always the authenticated caller
+    (see StudyRoomsService.create / study_room_router.create_room), never client-supplied."""
+
     group_id: uuid.UUID
     name: str = Field(min_length=1, max_length=100)
     description: str | None = None
-    host_id: uuid.UUID
     max_participants: int = Field(default=50, ge=2, le=500)
 
 

@@ -9,10 +9,20 @@ import { LoginPage } from '../pages/LoginPage';
 import { RegisterPage } from '../pages/RegisterPage';
 import { AimPage } from '../pages/Aim';
 import { AccountSettingsPage } from '../pages/AccountSettingsPage';
+import { useAuth } from '../hooks/useAuth';
 
 const ProtectedRoute = ({ children }: { children?: React.ReactNode }) => {
-  const isAuth = localStorage.getItem('auth') === 'true';
-  if (!isAuth) {
+  const { isLoggedIn, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#64748B', fontSize: 15 }}>
+        Đang tải...
+      </div>
+    );
+  }
+
+  if (!isLoggedIn) {
     return <Navigate to="/login" replace />;
   }
   return children ? <>{children}</> : <Outlet />;
@@ -23,7 +33,7 @@ export function AppRoutes() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
-      <Route path="/room/:id" element={<StudyRoom />} />
+      <Route path="/room/:id" element={<ProtectedRoute><StudyRoom /></ProtectedRoute>} />
       <Route path="/" element={<Layout />}>
         <Route index element={<HomePage />} />
         <Route path="forum/post/:id" element={<ForumPostDetail />} />

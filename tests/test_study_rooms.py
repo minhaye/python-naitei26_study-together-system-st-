@@ -8,8 +8,16 @@ from app.auth.dependencies import get_current_user
 from app.auth.dto.auth_dto import CurrentUser
 from app.conversations.entities.conversation_entity import Conversation
 from app.core import permissions
-from app.db.enums import ConversationType, ModerationAction, StudyRoomMemberRole, StudyRoomStatus
+from app.db.enums import (
+    ConversationType,
+    GroupMemberRole,
+    MemberStatus,
+    ModerationAction,
+    StudyRoomMemberRole,
+    StudyRoomStatus,
+)
 from app.db.session import get_db_session
+from app.groups.entities.group_entity import Group, GroupMember
 from app.main import app
 from app.messages.routers import message_router
 from app.study_rooms.dto.study_room_dto import RoomModerationActionCreate
@@ -64,6 +72,19 @@ def _room_member(room_id, user_id, role=StudyRoomMemberRole.PARTICIPANT, left_at
         joined_at=datetime.now(timezone.utc),
         left_at=left_at,
     )
+
+
+def _group_member(group_id, user_id, role=GroupMemberRole.MEMBER, status=MemberStatus.ACTIVE) -> GroupMember:
+    return GroupMember(
+        id=uuid.uuid4(), group_id=group_id, user_id=user_id, role=role, status=status,
+        joined_at=datetime.now(timezone.utc),
+    )
+
+
+def _mock_group_membership(monkeypatch, member: GroupMember | None):
+    """is_active_group_member reads via permissions.groups_service.get_member --
+    mirrors how test_channels.py mocks the same shared permissions module instance."""
+    monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock(return_value=member))
 
 
 def _moderation_action(room_id, moderator_id, target_user_id, action, reason=None) -> RoomModerationAction:
@@ -207,32 +228,71 @@ async def test_list_rooms_remains_public(async_client, monkeypatch):
 async def test_create_room_requires_auth(async_client):
     response = await async_client.post(
         "/study-rooms/",
-        json={"group_id": str(uuid.uuid4()), "name": "Room", "host_id": str(uuid.uuid4())},
+        json={"group_id": str(uuid.uuid4()), "name": "Room"},
     )
     assert response.status_code == 401
 
 
-async def test_create_room_caller_becomes_host_even_if_host_id_spoofed(async_client, monkeypatch, as_fake_user):
+async def test_create_room_group_not_found(async_client, monkeypatch, as_fake_user):
+    monkeypatch.setattr(study_room_router.groups_service, "get_by_id", AsyncMock(return_value=None))
+
+    response = await async_client.post(
+        "/study-rooms/",
+        json={"group_id": str(uuid.uuid4()), "name": "Room"},
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 404
+
+
+async def test_create_room_forbidden_for_non_member(async_client, monkeypatch, as_fake_user):
+    """Regression test: POST /study-rooms/ used to have no group-membership check at all --
+    any authenticated user could create a room under any group_id. See
+    STUDY_PLATFORM_DATABASE_SPEC.md §16 and study_room_router.create_room's docstring."""
+    group_id = uuid.uuid4()
+    group = Group(id=group_id, name="G", owner_id=uuid.uuid4(), is_public=True)
+    monkeypatch.setattr(study_room_router.groups_service, "get_by_id", AsyncMock(return_value=group))
+    _mock_group_membership(monkeypatch, None)
+
+    response = await async_client.post(
+        "/study-rooms/",
+        json={"group_id": str(group_id), "name": "Room"},
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 403
+
+
+async def test_create_room_allowed_for_plain_member_and_host_id_spoofing_ignored(
+    async_client, monkeypatch, as_fake_user
+):
+    """A normal (non-owner, non-moderator) group member must still be allowed to create a
+    room and become its host -- STUDY_PLATFORM_DATABASE_SPEC.md §16 is explicit that room
+    creation is not restricted to group managers."""
+    group_id = uuid.uuid4()
+    group = Group(id=group_id, name="G", owner_id=uuid.uuid4(), is_public=True)
+    monkeypatch.setattr(study_room_router.groups_service, "get_by_id", AsyncMock(return_value=group))
+    _mock_group_membership(monkeypatch, _group_member(group_id, as_fake_user.id, role=GroupMemberRole.MEMBER))
+
     spoofed_host_id = uuid.uuid4()
     captured = {}
 
     async def fake_create(session, data, host_id):
         captured["host_id"] = host_id
-        captured["data_host_id"] = data.host_id
         return _make_room(host_id=host_id)
 
     monkeypatch.setattr(study_room_router.service, "create", fake_create)
 
+    # StudyRoomCreate has no host_id field at all -- a stray one in the JSON body must be
+    # silently ignored (Pydantic drops unknown fields), never taken as identity.
     response = await async_client.post(
         "/study-rooms/",
-        json={"group_id": str(uuid.uuid4()), "name": "Room", "host_id": str(spoofed_host_id)},
+        json={"group_id": str(group_id), "name": "Room", "host_id": str(spoofed_host_id)},
         headers=AUTH_HEADERS,
     )
 
     assert response.status_code == 201
     assert response.json()["host_id"] == str(as_fake_user.id)
     assert captured["host_id"] == as_fake_user.id
-    assert captured["data_host_id"] == spoofed_host_id
+    assert captured["host_id"] != spoofed_host_id
 
 
 # --- Update: host-only ---

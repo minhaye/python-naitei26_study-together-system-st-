@@ -8,18 +8,22 @@ from app.groups.dto.group_dto import GroupCreate, GroupUpdate
 
 
 class GroupsService:
-    async def create(self, session: AsyncSession, data: GroupCreate) -> Group:
-        group = Group(**data.model_dump())
-        session.add(group)
-        await session.flush()
+    async def create(self, session: AsyncSession, data: GroupCreate, owner_id: uuid.UUID) -> Group:
+        """`owner_id` is the authenticated caller, passed explicitly by the router --
+        never trust a client-supplied owner id as the group owner.
 
-        owner_membership = GroupMember(
-            group_id=group.id,
-            user_id=data.owner_id,
-            role=GroupMemberRole.OWNER,
-            status=MemberStatus.ACTIVE,
-        )
-        session.add(owner_membership)
+        Deliberately does NOT insert the owner's `group_members` row here. The live DB
+        trigger `groups_add_owner` (AFTER INSERT ON groups -> add_group_owner(), a
+        SECURITY DEFINER function using `INSERT ... ON CONFLICT (group_id, user_id) DO
+        UPDATE`) already does this unconditionally for every row inserted into `groups`,
+        regardless of code path. Inserting it again here raced that trigger within the
+        same transaction: the trigger's insert lands first (fired synchronously by the
+        `groups` INSERT/flush below), and this method's own plain `session.add` of a
+        second GroupMember for the same (group_id, owner_id) then violated the
+        group_members_group_id_user_id_key unique constraint. The trigger is the single
+        source of truth for this invariant; do not duplicate it in application code."""
+        group = Group(**data.model_dump(), owner_id=owner_id)
+        session.add(group)
         await session.flush()
         return group
 
@@ -45,15 +49,12 @@ class GroupsService:
         await session.flush()
 
     # --- group_members ---
-    async def add_member(
-        self,
-        session: AsyncSession,
-        group_id: uuid.UUID,
-        user_id: uuid.UUID,
-        role: GroupMemberRole = GroupMemberRole.MEMBER,
-        status: MemberStatus = MemberStatus.ACTIVE
-    ) -> GroupMember:
-        member = GroupMember(group_id=group_id, user_id=user_id, role=role, status=status)
+    async def add_member(self, session: AsyncSession, group_id: uuid.UUID, user_id: uuid.UUID) -> GroupMember:
+        """Always creates a plain active member -- role/status escalation only happens
+        through the dedicated, separately-authorized endpoints (never at add-time)."""
+        member = GroupMember(
+            group_id=group_id, user_id=user_id, role=GroupMemberRole.MEMBER, status=MemberStatus.ACTIVE
+        )
         session.add(member)
         await session.flush()
         return member

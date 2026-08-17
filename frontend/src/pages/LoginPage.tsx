@@ -1,14 +1,30 @@
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, ArrowRight } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    localStorage.setItem('auth', 'true');
+    if (isSubmitting) return;
+
+    setError(null);
+    setIsSubmitting(true);
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+    setIsSubmitting(false);
+
+    if (signInError) {
+      setError('Email hoặc mật khẩu không đúng. Vui lòng thử lại.');
+      return;
+    }
+
     navigate('/');
-    window.location.reload(); // Quick reload to update Header state
   };
 
   return (
@@ -26,9 +42,11 @@ export function LoginPage() {
               <label style={{display: 'block', fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 8}}>Email</label>
               <div style={{position: 'relative'}}>
                 <Mail size={18} color="#94A3B8" style={{position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)'}} />
-                <input 
-                  type="email" 
+                <input
+                  type="email"
                   required
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
                   placeholder="nhapemail@example.com"
                   style={{width: '100%', padding: '12px 16px 12px 42px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, outline: 'none', fontSize: 15, color: '#0F172A', boxSizing: 'border-box', transition: 'border-color 0.2s'}}
                   onFocus={e => e.currentTarget.style.borderColor = '#3B82F6'}
@@ -44,9 +62,11 @@ export function LoginPage() {
               </div>
               <div style={{position: 'relative'}}>
                 <Lock size={18} color="#94A3B8" style={{position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)'}} />
-                <input 
-                  type="password" 
+                <input
+                  type="password"
                   required
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
                   placeholder="••••••••"
                   style={{width: '100%', padding: '12px 16px 12px 42px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, outline: 'none', fontSize: 15, color: '#0F172A', boxSizing: 'border-box', transition: 'border-color 0.2s'}}
                   onFocus={e => e.currentTarget.style.borderColor = '#3B82F6'}
@@ -54,9 +74,13 @@ export function LoginPage() {
                 />
               </div>
             </div>
-            
-            <button type="submit" style={{width: '100%', marginTop: 8, padding: '14px', background: '#00236F', color: 'white', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: '600', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, transition: 'background 0.2s'}} onMouseOver={e => e.currentTarget.style.background = '#1E3A8A'} onMouseOut={e => e.currentTarget.style.background = '#00236F'}>
-              Đăng nhập
+
+            {error && (
+              <p style={{color: '#EF4444', fontSize: 14, margin: 0}}>{error}</p>
+            )}
+
+            <button type="submit" disabled={isSubmitting} style={{width: '100%', marginTop: 8, padding: '14px', background: '#00236F', color: 'white', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: '600', cursor: isSubmitting ? 'default' : 'pointer', opacity: isSubmitting ? 0.7 : 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, transition: 'background 0.2s'}} onMouseOver={e => e.currentTarget.style.background = '#1E3A8A'} onMouseOut={e => e.currentTarget.style.background = '#00236F'}>
+              {isSubmitting ? 'Đang đăng nhập...' : 'Đăng nhập'}
               <ArrowRight size={18} />
             </button>
           </form>

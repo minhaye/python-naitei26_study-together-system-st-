@@ -2,6 +2,9 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import get_current_user, get_current_user_optional
+from app.auth.dto.auth_dto import CurrentUser
+from app.core.permissions import is_active_group_member, is_group_manager, is_group_owner
 from app.db.session import get_db_session
 from app.db.enums import GroupMemberRole, MemberStatus
 from app.groups.dto.group_dto import (
@@ -11,6 +14,7 @@ from app.groups.dto.group_dto import (
     GroupResponse,
     GroupUpdate,
 )
+from app.groups.entities.group_entity import Group
 from app.groups.services.group_service import GroupsService
 
 router = APIRouter(prefix="/groups", tags=["Groups"])
@@ -18,9 +22,15 @@ service = GroupsService()
 
 
 @router.post("/", response_model=GroupResponse, status_code=status.HTTP_201_CREATED)
-async def create_group(data: GroupCreate, session: AsyncSession = Depends(get_db_session)):
+async def create_group(
+    data: GroupCreate,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
     try:
-        group = await service.create(session, data)
+        # The authenticated caller always becomes the owner; there is no client-supplied
+        # owner_id to trust or ignore (see GroupCreate).
+        group = await service.create(session, data, owner_id=current_user.id)
         await session.commit()
         return group
     except Exception as e:
@@ -38,6 +48,10 @@ async def list_groups(
     limit: int = 50,
     session: AsyncSession = Depends(get_db_session)
 ):
+    # Public discovery stays unauthenticated by design (documented decision, mirrors Study
+    # Room's public GET /study-rooms). public_only=false is unrestricted read of all groups'
+    # basic metadata; the actually-sensitive data (membership rosters) is gated separately
+    # below, not here.
     if public_only:
         return await service.list_public(session, skip=skip, limit=limit)
     return await service.list_all(session, skip=skip, limit=limit)
@@ -58,6 +72,7 @@ async def get_group(group_id: uuid.UUID, session: AsyncSession = Depends(get_db_
 async def update_group(
     group_id: uuid.UUID,
     data: GroupUpdate,
+    current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
     group = await service.get_by_id(session, group_id)
@@ -66,6 +81,8 @@ async def update_group(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Group not found"
         )
+    if not is_group_owner(group, current_user.id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the group owner can update this group")
     try:
         updated = await service.update(session, group, data)
         await session.commit()
@@ -79,13 +96,19 @@ async def update_group(
 
 
 @router.delete("/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_group(group_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)):
+async def delete_group(
+    group_id: uuid.UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session)
+):
     group = await service.get_by_id(session, group_id)
     if not group:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Group not found"
         )
+    if not is_group_owner(group, current_user.id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the group owner can delete this group")
     try:
         await service.delete(session, group)
         await session.commit()
@@ -104,9 +127,9 @@ async def delete_group(group_id: uuid.UUID, session: AsyncSession = Depends(get_
 async def add_member(
     group_id: uuid.UUID,
     data: GroupMemberCreate,
+    current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
-    # Ensure group exists
     group = await service.get_by_id(session, group_id)
     if not group:
         raise HTTPException(
@@ -114,8 +137,25 @@ async def add_member(
             detail="Group not found"
         )
 
-    # Check if already a member
-    existing = await service.get_member(session, group_id, data.user_id)
+    # Two distinct cases, both driven by the authenticated caller:
+    #   - self-join (target == caller, or no target given): allowed only for public groups.
+    #     Private-group self-join is deliberately not implemented -- the spec leaves
+    #     "invite code vs. approval" for private groups as an open product question.
+    #   - manager-driven add of someone else: requires owner/moderator authority over
+    #     this group. Not gated by is_public -- a manager may add members to a private
+    #     group too (spec §42: only the *self-service* flow is unresolved for private groups).
+    target_user_id = data.user_id if data.user_id is not None else current_user.id
+    is_self_join = target_user_id == current_user.id
+
+    if is_self_join:
+        if not group.is_public:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "This group is private; self-join is not supported")
+    elif not await is_group_manager(session, group_id, current_user.id):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Only the group owner or a moderator can add other members"
+        )
+
+    existing = await service.get_member(session, group_id, target_user_id)
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -123,9 +163,9 @@ async def add_member(
         )
 
     try:
-        member = await service.add_member(
-            session, group_id, data.user_id, role=data.role, status=data.status
-        )
+        # Always joins as a plain active member -- never moderator/owner, even when a
+        # manager adds someone else. Promote afterward via the owner-only role endpoint.
+        member = await service.add_member(session, group_id, target_user_id)
         await session.commit()
         return member
     except Exception as e:
@@ -137,19 +177,32 @@ async def add_member(
 
 
 @router.get("/{group_id}/members", response_model=list[GroupMemberResponse])
-async def list_members(group_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)):
-    # Ensure group exists
+async def list_members(
+    group_id: uuid.UUID,
+    current_user: CurrentUser | None = Depends(get_current_user_optional),
+    session: AsyncSession = Depends(get_db_session)
+):
     group = await service.get_by_id(session, group_id)
     if not group:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Group not found"
         )
+    await _require_member_list_access(session, group, current_user)
     return await service.list_members(session, group_id)
 
 
 @router.get("/{group_id}/members/{user_id}", response_model=GroupMemberResponse)
-async def get_member(group_id: uuid.UUID, user_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)):
+async def get_member(
+    group_id: uuid.UUID,
+    user_id: uuid.UUID,
+    current_user: CurrentUser | None = Depends(get_current_user_optional),
+    session: AsyncSession = Depends(get_db_session)
+):
+    group = await service.get_by_id(session, group_id)
+    if not group:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Group not found")
+    await _require_member_list_access(session, group, current_user)
     member = await service.get_member(session, group_id, user_id)
     if not member:
         raise HTTPException(
@@ -159,19 +212,50 @@ async def get_member(group_id: uuid.UUID, user_id: uuid.UUID, session: AsyncSess
     return member
 
 
+async def _require_member_list_access(session: AsyncSession, group: Group, current_user: CurrentUser | None) -> None:
+    """Public groups keep their membership roster readable by anyone (needed for public
+    discovery, e.g. showing member counts before joining). Private groups restrict it to
+    active members/the owner, per the requirement that private membership data must not
+    leak to unauthorized callers."""
+    if group.is_public:
+        return
+    if current_user is None:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "Missing bearer token", headers={"WWW-Authenticate": "Bearer"}
+        )
+    if is_group_owner(group, current_user.id):
+        return
+    if await is_active_group_member(session, group.id, current_user.id):
+        return
+    raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have access to this group's members")
+
+
 @router.put("/{group_id}/members/{user_id}/role", response_model=GroupMemberResponse)
 async def update_member_role(
     group_id: uuid.UUID,
     user_id: uuid.UUID,
     role: GroupMemberRole,
+    current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    group = await service.get_by_id(session, group_id)
+    if not group:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Group not found")
+    if not is_group_owner(group, current_user.id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the group owner can change member roles")
+    if role == GroupMemberRole.OWNER:
+        # Ownership transfer is out of scope for this task (spec §42 leaves it unresolved).
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ownership transfer is not supported")
+
     member = await service.get_member(session, group_id, user_id)
     if not member:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Membership not found"
         )
+    if member.role == GroupMemberRole.OWNER:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot change the owner's role")
+
     try:
         updated = await service.update_member_role(session, member, role)
         await session.commit()
@@ -189,14 +273,28 @@ async def update_member_status(
     group_id: uuid.UUID,
     user_id: uuid.UUID,
     member_status: MemberStatus,
+    current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    group = await service.get_by_id(session, group_id)
+    if not group:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Group not found")
     member = await service.get_member(session, group_id, user_id)
     if not member:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Membership not found"
         )
+
+    is_self_leave = user_id == current_user.id and member_status == MemberStatus.LEFT
+    if not is_self_leave and not is_group_owner(group, current_user.id):
+        # Ban/reactivate/any status change on another member is deliberately owner-only
+        # (conservative default -- spec §42 explicitly leaves moderator ban/kick powers
+        # unresolved, so they are not granted here). Self-leave is always allowed.
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Only the group owner can change another member's status"
+        )
+
     try:
         updated = await service.update_member_status(session, member, member_status)
         await session.commit()
@@ -213,14 +311,23 @@ async def update_member_status(
 async def remove_member(
     group_id: uuid.UUID,
     user_id: uuid.UUID,
+    current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    group = await service.get_by_id(session, group_id)
+    if not group:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Group not found")
     member = await service.get_member(session, group_id, user_id)
     if not member:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Membership not found"
         )
+    # Hard removal ("kick") is the conservative owner-only operation -- self-leave should
+    # go through PUT .../status (status=left) instead, which preserves membership history
+    # per the spec's recommendation.
+    if not is_group_owner(group, current_user.id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the group owner can remove members")
     try:
         await service.remove_member(session, member)
         await session.commit()
