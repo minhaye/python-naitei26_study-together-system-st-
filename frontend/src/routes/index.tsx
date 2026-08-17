@@ -9,10 +9,20 @@ import { LoginPage } from '../pages/LoginPage';
 import { RegisterPage } from '../pages/RegisterPage';
 import { AimPage } from '../pages/Aim';
 import { AccountSettingsPage } from '../pages/AccountSettingsPage';
+import { useAuth } from '../hooks/useAuth';
 
 const ProtectedRoute = ({ children }: { children?: React.ReactNode }) => {
-  const isAuth = localStorage.getItem('auth') === 'true';
-  if (!isAuth) {
+  const { isLoggedIn, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#64748B', fontSize: 15 }}>
+        Đang tải...
+      </div>
+    );
+  }
+
+  if (!isLoggedIn) {
     return <Navigate to="/login" replace />;
   }
   return children ? <>{children}</> : <Outlet />;
