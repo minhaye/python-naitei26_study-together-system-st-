@@ -20,9 +20,11 @@ import { ApiError } from '../../lib/apiClient';
 import { getGroup, listGroupMembers, leaveGroup, updateGroup } from '../../lib/group.api';
 import { createChannel, listChannelsByGroup } from '../../lib/channel.api';
 import { createStudyRoom, listStudyRoomsByGroup } from '../../lib/studyRoom.api';
+import { listConversationMessages, sendConversationMessage } from '../../lib/message.api';
 import type { Group, GroupMember } from '../../lib/group.types';
 import type { Channel } from '../../lib/channel.types';
 import type { StudyRoom } from '../../lib/studyRoom.types';
+import type { Message } from '../../lib/message.types';
 import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
 
 export function StudyGroupDetail() {
@@ -205,9 +207,53 @@ export function StudyGroupDetail() {
     }
   }
 
-  // Mock data for chat messages across channels — chat/messages integration is a separate
-  // task, so this stays purely local; only the channel *list* above is real.
-  const [messages, setMessages] = useState<Record<string, any[]>>({});
+  // Real persisted messages for the currently active channel. Channel messages are
+  // addressed via the channel's conversation_id (GET/POST /conversations/{id}/messages),
+  // not a /channels/{id}/messages route.
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isMessagesLoading, setIsMessagesLoading] = useState(false);
+  const [messagesError, setMessagesError] = useState<string | null>(null);
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [sendMessageError, setSendMessageError] = useState<string | null>(null);
+  // Tracks the channel each in-flight request belongs to, so a response for a channel the
+  // user has since navigated away from is discarded instead of leaking into the new view.
+  const activeChannelRef = useRef(activeChannel);
+  useEffect(() => {
+    activeChannelRef.current = activeChannel;
+  }, [activeChannel]);
+
+  const activeChannelObj = channels.find((c) => c.id === activeChannel) ?? null;
+
+  useEffect(() => {
+    const conversationId = activeChannelObj?.conversation_id ?? null;
+    const channelId = activeChannel;
+    setMessages([]);
+    setMessagesError(null);
+    setSendMessageError(null);
+    if (!channelId || !conversationId) {
+      setIsMessagesLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setIsMessagesLoading(true);
+    listConversationMessages(conversationId)
+      .then((res) => {
+        if (cancelled || activeChannelRef.current !== channelId) return;
+        // Backend returns newest-first; reverse for standard oldest-to-newest chat display.
+        setMessages([...res.items].reverse());
+      })
+      .catch((err) => {
+        if (cancelled || activeChannelRef.current !== channelId) return;
+        setMessagesError(err instanceof ApiError ? err.message : 'Không thể tải tin nhắn.');
+      })
+      .finally(() => {
+        if (cancelled || activeChannelRef.current !== channelId) return;
+        setIsMessagesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeChannel, activeChannelObj?.conversation_id]);
 
   // Auto-scroll chat to bottom on new message or channel change
   useEffect(() => {
@@ -224,23 +270,27 @@ export function StudyGroupDetail() {
     navigate(`/room/${roomId}`);
   };
 
-  const handleSendMessage = () => {
-    if (!chatInput.trim() || !activeChannel) return;
+  const handleSendMessage = async () => {
+    const trimmed = chatInput.trim();
+    const conversationId = activeChannelObj?.conversation_id ?? null;
+    if (!trimmed || !conversationId || isSendingMessage) return;
 
-    const newMessage = {
-      id: Date.now(),
-      sender: `${currentUser.name} (Bạn)`,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      text: chatInput,
-      avatar: null,
-    };
-
-    setMessages(prev => ({
-      ...prev,
-      [activeChannel]: [...(prev[activeChannel] || []), newMessage]
-    }));
-
-    setChatInput('');
+    const targetChannelId = activeChannel;
+    setIsSendingMessage(true);
+    setSendMessageError(null);
+    try {
+      const sent = await sendConversationMessage(conversationId, { content: trimmed });
+      // Only reflect it in the visible list if the user hasn't switched channels while
+      // the request was in flight; the message is still persisted either way.
+      if (activeChannelRef.current === targetChannelId) {
+        setMessages((prev) => [...prev, sent]);
+      }
+      setChatInput('');
+    } catch (err) {
+      setSendMessageError(err instanceof ApiError ? err.message : 'Không thể gửi tin nhắn.');
+    } finally {
+      setIsSendingMessage(false);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -248,8 +298,6 @@ export function StudyGroupDetail() {
       handleSendMessage();
     }
   };
-
-  const activeChannelObj = channels.find((c) => c.id === activeChannel) ?? null;
 
   const memberDisplay = (member: GroupMember) => {
     const isSelf = member.user_id === currentUserId;
@@ -260,6 +308,22 @@ export function StudyGroupDetail() {
       color: isSelf ? currentUser.color : getAvatarColor(member.user_id),
     };
   };
+
+  // Messages only carry sender_id (a bare profile UUID -- see MessageResponse); there is no
+  // profiles lookup wired into the frontend yet, so non-self senders fall back to the same
+  // "Người dùng #XXXX" placeholder already used for other group members in the right sidebar.
+  const senderDisplay = (senderId: string) => {
+    const isSelf = senderId === currentUserId;
+    const name = isSelf ? `${currentUser.name} (Bạn)` : `Người dùng #${senderId.slice(0, 4).toUpperCase()}`;
+    return {
+      name,
+      initials: isSelf ? currentUser.initials : getAvatarInitials(senderId),
+      color: isSelf ? currentUser.color : getAvatarColor(senderId),
+    };
+  };
+
+  const formatMessageTime = (iso: string) =>
+    new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   // --- Loading / error states (real backend data drives all of these) ---
 
@@ -641,48 +705,75 @@ export function StudyGroupDetail() {
                     {/* Messages List */}
                     <div style={{flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: 20}}>
 
-                        {/* Welcome Message */}
-                        <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '32px 0', color: '#94A3B8'}}>
-                            <Hash size={48} color="#CBD5E1" style={{marginBottom: 16}} />
-                            <div style={{fontSize: 24, fontWeight: '700', color: '#0F172A', marginBottom: 8}}>
-                                {activeChannelObj ? `Chào mừng đến với #${activeChannelObj.name}!` : 'Nhóm học chưa có kênh chat nào'}
-                            </div>
-                            {activeChannelObj && <div style={{fontSize: 14}}>Đây là sự khởi đầu của kênh #{activeChannelObj.name}.</div>}
-                        </div>
-
-                        {/* Map through active channel messages (local-only mock; chat integration is a separate task) */}
-                        {(messages[activeChannel] || []).map((msg) => (
-                            <div key={msg.id} style={{display: 'flex', gap: 16}}>
-                                <div style={{width: 40, height: 40, borderRadius: '50%', background: '#00236F', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flexShrink: 0}}>
-                                    {getAvatarInitials(msg.sender)}
-                                </div>
-                                <div>
-                                    <div style={{display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4}}>
-                                        <span style={{color: '#0F172A', fontSize: 15, fontWeight: '600'}}>{msg.sender}</span>
-                                        <span style={{color: '#94A3B8', fontSize: 12}}>{msg.time}</span>
-                                    </div>
-                                    <div style={{color: '#334155', fontSize: 15, lineHeight: '1.5', wordBreak: 'break-word'}}>
-                                        {msg.text}
-                                    </div>
+                        {!activeChannelObj ? (
+                            <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '32px 0', color: '#94A3B8'}}>
+                                <Hash size={48} color="#CBD5E1" style={{marginBottom: 16}} />
+                                <div style={{fontSize: 24, fontWeight: '700', color: '#0F172A', marginBottom: 8}}>
+                                    Nhóm học chưa có kênh chat nào
                                 </div>
                             </div>
-                        ))}
+                        ) : isMessagesLoading ? (
+                            <div style={{display: 'flex', justifyContent: 'center', margin: '32px 0', color: '#94A3B8', fontSize: 14}}>
+                                Đang tải tin nhắn...
+                            </div>
+                        ) : messagesError ? (
+                            <div style={{margin: '16px 0', padding: '12px 16px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, color: '#B91C1C', fontSize: 13.5}}>
+                                {messagesError}
+                            </div>
+                        ) : messages.length === 0 ? (
+                            <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '32px 0', color: '#94A3B8'}}>
+                                <Hash size={48} color="#CBD5E1" style={{marginBottom: 16}} />
+                                <div style={{fontSize: 24, fontWeight: '700', color: '#0F172A', marginBottom: 8}}>
+                                    Chào mừng đến với #{activeChannelObj.name}!
+                                </div>
+                                <div style={{fontSize: 14}}>Đây là sự khởi đầu của kênh #{activeChannelObj.name}.</div>
+                            </div>
+                        ) : (
+                            messages.map((msg) => {
+                                const display = senderDisplay(msg.sender_id);
+                                return (
+                                    <div key={msg.id} style={{display: 'flex', gap: 16}}>
+                                        <div style={{width: 40, height: 40, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flexShrink: 0}}>
+                                            {display.initials}
+                                        </div>
+                                        <div>
+                                            <div style={{display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4}}>
+                                                <span style={{color: '#0F172A', fontSize: 15, fontWeight: '600'}}>{display.name}</span>
+                                                <span style={{color: '#94A3B8', fontSize: 12}}>{formatMessageTime(msg.created_at)}</span>
+                                            </div>
+                                            <div style={{color: '#334155', fontSize: 15, lineHeight: '1.5', wordBreak: 'break-word'}}>
+                                                {msg.content ?? (msg.attachment_path ? '(tệp đính kèm)' : '')}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
                         <div ref={chatEndRef} />
                     </div>
 
                     {/* Chat Input */}
                     <div style={{padding: '0 24px 24px 24px'}}>
+                        {sendMessageError && (
+                            <div style={{marginBottom: 8, padding: '8px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, color: '#B91C1C', fontSize: 12.5}}>
+                                {sendMessageError}
+                            </div>
+                        )}
                         <div style={{background: '#F1F5F9', borderRadius: 8, display: 'flex', alignItems: 'center', padding: '12px 16px', border: '1px solid #E2E8F0', transition: 'border-color 0.2s'}}>
                             <input
                                 type="text"
                                 value={chatInput}
                                 onChange={(e) => setChatInput(e.target.value)}
                                 onKeyDown={handleKeyPress}
-                                disabled={!activeChannel}
+                                disabled={!activeChannelObj?.conversation_id || isSendingMessage}
                                 placeholder={activeChannelObj ? `Nhắn tin cho #${activeChannelObj.name}...` : 'Chọn một kênh để bắt đầu'}
                                 style={{border: 'none', background: 'transparent', flex: 1, outline: 'none', fontSize: 15, color: '#0F172A'}}
                             />
-                            <button onClick={handleSendMessage} style={{background: 'transparent', border: 'none', padding: 0, display: 'flex', cursor: chatInput.trim() ? 'pointer' : 'not-allowed', opacity: chatInput.trim() ? 1 : 0.5}}>
+                            <button
+                                onClick={handleSendMessage}
+                                disabled={!chatInput.trim() || !activeChannelObj?.conversation_id || isSendingMessage}
+                                style={{background: 'transparent', border: 'none', padding: 0, display: 'flex', cursor: (chatInput.trim() && !isSendingMessage) ? 'pointer' : 'not-allowed', opacity: (chatInput.trim() && !isSendingMessage) ? 1 : 0.5}}
+                            >
                               <Send size={20} color="#00236F" />
                             </button>
                         </div>
