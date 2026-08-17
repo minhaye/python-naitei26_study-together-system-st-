@@ -14,3 +14,14 @@ export interface Channel {
   updated_at: string;
   conversation_id: string | null;
 }
+
+/** Mirrors ChannelCreate. No `created_by` field: attribution always comes from the
+ * authenticated caller, never client-supplied. `type` is omitted here -- ChannelType
+ * has exactly one valid value ('text'), so there is nothing for the UI to select; the
+ * backend default applies. */
+export interface ChannelCreate {
+  group_id: string;
+  name: string;
+  description?: string | null;
+  is_private?: boolean;
+}

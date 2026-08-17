@@ -18,7 +18,7 @@ import {
 import { useAuth } from '../../hooks/useAuth';
 import { ApiError } from '../../lib/apiClient';
 import { getGroup, listGroupMembers, leaveGroup, updateGroup } from '../../lib/group.api';
-import { listChannelsByGroup } from '../../lib/channel.api';
+import { createChannel, listChannelsByGroup } from '../../lib/channel.api';
 import { createStudyRoom, listStudyRoomsByGroup } from '../../lib/studyRoom.api';
 import type { Group, GroupMember } from '../../lib/group.types';
 import type { Channel } from '../../lib/channel.types';
@@ -63,6 +63,14 @@ export function StudyGroupDetail() {
   const [createRoomDescription, setCreateRoomDescription] = useState('');
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [createRoomError, setCreateRoomError] = useState<string | null>(null);
+
+  // Create Channel modal state
+  const [isCreateChannelModalOpen, setIsCreateChannelModalOpen] = useState(false);
+  const [createChannelName, setCreateChannelName] = useState('');
+  const [createChannelDescription, setCreateChannelDescription] = useState('');
+  const [createChannelIsPrivate, setCreateChannelIsPrivate] = useState(false);
+  const [isCreatingChannel, setIsCreatingChannel] = useState(false);
+  const [createChannelError, setCreateChannelError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!groupId) return;
@@ -110,6 +118,10 @@ export function StudyGroupDetail() {
   // Backend rule (POST /study-rooms/): any ACTIVE group member -- any role, not just
   // owner/moderator -- may create a study room (STUDY_PLATFORM_DATABASE_SPEC.md §16).
   const isActiveMember = isOwner || (!!currentUserId && activeMembers.some((m) => m.user_id === currentUserId));
+  // Backend rule (POST /channels/, is_group_manager): only the group owner or an active
+  // moderator may create a channel -- unlike Study Rooms, plain members cannot.
+  const isGroupManager =
+    isOwner || (!!currentUserId && activeMembers.some((m) => m.user_id === currentUserId && m.role === 'moderator'));
 
   async function handleLeaveGroup() {
     if (!group || !currentUserId || isLeaving) return;
@@ -163,6 +175,33 @@ export function StudyGroupDetail() {
       setCreateRoomError(err instanceof ApiError ? err.message : 'Không thể tạo phòng học.');
     } finally {
       setIsCreatingRoom(false);
+    }
+  }
+
+  async function handleCreateChannel() {
+    if (!group || !createChannelName.trim() || isCreatingChannel) return;
+    setIsCreatingChannel(true);
+    setCreateChannelError(null);
+    try {
+      const newChannel = await createChannel({
+        group_id: group.id,
+        name: createChannelName.trim(),
+        description: createChannelDescription.trim() || null,
+        is_private: createChannelIsPrivate,
+      });
+      // Real, persisted channel returned by the backend -- append and switch to it; a
+      // refresh re-fetches from the backend and will show the same channel.
+      setChannels((prev) => [...prev, newChannel]);
+      setActiveChannel(newChannel.id);
+      setMainView('chat');
+      setIsCreateChannelModalOpen(false);
+      setCreateChannelName('');
+      setCreateChannelDescription('');
+      setCreateChannelIsPrivate(false);
+    } catch (err) {
+      setCreateChannelError(err instanceof ApiError ? err.message : 'Không thể tạo kênh chat.');
+    } finally {
+      setIsCreatingChannel(false);
     }
   }
 
@@ -450,7 +489,20 @@ export function StudyGroupDetail() {
 
                     {/* Text Channels */}
                     <div style={{marginBottom: 24}}>
-                        <div style={{color: '#64748B', fontSize: 12, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase', marginBottom: 8, paddingLeft: 8}}>Kênh Chat</div>
+                        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingLeft: 8, paddingRight: 4}}>
+                            <div style={{color: '#64748B', fontSize: 12, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase'}}>Kênh Chat</div>
+                            {isGroupManager && (
+                                <button
+                                    onClick={() => { setCreateChannelError(null); setIsCreateChannelModalOpen(true); }}
+                                    title="Tạo kênh chat mới"
+                                    style={{width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#64748B'}}
+                                    onMouseOver={e => { e.currentTarget.style.background = '#E2E8F0'; e.currentTarget.style.color = '#0B1C30'; }}
+                                    onMouseOut={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#64748B'; }}
+                                >
+                                    <Plus size={14} />
+                                </button>
+                            )}
+                        </div>
                         <div style={{display: 'flex', flexDirection: 'column', gap: 2}}>
                             {channels.length === 0 && (
                                 <div style={{padding: '8px 12px', color: '#94A3B8', fontSize: 13}}>Chưa có kênh nào.</div>
@@ -834,6 +886,85 @@ export function StudyGroupDetail() {
                             style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: (isCreatingRoom || !createRoomName.trim()) ? '#93A4C7' : '#00236F', color: 'white', border: 'none', fontSize: 14, fontWeight: 600, cursor: (isCreatingRoom || !createRoomName.trim()) ? 'not-allowed' : 'pointer', fontFamily: 'Inter' }}
                         >
                             {isCreatingRoom ? 'Đang tạo...' : 'Tạo phòng học'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* Modal: Tạo kênh chat mới */}
+        {isCreateChannelModalOpen && (
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.4)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
+                <div style={{ background: 'white', borderRadius: 12, width: 440, padding: 32, display: 'flex', flexDirection: 'column', position: 'relative', boxShadow: '0px 10px 25px rgba(0, 0, 0, 0.1)' }}>
+                    <button
+                        onClick={() => { if (!isCreatingChannel) { setIsCreateChannelModalOpen(false); setCreateChannelError(null); } }}
+                        disabled={isCreatingChannel}
+                        style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', cursor: isCreatingChannel ? 'not-allowed' : 'pointer', color: '#64748B', fontSize: 18 }}
+                    >
+                        ✕
+                    </button>
+
+                    <h2 style={{ fontSize: 18, fontWeight: 600, color: '#0F172A', marginBottom: 20, fontFamily: 'Inter' }}>Tạo kênh chat mới</h2>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+                        <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', fontFamily: 'Inter' }}>Tên kênh *</label>
+                        <input
+                            type="text"
+                            value={createChannelName}
+                            onChange={(e) => setCreateChannelName(e.target.value)}
+                            placeholder="VD: thao-luan-chung"
+                            disabled={isCreatingChannel}
+                            maxLength={80}
+                            style={{ width: '100%', padding: '10px 14px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: 'Inter' }}
+                            autoFocus
+                        />
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+                        <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', fontFamily: 'Inter' }}>Mô tả</label>
+                        <textarea
+                            value={createChannelDescription}
+                            onChange={(e) => setCreateChannelDescription(e.target.value)}
+                            placeholder="Mô tả ngắn về mục đích của kênh (không bắt buộc)"
+                            disabled={isCreatingChannel}
+                            style={{ width: '100%', padding: '10px 14px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: 'Inter', resize: 'vertical', minHeight: 72 }}
+                        />
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
+                        <input
+                            type="checkbox"
+                            id="create-channel-private"
+                            checked={createChannelIsPrivate}
+                            onChange={(e) => setCreateChannelIsPrivate(e.target.checked)}
+                            disabled={isCreatingChannel}
+                            style={{ width: 16, height: 16, cursor: isCreatingChannel ? 'not-allowed' : 'pointer' }}
+                        />
+                        <label htmlFor="create-channel-private" style={{ fontSize: 13, color: '#334155', fontFamily: 'Inter', cursor: isCreatingChannel ? 'not-allowed' : 'pointer' }}>
+                            Kênh riêng tư (chỉ thành viên được thêm mới xem được)
+                        </label>
+                    </div>
+
+                    {createChannelError && (
+                        <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: 12, color: '#B91C1C', fontSize: 13, marginBottom: 16 }}>
+                            {createChannelError}
+                        </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                        <button
+                            onClick={() => { if (!isCreatingChannel) { setIsCreateChannelModalOpen(false); setCreateChannelError(null); } }}
+                            disabled={isCreatingChannel}
+                            style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: '#F1F5F9', color: '#475569', border: 'none', fontSize: 14, fontWeight: 600, cursor: isCreatingChannel ? 'not-allowed' : 'pointer', fontFamily: 'Inter' }}
+                        >
+                            Hủy
+                        </button>
+                        <button
+                            onClick={handleCreateChannel}
+                            disabled={isCreatingChannel || !createChannelName.trim()}
+                            style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: (isCreatingChannel || !createChannelName.trim()) ? '#93A4C7' : '#00236F', color: 'white', border: 'none', fontSize: 14, fontWeight: 600, cursor: (isCreatingChannel || !createChannelName.trim()) ? 'not-allowed' : 'pointer', fontFamily: 'Inter' }}
+                        >
+                            {isCreatingChannel ? 'Đang tạo...' : 'Tạo kênh'}
                         </button>
                     </div>
                 </div>
