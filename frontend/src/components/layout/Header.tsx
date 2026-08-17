@@ -56,6 +56,9 @@ export function Header() {
                         <Search size={18} color="#757682" />
                     </div>
                 </div>
+                <div title="Chuỗi học tập hiện tại" style={{padding: '6px 10px', background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: 999, color: '#C2410C', fontSize: 13, fontWeight: '700', whiteSpace: 'nowrap'}}>
+                    🔥 12 ngày
+                </div>
                 
                 {localStorage.getItem('auth') === 'true' ? (
                   <>
