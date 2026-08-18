@@ -15,6 +15,11 @@ export interface StudyRoom {
   created_at: string;
   started_at: string | null;
   ended_at: string | null;
+  /** Soft-delete marker (migration 010). A StudyRoom returned by the list/detail endpoints
+   * is always non-deleted -- the backend excludes/404s deleted rooms -- so these are present
+   * on the type for parity with the API response, not because the UI branches on them today. */
+  deleted_at: string | null;
+  deleted_by: string | null;
 }
 
 /** Mirrors StudyRoomMemberResponse */

@@ -73,6 +73,15 @@ export function logStudyRoomModeration(
   });
 }
 
+/** Host, or an active group owner/moderator of the room's group -- enforced server-side.
+ * Soft delete: the StudyRoom row, its Conversation, all historical Messages, members, and
+ * moderation history remain in the database (see
+ * docs/db/migrations/010_soft_delete_study_rooms.sql); it only becomes inaccessible. Acting
+ * identity (deleted_by) is always derived from the bearer token, never sent by the client. */
+export function deleteStudyRoom(roomId: string): Promise<void> {
+  return apiClient.delete<void>(`/study-rooms/${roomId}`);
+}
+
 export function updateStudyRoomMemberRole(
   roomId: string,
   userId: string,

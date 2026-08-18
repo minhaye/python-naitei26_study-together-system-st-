@@ -81,6 +81,7 @@ export function StudyRoom() {
     leave,
     start,
     end,
+    deleteRoom,
     moderate,
     changeMemberRole,
   } = useStudyRoom(roomId);
@@ -97,6 +98,8 @@ export function StudyRoom() {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isJoining, setIsJoining] = useState(false);
+  const [isDeleteRoomModalOpen, setIsDeleteRoomModalOpen] = useState(false);
+  const [isDeletingRoom, setIsDeletingRoom] = useState(false);
   const [isLifecycleBusy, setIsLifecycleBusy] = useState(false);
 
   // Whiteboard tools
@@ -145,6 +148,25 @@ export function StudyRoom() {
       // actionError is already populated by the hook.
     } finally {
       setIsLifecycleBusy(false);
+    }
+  };
+
+  const handleConfirmDeleteRoom = async () => {
+    if (isDeletingRoom) return;
+    setIsDeletingRoom(true);
+    try {
+      await deleteRoom();
+      if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+      // Only navigate away after the backend confirms the delete -- no optimistic/fake
+      // success. There is no "room removed" state to fall back to in this hook, so leaving
+      // the deleted room's page entirely (back to its Group) is the correct reset.
+      navigate(room ? `/groups/${room.group_id}` : '/groups');
+    } catch {
+      // Keep the modal open so the user can see actionError (set by the hook) and retry.
+    } finally {
+      setIsDeletingRoom(false);
     }
   };
 
@@ -410,11 +432,71 @@ export function StudyRoom() {
               Kết thúc phòng
             </button>
           )}
+          {isCurrentUserHost && (
+            <button
+              onClick={() => setIsDeleteRoomModalOpen(true)}
+              title="Xóa phòng học"
+              style={{background: 'transparent', border: '1px solid #475569', color: '#94A3B8', padding: '8px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: '600', display: 'flex', alignItems: 'center'}}
+              onMouseOver={e => { e.currentTarget.style.borderColor = '#DC2626'; e.currentTarget.style.color = '#F87171'; }}
+              onMouseOut={e => { e.currentTarget.style.borderColor = '#475569'; e.currentTarget.style.color = '#94A3B8'; }}
+            >
+              <Trash2 size={16} />
+            </button>
+          )}
           <div style={{background: '#334155', padding: '6px 14px', borderRadius: 8, color: '#38BDF8', fontSize: 14, fontFamily: 'monospace', fontWeight: '600'}}>
             {elapsedSeconds !== null ? formatTime(elapsedSeconds) : statusLabel}
           </div>
         </div>
       </header>
+
+      {/* Modal: Xác nhận xóa phòng học */}
+      {isDeleteRoomModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200 }}>
+          <div style={{ background: '#1E293B', borderRadius: 12, width: 420, padding: 32, display: 'flex', flexDirection: 'column', position: 'relative', boxShadow: '0px 10px 25px rgba(0, 0, 0, 0.3)', border: '1px solid #334155' }}>
+            <button
+              onClick={() => { if (!isDeletingRoom) { setIsDeleteRoomModalOpen(false); clearActionError(); } }}
+              disabled={isDeletingRoom}
+              style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', cursor: isDeletingRoom ? 'not-allowed' : 'pointer', color: '#94A3B8', fontSize: 18 }}
+            >
+              ✕
+            </button>
+
+            <h2 style={{ fontSize: 18, fontWeight: 600, color: 'white', marginBottom: 12 }}>
+              Xóa "{room.name}"?
+            </h2>
+
+            <p style={{ fontSize: 14, color: '#CBD5E1', lineHeight: 1.5, marginBottom: 8 }}>
+              Phòng học này sẽ không còn truy cập được nữa.
+            </p>
+            <p style={{ fontSize: 13, color: '#94A3B8', lineHeight: 1.5, marginBottom: 24 }}>
+              Dữ liệu lịch sử (tin nhắn, thành viên, lịch sử kiểm duyệt) vẫn được lưu giữ. Thao tác này hiện chưa thể hoàn tác.
+            </p>
+
+            {actionError && (
+              <div style={{ background: '#450A0A', border: '1px solid #7F1D1D', borderRadius: 8, padding: 12, color: '#FCA5A5', fontSize: 13, marginBottom: 16 }}>
+                {actionError.message}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => { if (!isDeletingRoom) { setIsDeleteRoomModalOpen(false); clearActionError(); } }}
+                disabled={isDeletingRoom}
+                style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: '#334155', color: '#E2E8F0', border: 'none', fontSize: 14, fontWeight: 600, cursor: isDeletingRoom ? 'not-allowed' : 'pointer' }}
+              >
+                Hủy
+              </button>
+              <button
+                onClick={handleConfirmDeleteRoom}
+                disabled={isDeletingRoom}
+                style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: isDeletingRoom ? '#7F1D1D' : '#DC2626', color: 'white', border: 'none', fontSize: 14, fontWeight: 600, cursor: isDeletingRoom ? 'not-allowed' : 'pointer' }}
+              >
+                {isDeletingRoom ? 'Đang xóa...' : 'Xóa phòng học'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Workspace Body */}
       <div style={{flex: 1, display: 'flex', overflow: 'hidden', position: 'relative'}}>

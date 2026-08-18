@@ -31,9 +31,19 @@ class StudyRoom(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Soft delete (migration 010): NULL means the room is active. Never set from a
+    # client-supplied value -- deleted_by always comes from the authenticated caller
+    # (see StudyRoomsService.soft_delete / study_room_router.delete_room). Deliberately
+    # separate from `status`/`ended_at` -- an ended room stays normally readable history,
+    # a deleted room does not (see STUDY_PLATFORM_DATABASE_SPEC.md §17).
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="RESTRICT"))
 
     group: Mapped["Group"] = relationship(back_populates="study_rooms")
-    host: Mapped["Profile"] = relationship(back_populates="hosted_study_rooms")
+    # foreign_keys pinned explicitly: with `deleted_by` now also FK'd to profiles, this
+    # relationship is otherwise ambiguous about which column it should join on (same fix
+    # Channel's `creator` relationship needed in migration 009 -- see channel_entity.py).
+    host: Mapped["Profile"] = relationship(back_populates="hosted_study_rooms", foreign_keys=[host_id])
     members: Mapped[list["StudyRoomMember"]] = relationship(back_populates="room")
     moderation_actions: Mapped[list["RoomModerationAction"]] = relationship(back_populates="room")
 

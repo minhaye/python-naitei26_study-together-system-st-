@@ -23,15 +23,32 @@ class StudyRoomsService:
         return room
 
     async def get_by_id(self, session: AsyncSession, room_id: uuid.UUID) -> StudyRoom | None:
+        """Returns the room regardless of deleted_at -- callers (study_room_router) decide
+        whether a soft-deleted room should be treated as not-found, mirroring
+        ChannelsService.get_by_id."""
         return await session.get(StudyRoom, room_id)
 
     async def list_by_group(self, session: AsyncSession, group_id: uuid.UUID) -> list[StudyRoom]:
-        result = await session.execute(select(StudyRoom).where(StudyRoom.group_id == group_id))
+        """Soft-deleted rooms are excluded unconditionally -- a deleted room must not appear
+        in Study Room lists (mirrors ChannelsService.list_by_group)."""
+        result = await session.execute(
+            select(StudyRoom).where(StudyRoom.group_id == group_id, StudyRoom.deleted_at.is_(None))
+        )
         return list(result.scalars().all())
 
     async def update(self, session: AsyncSession, room: StudyRoom, data: StudyRoomUpdate) -> StudyRoom:
         for field, value in data.model_dump(exclude_unset=True).items():
             setattr(room, field, value)
+        await session.flush()
+        return room
+
+    async def soft_delete(self, session: AsyncSession, room: StudyRoom, deleted_by: uuid.UUID) -> StudyRoom:
+        """`deleted_by` is the authenticated caller, passed explicitly by the router -- never
+        trust a client-supplied deleted_by. Never physically deletes the row: the StudyRoom,
+        its Conversation, all historical Messages, StudyRoomMembers, and RoomModerationActions
+        remain in the database (see docs/db/migrations/010_soft_delete_study_rooms.sql)."""
+        room.deleted_at = datetime.now(timezone.utc)
+        room.deleted_by = deleted_by
         await session.flush()
         return room
 

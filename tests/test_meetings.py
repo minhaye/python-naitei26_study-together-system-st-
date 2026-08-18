@@ -182,6 +182,39 @@ async def test_meeting_token_ended_room_host_denied(async_client, monkeypatch, a
     get_member_mock.assert_not_awaited()
 
 
+# --- Deleted room: no new LiveKit token for anyone, regardless of prior authority ---
+
+
+async def test_meeting_token_deleted_room_denied_for_host(async_client, monkeypatch, as_fake_user):
+    room = _make_room(host_id=as_fake_user.id)
+    room.deleted_at = datetime.now(timezone.utc)
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+
+    response = await async_client.post(f"/study-rooms/{room.id}/meeting/token", headers=AUTH_HEADERS)
+    assert response.status_code == 404
+
+
+async def test_meeting_token_deleted_room_denied_for_previously_active_member(async_client, monkeypatch, as_fake_user):
+    room = _make_room()
+    room.deleted_at = datetime.now(timezone.utc)
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    get_member_mock = AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
+    monkeypatch.setattr(permissions.study_rooms_service, "get_member", get_member_mock)
+
+    response = await async_client.post(f"/study-rooms/{room.id}/meeting/token", headers=AUTH_HEADERS)
+    assert response.status_code == 404
+
+
+async def test_meeting_token_deleted_room_denied_via_can_access_room_directly(monkeypatch):
+    """Defense-in-depth unit check on the permission helper itself, independent of the router's
+    404 gate: can_access_room (and therefore can_join_room_meeting) must deny a deleted room
+    even for the host, who otherwise bypasses the membership check entirely."""
+    room = _make_room(host_id=uuid.uuid4())
+    room.deleted_at = datetime.now(timezone.utc)
+
+    assert not await permissions.can_join_room_meeting(session=None, room=room, user_id=room.host_id)
+
+
 async def test_meeting_token_response_never_leaks_livekit_secret(async_client, monkeypatch, as_fake_user):
     room = _make_room(host_id=as_fake_user.id)
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))

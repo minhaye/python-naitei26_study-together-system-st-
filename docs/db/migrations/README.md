@@ -16,10 +16,58 @@ here is auto-applied by the app or by CI. Status below confirmed live
 | 007 | `007_fix_room_moderation_select_policy.sql` | ✅ Applied live | Fixes a tautology (`srm.room_id = srm.room_id`) in the `room_moderation_select` RLS policy on `room_moderation_actions`, which let any active member of *any* study room read another room's moderation log via direct Postgres/Realtime access. `007_verify.sql` confirmed the tautology is gone and RLS is still enabled — see `STUDY_PLATFORM_DATABASE_SPEC.md` § 37. |
 | 008 | `008_track_group_owner_membership_trigger.sql` | ⏳ Written, not yet run live | Tracks (does not change behavior on the current live DB) the pre-existing `add_group_owner()` function + `groups_add_owner` AFTER INSERT trigger on `groups` — confirmed live via `pg_get_functiondef`/`pg_get_triggerdef` on 2026-08-17, but never captured in any migration file before now. Required so a fresh database built only from tracked migrations gets the same owner-membership auto-insert the current live DB already has out of band. Companion to the `GroupsService.create()` fix (removed a duplicate application-level insert that raced this trigger and hit `group_members_group_id_user_id_key`) — see `STUDY_PLATFORM_DATABASE_SPEC.md` § 8, § 34. |
 | 009 | `009_soft_delete_channels.sql` | ⏳ Written, not yet run live | Adds `channels.deleted_at`/`channels.deleted_by` (soft delete, reusing the `forum_posts.deleted_at` convention). Updates `can_access_channel()` to deny outright once `deleted_at` is set (cascades to `channels_select`, `channel_members_select`, and via `can_access_conversation`: `conversations_select`/`messages_select`/Realtime). Drops `channels_delete_manager` (closes a live gap: any group manager could otherwise physically DELETE a channel row — and cascade-destroy its conversation/messages — directly via PostgREST, bypassing FastAPI's soft-delete entirely). Adds `deleted_at is null` to `channels_update_manager` (blocks editing or undeleting a deleted channel via direct Postgres) and to the manager branches of `channel_members_insert`/`channel_members_delete` (blocks managing membership on a deleted channel via direct Postgres) — see `STUDY_PLATFORM_DATABASE_SPEC.md` § 9. |
+| 010 | `010_soft_delete_study_rooms.sql` | ⏳ Written, not yet run live | Adds `study_rooms.deleted_at`/`study_rooms.deleted_by` (same soft-delete shape as 009). Updates `can_access_room_conversation()` to deny outright once `deleted_at` is set (cascades to `conversations_select`/`messages_select`/Realtime for ROOM-type conversations), and adds an `sr.host_id = auth.uid()` OR branch closing a pre-existing Python/SQL parity gap (Python's `can_access_room()` has always granted the host unconditional access; this SQL function never had that branch — the non-host `study_room_members`+`is_group_member` branch is untouched). Drops any authenticated-role physical DELETE policy on `study_rooms` (discovered dynamically — names not tracked in this repo). Unlike 009, the base `study_rooms`/`study_room_members`/`room_moderation_actions` RLS policies were never captured in this repo, so instead of replacing unknown permissive policies, this migration adds new RESTRICTIVE `deleted_at IS NULL` policies (safe to add without knowing the existing permissive bodies, since a restrictive policy can only narrow access, never widen it) — see `STUDY_PLATFORM_DATABASE_SPEC.md` § 16. |
 
-Full design/rationale for 004-006: `docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` § 12–15. For 007: § 37. For 008: § 8, § 34. For 009: § 9.
+Full design/rationale for 004-006: `docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` § 12–15. For 007: § 37. For 008: § 8, § 34. For 009: § 9. For 010: § 16.
 
 **004_rollback.sql, 005_rollback.sql, 006_rollback.sql, 007_rollback.sql were NOT run** — all four migrations are live and working; each rollback exists only as a reviewed, ready-to-use undo path if one of them ever needs reverting.
+
+## Running 010
+
+```text
+1. 010_preflight.sql   — READ-ONLY. Confirms study_rooms/study_room_members/
+                          room_moderation_actions/profiles exist, that
+                          deleted_at/deleted_by are not already present
+                          (informational only), and prints the CURRENT live
+                          can_access_room_conversation() body and EVERY
+                          existing policy on all three tables (names are not
+                          tracked anywhere else in this repo — see the
+                          migration's header for why this differs from 009).
+                          Read every printed policy before running 010.
+
+2. 010_soft_delete_study_rooms.sql
+                        — The actual migration. Single transaction. Adds
+                          study_rooms.deleted_at/deleted_by, updates
+                          can_access_room_conversation() to deny deleted
+                          rooms AND to grant the room host unconditional
+                          access (closing a pre-existing Python/SQL parity
+                          gap -- the non-host branch is untouched), drops any
+                          authenticated-role physical DELETE policy on
+                          study_rooms (found dynamically), and adds new
+                          RESTRICTIVE deleted_at-guard policies to
+                          study_rooms/study_room_members/
+                          room_moderation_actions. Idempotent: safe to re-run.
+
+3. 010_verify.sql      — READ-ONLY. Confirms the columns/FK exist, no
+                          pre-existing room was retroactively marked deleted,
+                          can_access_room_conversation()'s body has both the
+                          deleted_at guard and the new host branch, no
+                          authenticated DELETE policy remains on study_rooms,
+                          and the four new RESTRICTIVE policies are present
+                          with the expected shape.
+```
+
+No `010_rollback.sql`: nothing in this migration deletes data or drops a
+column, same reasoning as 009's "no rollback" note. If ever needed:
+`alter table public.study_rooms drop column deleted_at, drop column deleted_by;`,
+`drop policy` the four new RESTRICTIVE policies, and restore the pre-010
+`can_access_room_conversation()` body from `004_refactor_chat_to_conversations.sql`
+§ 8. This migration never records what (if anything) the dropped
+authenticated-role DELETE policy on `study_rooms` looked like, since its name
+and body were never captured live before being removed — re-adding it, if
+ever wanted, is a new decision, not a rollback.
+
+Full design/rationale: `docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` § 16.
 
 ## Running 009
 

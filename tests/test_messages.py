@@ -865,6 +865,62 @@ async def test_room_active_member_can_still_patch_own_message(async_client, monk
     assert response.status_code == 200
 
 
+# --- Room conversation: soft-deleted room is fully unavailable (not just read-only) ---
+
+
+async def test_room_deleted_denies_listing_messages_even_for_host(async_client, monkeypatch, as_fake_user):
+    """Contrast with test_room_ended_denies_new_message_but_allows_reading_history: an ended
+    room stays readable, a deleted room does not -- for anyone, including the host."""
+    room = _make_room(host_id=as_fake_user.id)
+    room.deleted_at = datetime.now(timezone.utc)
+    conversation = _make_room_conversation(room)
+    _wire_room_conversation(monkeypatch, room, conversation)
+
+    response = await async_client.get(f"/conversations/{conversation.id}/messages", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_room_deleted_denies_sending_message(async_client, monkeypatch, as_fake_user):
+    room = _make_room()
+    room.deleted_at = datetime.now(timezone.utc)
+    conversation = _make_room_conversation(room)
+    _wire_room_conversation(monkeypatch, room, conversation)
+    monkeypatch.setattr(
+        permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
+    )
+
+    response = await async_client.post(
+        f"/conversations/{conversation.id}/messages", json={"content": "hi"}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 403
+
+
+async def test_room_deleted_denies_patching_own_historical_message(async_client, monkeypatch, as_fake_user):
+    room = _make_room(host_id=as_fake_user.id)
+    room.deleted_at = datetime.now(timezone.utc)
+    conversation = _make_room_conversation(room)
+    message = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="old")
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    monkeypatch.setattr(message_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
+    monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
+
+    response = await async_client.patch(f"/messages/{message.id}", json={"content": "edited"}, headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_room_deleted_denies_deleting_own_historical_message(async_client, monkeypatch, as_fake_user):
+    room = _make_room(host_id=as_fake_user.id)
+    room.deleted_at = datetime.now(timezone.utc)
+    conversation = _make_room_conversation(room)
+    message = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="old")
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    monkeypatch.setattr(message_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
+    monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
+
+    response = await async_client.delete(f"/messages/{message.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
 # --- Direct conversation: list / send ---
 
 

@@ -22,7 +22,7 @@ import { useChannelMessagesRealtime } from '../../hooks/useChannelMessagesRealti
 import { ApiError } from '../../lib/apiClient';
 import { getGroup, listGroupMembers, leaveGroup, updateGroup } from '../../lib/group.api';
 import { createChannel, deleteChannel, listChannelsByGroup } from '../../lib/channel.api';
-import { createStudyRoom, listStudyRoomsByGroup } from '../../lib/studyRoom.api';
+import { createStudyRoom, deleteStudyRoom, listStudyRoomsByGroup } from '../../lib/studyRoom.api';
 import { listConversationMessages, sendConversationMessage } from '../../lib/message.api';
 import type { Group, GroupMember } from '../../lib/group.types';
 import type { Channel } from '../../lib/channel.types';
@@ -91,6 +91,12 @@ export function StudyGroupDetail() {
   const [isDeletingChannel, setIsDeletingChannel] = useState(false);
   const [deleteChannelError, setDeleteChannelError] = useState<string | null>(null);
 
+  // Delete Study Room: per-row "⋮" menu + confirmation modal state (mirrors Delete Channel above)
+  const [openRoomMenuId, setOpenRoomMenuId] = useState<string | null>(null);
+  const [roomPendingDelete, setRoomPendingDelete] = useState<StudyRoom | null>(null);
+  const [isDeletingRoom, setIsDeletingRoom] = useState(false);
+  const [deleteRoomError, setDeleteRoomError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!groupId) return;
     let cancelled = false;
@@ -141,6 +147,10 @@ export function StudyGroupDetail() {
   // moderator may create a channel -- unlike Study Rooms, plain members cannot.
   const isGroupManager =
     isOwner || (!!currentUserId && activeMembers.some((m) => m.user_id === currentUserId && m.role === 'moderator'));
+  // Backend rule (DELETE /study-rooms/{id}): the room's host, OR an active group owner/
+  // moderator, may delete it -- an ordinary member or non-member cannot. This is UX-only;
+  // the backend independently re-checks the same rule (study_room_router.delete_room).
+  const canDeleteRoom = (room: StudyRoom) => (!!currentUserId && room.host_id === currentUserId) || isGroupManager;
 
   async function handleLeaveGroup() {
     if (!group || !currentUserId || isLeaving) return;
@@ -245,6 +255,25 @@ export function StudyGroupDetail() {
       setDeleteChannelError(err instanceof ApiError ? err.message : 'Không thể xóa kênh chat.');
     } finally {
       setIsDeletingChannel(false);
+    }
+  }
+
+  async function handleConfirmDeleteRoom() {
+    if (!roomPendingDelete || isDeletingRoom) return;
+    const deletedId = roomPendingDelete.id;
+    setIsDeletingRoom(true);
+    setDeleteRoomError(null);
+    try {
+      await deleteStudyRoom(deletedId);
+      // Only touch local state after the backend confirms the delete -- no optimistic/fake
+      // success (mirrors handleConfirmDeleteChannel).
+      setStudyRooms((prev) => prev.filter((r) => r.id !== deletedId));
+      setRoomPendingDelete(null);
+    } catch (err) {
+      // Keep the room in the list and the modal open so the user can see the error and retry.
+      setDeleteRoomError(err instanceof ApiError ? err.message : 'Không thể xóa phòng học.');
+    } finally {
+      setIsDeletingRoom(false);
     }
   }
 
@@ -686,16 +715,45 @@ export function StudyGroupDetail() {
                                 <div style={{padding: '8px', color: '#94A3B8', fontSize: 13}}>Chưa có phòng học nào đang mở.</div>
                             )}
                             {/* Limit rooms to top 2 for Sidebar */}
-                            {openRooms.slice(0, 2).map(room => (
-                                <div key={room.id} style={{padding: '10px 12px', background: '#E0E7FF', borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 10, cursor: 'pointer', border: '1px solid #C7D2FE'}}>
+                            {openRooms.slice(0, 2).map(room => {
+                                const isRoomMenuOpen = openRoomMenuId === room.id;
+                                return (
+                                <div key={room.id} style={{padding: '10px 12px', background: '#E0E7FF', borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 10, cursor: 'pointer', border: '1px solid #C7D2FE', position: 'relative'}}>
                                     <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                                         <div style={{display: 'flex', alignItems: 'center', gap: 8, color: '#4338CA', fontWeight: '600'}}>
                                             <Video size={16} /> {room.name}
                                         </div>
-                                        <div style={{background: room.status === 'active' ? '#10B981' : '#F59E0B', color: 'white', fontSize: 10, fontWeight: '700', padding: '2px 6px', borderRadius: 4}}>
-                                            {room.status === 'active' ? 'LIVE' : 'CHỜ'}
+                                        <div style={{display: 'flex', alignItems: 'center', gap: 6}}>
+                                            <div style={{background: room.status === 'active' ? '#10B981' : '#F59E0B', color: 'white', fontSize: 10, fontWeight: '700', padding: '2px 6px', borderRadius: 4}}>
+                                                {room.status === 'active' ? 'LIVE' : 'CHỜ'}
+                                            </div>
+                                            {canDeleteRoom(room) && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); setOpenRoomMenuId(isRoomMenuOpen ? null : room.id); }}
+                                                    title="Tùy chọn phòng học"
+                                                    style={{width: 20, height: 20, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isRoomMenuOpen ? 'white' : 'transparent', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#4338CA'}}
+                                                >
+                                                    <MoreVertical size={14} />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
+
+                                    {isRoomMenuOpen && (
+                                        <div
+                                            onClick={(e) => e.stopPropagation()}
+                                            style={{position: 'absolute', top: 36, right: 8, zIndex: 60, background: 'white', borderRadius: 8, boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)', border: '1px solid #E2E8F0', padding: '6px', minWidth: 160}}
+                                        >
+                                            <div
+                                                onClick={() => { setOpenRoomMenuId(null); setDeleteRoomError(null); setRoomPendingDelete(room); }}
+                                                style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#DC2626', cursor: 'pointer'}}
+                                                onMouseOver={e => e.currentTarget.style.background = '#FEF2F2'}
+                                                onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                                            >
+                                                <Trash2 size={16} color="#DC2626" /> Xóa phòng học
+                                            </div>
+                                        </div>
+                                    )}
                                     {room.description && (
                                         <div style={{fontSize: 12, color: '#475569', paddingLeft: 24}}>
                                             {room.description}
@@ -710,7 +768,8 @@ export function StudyGroupDetail() {
                                         Tham gia ngay
                                     </div>
                                 </div>
-                            ))}
+                                );
+                            })}
 
                             {/* View All rooms Button */}
                             {openRooms.length > 2 && (
@@ -869,7 +928,20 @@ export function StudyGroupDetail() {
                                     </div>
                                 </div>
                                 <div style={{padding: 20, flex: 1, display: 'flex', flexDirection: 'column'}}>
-                                    <div style={{fontSize: 18, fontWeight: '700', color: '#0F172A', marginBottom: 6}}>{room.name}</div>
+                                    <div style={{display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 6}}>
+                                        <div style={{fontSize: 18, fontWeight: '700', color: '#0F172A'}}>{room.name}</div>
+                                        {canDeleteRoom(room) && (
+                                            <button
+                                                onClick={() => { setOpenRoomMenuId(null); setDeleteRoomError(null); setRoomPendingDelete(room); }}
+                                                title="Xóa phòng học"
+                                                style={{flexShrink: 0, width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#94A3B8'}}
+                                                onMouseOver={e => { e.currentTarget.style.background = '#FEF2F2'; e.currentTarget.style.color = '#DC2626'; }}
+                                                onMouseOut={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#94A3B8'; }}
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        )}
+                                    </div>
                                     <div style={{fontSize: 14, color: '#64748B', marginBottom: 20, flex: 1}}>{room.description || 'Chưa có mô tả.'}</div>
                                     <button
                                         onClick={() => handleJoinRoom(room.id)}
@@ -1180,6 +1252,55 @@ export function StudyGroupDetail() {
                             style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: isDeletingChannel ? '#F1A9A0' : '#DC2626', color: 'white', border: 'none', fontSize: 14, fontWeight: 600, cursor: isDeletingChannel ? 'not-allowed' : 'pointer', fontFamily: 'Inter' }}
                         >
                             {isDeletingChannel ? 'Đang xóa...' : 'Xóa kênh'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* Modal: Xác nhận xóa phòng học */}
+        {roomPendingDelete && (
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.4)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
+                <div style={{ background: 'white', borderRadius: 12, width: 420, padding: 32, display: 'flex', flexDirection: 'column', position: 'relative', boxShadow: '0px 10px 25px rgba(0, 0, 0, 0.1)' }}>
+                    <button
+                        onClick={() => { if (!isDeletingRoom) { setRoomPendingDelete(null); setDeleteRoomError(null); } }}
+                        disabled={isDeletingRoom}
+                        style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', cursor: isDeletingRoom ? 'not-allowed' : 'pointer', color: '#64748B', fontSize: 18 }}
+                    >
+                        ✕
+                    </button>
+
+                    <h2 style={{ fontSize: 18, fontWeight: 600, color: '#0F172A', marginBottom: 12, fontFamily: 'Inter' }}>
+                        Xóa "{roomPendingDelete.name}"?
+                    </h2>
+
+                    <p style={{ fontSize: 14, color: '#475569', lineHeight: 1.5, marginBottom: 8, fontFamily: 'Inter' }}>
+                        Phòng học này sẽ không còn truy cập được nữa.
+                    </p>
+                    <p style={{ fontSize: 13, color: '#94A3B8', lineHeight: 1.5, marginBottom: 24, fontFamily: 'Inter' }}>
+                        Dữ liệu lịch sử (tin nhắn, thành viên, lịch sử kiểm duyệt) vẫn được lưu giữ. Thao tác này hiện chưa thể hoàn tác.
+                    </p>
+
+                    {deleteRoomError && (
+                        <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: 12, color: '#B91C1C', fontSize: 13, marginBottom: 16 }}>
+                            {deleteRoomError}
+                        </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                        <button
+                            onClick={() => { if (!isDeletingRoom) { setRoomPendingDelete(null); setDeleteRoomError(null); } }}
+                            disabled={isDeletingRoom}
+                            style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: '#F1F5F9', color: '#475569', border: 'none', fontSize: 14, fontWeight: 600, cursor: isDeletingRoom ? 'not-allowed' : 'pointer', fontFamily: 'Inter' }}
+                        >
+                            Hủy
+                        </button>
+                        <button
+                            onClick={handleConfirmDeleteRoom}
+                            disabled={isDeletingRoom}
+                            style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: isDeletingRoom ? '#F1A9A0' : '#DC2626', color: 'white', border: 'none', fontSize: 14, fontWeight: 600, cursor: isDeletingRoom ? 'not-allowed' : 'pointer', fontFamily: 'Inter' }}
+                        >
+                            {isDeletingRoom ? 'Đang xóa...' : 'Xóa phòng học'}
                         </button>
                     </div>
                 </div>
