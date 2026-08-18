@@ -100,25 +100,44 @@ def can_join_room(room: StudyRoom) -> bool:
 
 
 async def can_access_room(session: AsyncSession, room: StudyRoom, user_id: uuid.UUID) -> bool:
-    """Mirrors the intended `can_access_conversation` RLS helper for room conversations.
-    Participation requires an active (non-left) `study_room_members` row -- `room.host_id` is
-    NOT an independent access grant (2026-08-18 policy change: `host_id` identifies the
-    original creator, it does not confer standing authorization -- see
-    STUDY_PLATFORM_DATABASE_SPEC.md §16). This is safe because room creation always inserts an
+    """Mirrors `can_access_room_conversation` (SQL/RLS, migration 011). Participation requires
+    BOTH a CURRENT active Group membership AND an active (non-left) `study_room_members` row --
+    `room.host_id` is NOT an independent access grant (2026-08-18 policy change: `host_id`
+    identifies the original creator, it does not confer standing authorization -- see
+    STUDY_PLATFORM_DATABASE_SPEC.md §16).
+
+    The Group-membership check (2026-08-18 parity fix) matters because a `study_room_members`
+    row has no way to expire itself when the user later leaves/is banned from the Group -- there
+    is no cascade from Group membership changes to Room memberships (see
+    STUDY_PLATFORM_DATABASE_SPEC.md §16). Without it, a user who left or was banned from the
+    Group could keep reading/writing this room's chat forever on their stale active Room
+    membership alone, even though migration 011 already denies them the same access at the
+    SQL/RLS layer (Realtime, direct PostgREST) -- this was a real Python/SQL authorization
+    mismatch, not just a theoretical one.
+
+    A still-participating host is unaffected by either check: room creation always inserts an
     active HOST-role `study_room_members` row for the creator in the same transaction (see
-    `StudyRoomsService.create`) -- a legitimate, still-participating host is covered by the
-    same membership check as everyone else; only a host who has since left the room (or was
-    never actually a member, a data anomaly) loses the access `host_id` alone used to grant.
-    Study rooms have no separate "banned" concept -- `RoomModerationAction.KICK` is only an
-    audit log entry, so a kicked member is indistinguishable from one who left (`left_at` set).
+    `StudyRoomsService.create`), and the creator was necessarily an active Group member at
+    creation time (`create_room` requires `is_group_manager`). Only a host who has since left
+    the room, or whose Group membership has since lapsed, loses the access `host_id` alone used
+    to grant. Study rooms have no separate "banned" concept -- `RoomModerationAction.KICK` is
+    only an audit log entry, so a kicked member is indistinguishable from one who left
+    (`left_at` set).
 
     A soft-deleted room (deleted_at set) is denied outright, before any other check -- this
     must hold for every caller, including the host, so a deleted room behaves as if it no
     longer exists for everyone (mirrors `can_access_channel`, see
     docs/db/migrations/010_soft_delete_study_rooms.sql). This is the single choke point every
     read/write path for room messages, attachments, and meeting tokens goes through (via
-    `can_access_conversation`/`can_send_to_conversation`/`can_join_room_meeting`)."""
+    `can_access_conversation`/`can_send_to_conversation`/`can_join_room_meeting`).
+
+    This is participation authority, separate from management authority (`can_manage_room`,
+    `is_group_manager`) -- an active Group owner/moderator does NOT bypass this check purely by
+    virtue of being a manager; they still need their own active `study_room_members` row like
+    any other participant."""
     if room.deleted_at is not None:
+        return False
+    if not await is_active_group_member(session, room.group_id, user_id):
         return False
     return await is_active_room_member(session, room.id, user_id)
 

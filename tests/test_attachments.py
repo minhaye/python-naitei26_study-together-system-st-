@@ -94,9 +94,17 @@ def _room_member(room_id, user_id, role=StudyRoomMemberRole.PARTICIPANT, left_at
     return StudyRoomMember(room_id=room_id, user_id=user_id, role=role, left_at=left_at)
 
 
-def _wire_room_conversation(monkeypatch, room: StudyRoom, conversation: Conversation):
+def _wire_room_conversation(monkeypatch, room: StudyRoom, conversation: Conversation, user_id=None):
+    """Also wires an active Group membership for `user_id` (2026-08-18 parity fix --
+    can_access_room now requires current active Group membership, not just an active
+    study_room_members row). Tests exercising the Group-membership axis itself override this
+    afterwards with their own monkeypatch.setattr call."""
     monkeypatch.setattr(attachment_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
     monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
+    if user_id is not None:
+        monkeypatch.setattr(
+            permissions.groups_service, "get_member", AsyncMock(return_value=_active_member(room.group_id, user_id))
+        )
 
 
 def _make_direct_conversation(user_a_id, user_b_id) -> Conversation:
@@ -532,7 +540,7 @@ async def test_attachment_url_success_for_member(async_client, monkeypatch, as_f
 async def test_room_upload_url_authorized_member_success(async_client, monkeypatch, as_fake_user):
     room = _make_room()
     conversation = _make_room_conversation(room)
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
     )
@@ -554,7 +562,7 @@ async def test_room_upload_url_authorized_member_success(async_client, monkeypat
 async def test_room_upload_url_unauthorized_user_denied(async_client, monkeypatch, as_fake_user):
     room = _make_room()
     conversation = _make_room_conversation(room)
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
 
     response = await async_client.post(
@@ -568,7 +576,7 @@ async def test_room_upload_url_unauthorized_user_denied(async_client, monkeypatc
 async def test_room_upload_url_denied_for_ended_room(async_client, monkeypatch, as_fake_user):
     room = _make_room(status=StudyRoomStatus.ENDED)
     conversation = _make_room_conversation(room)
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
     )
@@ -591,7 +599,7 @@ async def test_room_upload_url_denied_for_deleted_room_even_for_host(async_clien
     room = _make_room(host_id=as_fake_user.id)
     room.deleted_at = datetime.now(timezone.utc)
     conversation = _make_room_conversation(room)
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
 
     response = await async_client.post(
         f"/conversations/{conversation.id}/attachments/upload-url",
@@ -616,7 +624,7 @@ async def test_room_attachment_url_authorized_member_success(async_client, monke
         attachment_path=f"study-rooms/{room.id}/{uuid.uuid4()}/uuid/f.pdf",
     )
     monkeypatch.setattr(attachment_router.message_service, "get_by_id", AsyncMock(return_value=message))
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
     )
@@ -644,7 +652,7 @@ async def test_room_ended_member_can_still_download_existing_attachment(async_cl
         attachment_path=f"study-rooms/{room.id}/{uuid.uuid4()}/uuid/f.pdf",
     )
     monkeypatch.setattr(attachment_router.message_service, "get_by_id", AsyncMock(return_value=message))
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
     )
@@ -680,7 +688,7 @@ async def test_room_attachment_url_denied_for_deleted_room_even_for_previously_v
         attachment_path=f"study-rooms/{room.id}/{uuid.uuid4()}/uuid/f.pdf",
     )
     monkeypatch.setattr(attachment_router.message_service, "get_by_id", AsyncMock(return_value=message))
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
     )
@@ -701,8 +709,54 @@ async def test_room_attachment_url_unauthorized_user_denied(async_client, monkey
         attachment_path=f"study-rooms/{room.id}/{uuid.uuid4()}/uuid/f.pdf",
     )
     monkeypatch.setattr(attachment_router.message_service, "get_by_id", AsyncMock(return_value=message))
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
+
+    response = await async_client.get(f"/messages/{message.id}/attachment-url", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_room_upload_url_denied_for_left_group_member_with_stale_active_room_membership(
+    async_client, monkeypatch, as_fake_user
+):
+    """Python/SQL parity fix (2026-08-18): an active study_room_members row must not grant
+    upload access once the caller has left the Group -- exercises the real router ->
+    can_send_to_conversation -> can_access_room chain, not a mock of can_access_room itself."""
+    room = _make_room()
+    conversation = _make_room_conversation(room)
+    _wire_room_conversation(monkeypatch, room, conversation)
+    monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
+    )
+
+    response = await async_client.post(
+        f"/conversations/{conversation.id}/attachments/upload-url",
+        json={"file_name": "lesson.pdf", "content_type": "application/pdf", "file_size": 1024},
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 403
+
+
+async def test_room_attachment_url_denied_for_left_group_member_with_stale_active_room_membership(
+    async_client, monkeypatch, as_fake_user
+):
+    from app.messages.entities.message_entity import Message
+
+    room = _make_room()
+    conversation = _make_room_conversation(room)
+    message = Message(
+        id=uuid.uuid4(),
+        conversation_id=conversation.id,
+        sender_id=uuid.uuid4(),
+        attachment_path=f"study-rooms/{room.id}/{uuid.uuid4()}/uuid/f.pdf",
+    )
+    monkeypatch.setattr(attachment_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_room_conversation(monkeypatch, room, conversation)
+    monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
+    )
 
     response = await async_client.get(f"/messages/{message.id}/attachment-url", headers=AUTH_HEADERS)
     assert response.status_code == 403

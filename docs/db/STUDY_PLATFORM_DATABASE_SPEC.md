@@ -799,15 +799,43 @@ này, giữ lại để tham chiếu lịch sử.
 
 Quyền THAM GIA (participation — xem room, join/leave, chat, đính kèm file, lấy meeting token)
 vẫn tách biệt với quyền quản lý, và **cũng không** còn nhận `host_id` làm cơ sở cấp quyền độc
-lập: `can_access_room()` (Python, `app/core/permissions.py`) và `can_access_room_conversation()`
-(SQL/RLS, migration 011) đều yêu cầu một hàng `study_room_members` đang active (`left_at IS
-NULL`), giống hệt mọi participant khác. Điều này an toàn — không tạo ra "host không vào được
-room của chính mình" — vì `StudyRoomsService.create()` luôn insert một hàng
-`study_room_members` role=`host`, `left_at IS NULL` cho người tạo, trong cùng transaction với
-room; một host còn đang tham gia room luôn thỏa điều kiện này. Chỉ khi host đã rời room
-(`left_at` được set) hoặc — trường hợp dữ liệu bất thường không xảy ra qua đường tạo room bình
-thường — thiếu hẳn hàng membership, họ mới mất quyền truy cập vốn trước đây `host_id` một mình
-cấp.
+lập. Kể từ bản vá parity 2026-08-18, quy tắc THAM GIA chuẩn (canonical) là:
+
+```text
+can_access_room(room, user)
+  = room chưa bị soft-delete (deleted_at IS NULL)
+    AND user là active Group member HIỆN TẠI của room.group_id (is_active_group_member)
+    AND user có một hàng study_room_members đang active (left_at IS NULL) cho chính room đó
+```
+
+cả `can_access_room()` (Python, `app/core/permissions.py`) lẫn `can_access_room_conversation()`
+(SQL/RLS, migration 011, đã áp dụng live) đều thực thi đúng ba điều kiện này — không có nhánh
+nào khác, kể cả cho Group owner/moderator đang quản lý room đó (quyền quản lý và quyền tham gia
+là hai khái niệm tách biệt: một manager vẫn cần chính hàng `study_room_members` active của họ
+để đọc/gửi chat, giống mọi participant khác).
+
+Trước bản vá 2026-08-18, `can_access_room()` phía Python **chỉ** kiểm tra hàng
+`study_room_members` đang active — thiếu hẳn điều kiện Group-membership mà SQL/RLS migration
+011 đã có sẵn. Vì rời/bị ban khỏi Group không tự động cập nhật `study_room_members.left_at` của
+bất kỳ room nào (không có cascade nào giữa hai bảng), một user rời hoặc bị ban khỏi Group vẫn có
+thể giữ hàng `study_room_members` active và tiếp tục đọc/gửi tin nhắn room đó qua FastAPI —
+trong khi Realtime/PostgREST trực tiếp (đi qua SQL/RLS) đã đúng đắn từ chối cùng request đó kể
+từ khi 011 chạy live. Đây là một Python/SQL parity bug thật, đã được sửa hoàn toàn ở phía Python
+(`can_access_room()` thêm điều kiện `is_active_group_member`; endpoint join
+(`POST /study-rooms/{id}/join`) cũng thêm cùng điều kiện này làm tiền đề join/rejoin riêng, vì
+người join lần đầu chưa có `study_room_members` để `can_access_room()` kiểm tra được — không
+dùng `can_access_room()` làm gate cho chính join). **Không cần migration SQL mới** — migration
+011 đã triển khai đúng quy tắc chuẩn ở tầng SQL/RLS từ trước.
+
+Điều này an toàn — không tạo ra "host không vào được room của chính mình" — vì
+`StudyRoomsService.create()` luôn insert một hàng `study_room_members` role=`host`, `left_at IS
+NULL` cho người tạo, trong cùng transaction với room, và người tạo bắt buộc phải là active Group
+owner/moderator tại thời điểm tạo (`is_group_manager`, xem "Vai trò" ở trên); một host còn đang
+tham gia room và còn active trong Group luôn thỏa cả hai điều kiện này. Một host mất quyền truy
+cập khi: đã rời room (`left_at` được set), HOẶC Group membership của họ không còn active (rời/bị
+ban Group) — dù `study_room_members` của họ vẫn còn active. `host_id` không tự nó bypass điều
+kiện nào ở trên, dù là quyền quản lý hay quyền tham gia; room-scoped role (`study_room_members.role`)
+cũng không bypass yêu cầu Group-membership.
 
 ## Fields
 
@@ -1730,10 +1758,17 @@ Cần:
 
 ```text
 1. Validate room tồn tại
-2. Validate room chưa ended
-3. Validate max participants
-4. INSERT hoặc UPDATE membership
+2. Validate room chưa bị soft-delete và chưa ended
+3. Validate user là active Group member HIỆN TẠI của room.group_id
+   (is_active_group_member -- cập nhật 2026-08-18, xem § 16; KHÔNG dùng
+   can_access_room() làm gate ở đây, vì người join lần đầu chưa có
+   study_room_members để can_access_room() kiểm tra)
+4. Validate max participants
+5. INSERT hoặc UPDATE (rejoin) membership
 ```
+
+Một user đã rời/bị ban khỏi Group không được join/rejoin bất kỳ room nào của Group đó, kể cả
+nếu họ còn giữ một hàng `study_room_members` cũ (active hoặc đã left) từ trước.
 
 ## leave_study_room()
 

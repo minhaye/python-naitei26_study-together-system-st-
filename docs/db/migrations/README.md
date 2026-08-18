@@ -17,13 +17,17 @@ here is auto-applied by the app or by CI. Status below confirmed live
 | 008 | `008_track_group_owner_membership_trigger.sql` | ⏳ Written, not yet run live | Tracks (does not change behavior on the current live DB) the pre-existing `add_group_owner()` function + `groups_add_owner` AFTER INSERT trigger on `groups` — confirmed live via `pg_get_functiondef`/`pg_get_triggerdef` on 2026-08-17, but never captured in any migration file before now. Required so a fresh database built only from tracked migrations gets the same owner-membership auto-insert the current live DB already has out of band. Companion to the `GroupsService.create()` fix (removed a duplicate application-level insert that raced this trigger and hit `group_members_group_id_user_id_key`) — see `STUDY_PLATFORM_DATABASE_SPEC.md` § 8, § 34. |
 | 009 | `009_soft_delete_channels.sql` | ⏳ Written, not yet run live | Adds `channels.deleted_at`/`channels.deleted_by` (soft delete, reusing the `forum_posts.deleted_at` convention). Updates `can_access_channel()` to deny outright once `deleted_at` is set (cascades to `channels_select`, `channel_members_select`, and via `can_access_conversation`: `conversations_select`/`messages_select`/Realtime). Drops `channels_delete_manager` (closes a live gap: any group manager could otherwise physically DELETE a channel row — and cascade-destroy its conversation/messages — directly via PostgREST, bypassing FastAPI's soft-delete entirely). Adds `deleted_at is null` to `channels_update_manager` (blocks editing or undeleting a deleted channel via direct Postgres) and to the manager branches of `channel_members_insert`/`channel_members_delete` (blocks managing membership on a deleted channel via direct Postgres) — see `STUDY_PLATFORM_DATABASE_SPEC.md` § 9. |
 | 010 | `010_soft_delete_study_rooms.sql` | ✅ Applied live | Adds `study_rooms.deleted_at`/`study_rooms.deleted_by` (same soft-delete shape as 009). Updates `can_access_room_conversation()` to deny outright once `deleted_at` is set (cascades to `conversations_select`/`messages_select`/Realtime for ROOM-type conversations), and adds an `sr.host_id = auth.uid()` OR branch closing a pre-existing Python/SQL parity gap (Python's `can_access_room()` has always granted the host unconditional access; this SQL function never had that branch — the non-host `study_room_members`+`is_group_member` branch is untouched). Drops any authenticated-role physical DELETE policy on `study_rooms` (discovered dynamically — names not tracked in this repo). Unlike 009, the base `study_rooms`/`study_room_members`/`room_moderation_actions` RLS policies were never captured in this repo, so instead of replacing unknown permissive policies, this migration adds new RESTRICTIVE `deleted_at IS NULL` policies (safe to add without knowing the existing permissive bodies, since a restrictive policy can only narrow access, never widen it) — see `STUDY_PLATFORM_DATABASE_SPEC.md` § 16. |
-| 011 | `011_room_manage_authority_current_group_role.sql` | ⏳ Written, not yet run live | Follow-up authorization audit (2026-08-18) found `study_rooms.host_id` was being treated as a permanent, independent authorization grant rather than creator metadata — both for room MANAGEMENT (fixed Python-only, same commit, no SQL surface since FastAPI's Postgres connection bypasses RLS) and for room PARTICIPATION via `can_access_room_conversation()`, which Realtime/PostgREST evaluate directly. This migration removes the `sr.host_id = auth.uid()` OR branch 010 added, leaving only the pre-existing `is_group_member(...) AND active study_room_members row` branch untouched. Safe because `StudyRoomsService.create()` has always inserted an active HOST-role `study_room_members` row for the creator atomically with the room — a currently-participating host is unaffected; only a host who has since left the room loses the unconditional bypass — see `STUDY_PLATFORM_DATABASE_SPEC.md` § 16/§ 22. |
+| 011 | `011_room_manage_authority_current_group_role.sql` | ✅ Applied live, verified | Follow-up authorization audit (2026-08-18) found `study_rooms.host_id` was being treated as a permanent, independent authorization grant rather than creator metadata — both for room MANAGEMENT (fixed Python-only, same commit, no SQL surface since FastAPI's Postgres connection bypasses RLS) and for room PARTICIPATION via `can_access_room_conversation()`, which Realtime/PostgREST evaluate directly. This migration removes the `sr.host_id = auth.uid()` OR branch 010 added, leaving only the pre-existing `is_group_member(...) AND active study_room_members row` branch untouched. Safe because `StudyRoomsService.create()` has always inserted an active HOST-role `study_room_members` row for the creator atomically with the room — a currently-participating host is unaffected; only a host who has since left the room loses the unconditional bypass — see `STUDY_PLATFORM_DATABASE_SPEC.md` § 16/§ 22. `011_verify.sql` confirmed live: host_id branch removed, `deleted_at`/`is_group_member`/active-membership branches all still present, `study_rooms_hide_deleted` RESTRICTIVE policy untouched, no authenticated DELETE policy on `study_rooms`. Row counts observed at verify time (historical, not an invariant): `study_rooms`=11, `study_room_members`=35. `011_preflight.sql` found 5 hosts without an active Room membership row, all reviewed manually and confirmed legitimate (`HOST_LEFT_ROOM` — each already had a `study_room_members` row with `left_at IS NOT NULL`); no backfill was needed. |
 
 Full design/rationale for 004-006: `docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` § 12–15. For 007: § 37. For 008: § 8, § 34. For 009: § 9. For 010/011: § 16, § 22.
 
 **004_rollback.sql, 005_rollback.sql, 006_rollback.sql, 007_rollback.sql were NOT run** — all four migrations are live and working; each rollback exists only as a reviewed, ready-to-use undo path if one of them ever needs reverting.
 
 ## Running 011
+
+011 has since been run live (see the status table above) — this section is
+kept as a record of the intended run procedure, not a pending TODO (same as
+005's note below).
 
 ```text
 1. 011_preflight.sql   — READ-ONLY. Confirms can_access_room_conversation()
@@ -37,6 +41,12 @@ Full design/rationale for 004-006: `docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` § 
                           rows here, since that host will lose unconditional
                           SQL/RLS conversation access once 011 commits; a
                           normally-created room's host always has one).
+
+                          Live preflight (2026-08-18) found 5 such hosts; all
+                          5 were reviewed manually and confirmed legitimate
+                          (HOST_LEFT_ROOM — each already had a
+                          study_room_members row with left_at IS NOT NULL,
+                          not a missing row). No backfill was required.
 
 2. 011_room_manage_authority_current_group_role.sql
                         — The actual migration. Single transaction.
@@ -52,6 +62,17 @@ Full design/rationale for 004-006: `docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` § 
                           RESTRICTIVE/DELETE-policy state is untouched, and
                           study_rooms/study_room_members row counts are
                           unchanged from before 011.
+
+                          Live verify (2026-08-18) confirmed OK on every
+                          check: can_access_room_conversation_host_branch_removed,
+                          can_access_room_conversation_body_has_deleted_at_guard,
+                          can_access_room_conversation_body_has_group_member_branch,
+                          can_access_room_conversation_body_has_active_membership_check,
+                          restrictive_policy_present:study_rooms_hide_deleted,
+                          no_authenticated_delete_policy:study_rooms. Row
+                          counts observed at that time (historical, not an
+                          invariant to assert against in future runs):
+                          study_rooms=11, study_room_members=35.
 ```
 
 No `011_rollback.sql`: this migration only replaces a function body (no
@@ -60,6 +81,22 @@ column/policy/data change), so reverting — if ever needed — is restoring the
 body via the same `create or replace function` shape, not worth a companion
 script for a change this size (same reasoning as 008/009's "no rollback"
 notes).
+
+## Python/SQL parity follow-up (2026-08-18, Python-only, no new migration)
+
+011 fixed the SQL/RLS side of room PARTICIPATION authority (`is_group_member(...)
+AND active study_room_members row`). A follow-up audit found the Python side,
+`can_access_room()` (`app/core/permissions.py`), had never had the equivalent
+Group-membership check — it only checked for an active `study_room_members`
+row, so a user who left/was banned from the Group could keep reading/writing
+a room's chat via FastAPI on a stale active Room membership alone, even
+though migration 011 already denied the same request at the SQL/RLS layer
+(Realtime, direct PostgREST). Fixed entirely in Python (`can_access_room()`
+now also requires `is_active_group_member()`; `study_room_router.join_room`
+gained the same check as its own join prerequisite, since a first-time
+joiner has no Room membership yet to check). **No SQL/RLS change required —
+migration 011 already implements the canonical participation rule**; this
+was a Python-only parity fix. See `STUDY_PLATFORM_DATABASE_SPEC.md` § 16.
 
 Full design/rationale: `docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` § 16, § 22.
 

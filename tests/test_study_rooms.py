@@ -549,6 +549,7 @@ async def test_join_room_uses_authenticated_identity_not_request_supplied_user_i
     other_user_id = uuid.uuid4()
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
     monkeypatch.setattr(study_room_router.service, "get_member", AsyncMock(return_value=None))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
 
     captured = {}
 
@@ -581,6 +582,7 @@ async def test_join_room_rejoin_resets_left_at_without_duplicate_membership(asyn
     member = _room_member(room.id, as_fake_user.id, left_at=datetime.now(timezone.utc))
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
     monkeypatch.setattr(study_room_router.service, "get_member", AsyncMock(return_value=member))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
 
     async def fake_rejoin(session, member):
         member.left_at = None
@@ -595,6 +597,74 @@ async def test_join_room_rejoin_resets_left_at_without_duplicate_membership(asyn
     assert response.status_code == 200
     assert response.json()["left_at"] is None
     join_mock.assert_not_awaited()
+
+
+async def test_join_room_denied_for_left_group_member(async_client, monkeypatch, as_fake_user):
+    """2026-08-18: join's own prerequisite is current active Group membership (mirrors
+    can_access_room's requirement for ongoing participation) -- a user who left the Group must
+    not be able to join a room under it, even though can_join_room() itself only checks room
+    lifecycle. Regression guard: the join endpoint previously had NO Group-membership check at
+    all -- any authenticated user, member or not, could join any room."""
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    monkeypatch.setattr(study_room_router.service, "get_member", AsyncMock(return_value=None))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id, status=MemberStatus.LEFT))
+    join_mock = AsyncMock()
+    monkeypatch.setattr(study_room_router.service, "join", join_mock)
+
+    response = await async_client.post(f"/study-rooms/{room.id}/join", headers=AUTH_HEADERS)
+
+    assert response.status_code == 403
+    join_mock.assert_not_awaited()
+
+
+async def test_join_room_denied_for_banned_group_member(async_client, monkeypatch, as_fake_user):
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    monkeypatch.setattr(study_room_router.service, "get_member", AsyncMock(return_value=None))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id, status=MemberStatus.BANNED))
+    join_mock = AsyncMock()
+    monkeypatch.setattr(study_room_router.service, "join", join_mock)
+
+    response = await async_client.post(f"/study-rooms/{room.id}/join", headers=AUTH_HEADERS)
+
+    assert response.status_code == 403
+    join_mock.assert_not_awaited()
+
+
+async def test_join_room_denied_for_non_group_member(async_client, monkeypatch, as_fake_user):
+    """A user with no group_members row at all (never joined, or fully removed) must also be
+    denied -- not just a user with an explicit non-active status."""
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    monkeypatch.setattr(study_room_router.service, "get_member", AsyncMock(return_value=None))
+    _mock_group_membership(monkeypatch, None)
+    join_mock = AsyncMock()
+    monkeypatch.setattr(study_room_router.service, "join", join_mock)
+
+    response = await async_client.post(f"/study-rooms/{room.id}/join", headers=AUTH_HEADERS)
+
+    assert response.status_code == 403
+    join_mock.assert_not_awaited()
+
+
+async def test_rejoin_room_denied_for_left_group_member_with_stale_room_membership(
+    async_client, monkeypatch, as_fake_user
+):
+    """Same Group-membership prerequisite applies to rejoin (an existing, previously-left
+    study_room_members row) -- not just first-time join."""
+    room = _make_room()
+    member = _room_member(room.id, as_fake_user.id, left_at=datetime.now(timezone.utc))
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    monkeypatch.setattr(study_room_router.service, "get_member", AsyncMock(return_value=member))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id, status=MemberStatus.LEFT))
+    rejoin_mock = AsyncMock()
+    monkeypatch.setattr(study_room_router.service, "rejoin", rejoin_mock)
+
+    response = await async_client.post(f"/study-rooms/{room.id}/join", headers=AUTH_HEADERS)
+
+    assert response.status_code == 403
+    rejoin_mock.assert_not_awaited()
 
 
 # --- Leave: self-leave only, no user_id spoofing possible ---
@@ -680,7 +750,24 @@ async def test_list_members_requires_auth(async_client):
 async def test_list_members_forbidden_for_non_member(async_client, monkeypatch, as_fake_user):
     room = _make_room()
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
+
+    response = await async_client.get(f"/study-rooms/{room.id}/members", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_list_members_forbidden_for_left_group_member_with_stale_active_room_membership(
+    async_client, monkeypatch, as_fake_user
+):
+    """Python/SQL parity fix (2026-08-18): an active study_room_members row must not grant
+    access once the caller has left the Group."""
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, None)
+    monkeypatch.setattr(
+        permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
+    )
 
     response = await async_client.get(f"/study-rooms/{room.id}/members", headers=AUTH_HEADERS)
     assert response.status_code == 403
@@ -689,6 +776,7 @@ async def test_list_members_forbidden_for_non_member(async_client, monkeypatch, 
 async def test_list_members_allowed_for_active_member(async_client, monkeypatch, as_fake_user):
     room = _make_room()
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
     )
@@ -704,6 +792,7 @@ async def test_list_members_allowed_for_host(async_client, monkeypatch, as_fake_
     StudyRoomsService.create()."""
     room = _make_room(host_id=as_fake_user.id)
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
@@ -1038,6 +1127,7 @@ async def test_log_moderation_active_group_manager_can_target_room_host(async_cl
 async def test_log_moderation_raise_hand_self_service_allowed(async_client, monkeypatch, as_fake_user):
     room = _make_room()
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
     )
@@ -1087,7 +1177,24 @@ async def test_list_moderation_requires_auth(async_client):
 async def test_list_moderation_forbidden_for_non_member(async_client, monkeypatch, as_fake_user):
     room = _make_room()
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
+
+    response = await async_client.get(f"/study-rooms/{room.id}/moderation", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_list_moderation_forbidden_for_left_group_member_with_stale_active_room_membership(
+    async_client, monkeypatch, as_fake_user
+):
+    """Python/SQL parity fix (2026-08-18): an active study_room_members row must not grant
+    access to moderation history once the caller has left the Group."""
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, None)
+    monkeypatch.setattr(
+        permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
+    )
 
     response = await async_client.get(f"/study-rooms/{room.id}/moderation", headers=AUTH_HEADERS)
     assert response.status_code == 403
@@ -1096,6 +1203,7 @@ async def test_list_moderation_forbidden_for_non_member(async_client, monkeypatc
 async def test_list_moderation_allowed_for_member(async_client, monkeypatch, as_fake_user):
     room = _make_room()
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
     )
