@@ -5,9 +5,13 @@ from datetime import datetime
 
 from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.messages.entities.message_entity import Message
 from app.messages.dto.message_dto import MessageCreate, MessageUpdate
+from app.profiles.services.profile_service import ProfilesService
+
+profiles_service = ProfilesService()
 
 
 def _encode_cursor(created_at: datetime, message_id: uuid.UUID) -> str:
@@ -40,16 +44,19 @@ class MessagesService:
         )
         session.add(message)
         await session.flush()
+        # See GroupsService.add_member -- same reason for the in-memory `.sender` assignment
+        # (MessageResponse.sender needs it, a freshly-flushed row has nothing loaded yet).
+        message.sender = await profiles_service.get_by_id(session, sender_id)
         return message
 
     async def get_by_id(self, session: AsyncSession, message_id: uuid.UUID) -> Message | None:
-        return await session.get(Message, message_id)
+        return await session.get(Message, message_id, options=[selectinload(Message.sender)])
 
     async def list_by_conversation(
         self, session: AsyncSession, conversation_id: uuid.UUID, limit: int = 50, before: str | None = None
     ) -> tuple[list[Message], str | None]:
         """Newest-first keyset pagination on (created_at, id) to avoid OFFSET and handle timestamp ties."""
-        query = select(Message).where(Message.conversation_id == conversation_id)
+        query = select(Message).options(selectinload(Message.sender)).where(Message.conversation_id == conversation_id)
         if before:
             cursor_created_at, cursor_id = _decode_cursor(before)
             query = query.where(tuple_(Message.created_at, Message.id) < tuple_(cursor_created_at, cursor_id))

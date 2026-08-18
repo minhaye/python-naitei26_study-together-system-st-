@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { getGroups, listGroupMembers, createGroup, joinGroup } from '../../lib/group.api';
 import { ApiError } from '../../lib/apiClient';
+import { JoinByCodeModal } from '../../components/invitations/JoinByCodeModal';
 import type { Group, GroupMember, GroupMemberRole } from '../../lib/group.types';
 import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
 
@@ -44,8 +45,9 @@ export function StudyRooms() {
 
     // Dropdown & Modal State
     const [isMenuOpen, setIsMenuOpen] = useState(false);
+    // Join-by-code (real invitation redemption -- see app/invitations/ and
+    // JoinByCodeModal, which handles resolve -> preview/mismatch -> redeem -> navigate).
     const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
-    const [joinCode, setJoinCode] = useState('');
     const [groupToJoin, setGroupToJoin] = useState<Group | null>(null);
     const [isJoining, setIsJoining] = useState(false);
     const [joinActionError, setJoinActionError] = useState<string | null>(null);
@@ -379,63 +381,11 @@ export function StudyRooms() {
 
             </div>
 
-            {/* Modal: Tham gia nhóm bằng mã */}
-            {isJoinModalOpen && (
-                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.4)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
-                    <div style={{ background: 'white', borderRadius: 12, width: 400, padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', boxShadow: '0px 10px 25px rgba(0, 0, 0, 0.1)' }}>
-                        <button
-                            onClick={() => {
-                                setIsJoinModalOpen(false);
-                                setJoinCode('');
-                            }}
-                            style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', cursor: 'pointer', color: '#64748B', fontSize: 18 }}
-                        >
-                            ✕
-                        </button>
-
-                        <div style={{ width: 80, height: 80, backgroundColor: '#E2E8F0', borderRadius: 12, display: 'flex', justifyContent: 'center', alignItems: 'center', marginBottom: 24 }}>
-                            <span style={{ fontSize: 40, color: '#475569', fontWeight: 300, fontFamily: 'Inter' }}>#</span>
-                        </div>
-
-                        <h2 style={{ fontSize: 18, fontWeight: 600, color: '#0F172A', marginBottom: 24, fontFamily: 'Inter' }}>Tham gia nhóm bằng mã</h2>
-
-                        <input
-                            type="text"
-                            placeholder="Nhập mã tham gia."
-                            value={joinCode}
-                            onChange={(e) => setJoinCode(e.target.value)}
-                            style={{ width: '100%', padding: '12px 16px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 14, outline: 'none', marginBottom: 16, boxSizing: 'border-box', fontFamily: 'Inter' }}
-                            autoFocus
-                        />
-
-                        {/* Backend has no authenticated self-join endpoint yet (POST /groups/{id}/members has
-                            no bearer-token check and trusts a client-supplied user_id/role) — wiring this up
-                            would mean either impersonating an unauthenticated write or a fabricated local
-                            success. Left disabled until a secured endpoint exists. */}
-                        <div style={{ width: '100%', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 8, padding: 12, color: '#92400E', fontSize: 12, marginBottom: 16, boxSizing: 'border-box' }}>
-                            Chức năng tham gia nhóm bằng mã hiện chưa khả dụng: máy chủ chưa hỗ trợ xác thực người dùng cho thao tác này.
-                        </div>
-
-                        <button
-                            disabled
-                            style={{
-                                width: '100%',
-                                padding: '12px',
-                                borderRadius: 6,
-                                backgroundColor: '#F1F5F9',
-                                color: '#94A3B8',
-                                border: 'none',
-                                fontSize: 14,
-                                fontWeight: 600,
-                                cursor: 'not-allowed',
-                                fontFamily: 'Inter'
-                            }}
-                        >
-                            Chưa khả dụng
-                        </button>
-                    </div>
-                </div>
-            )}
+            {/* Join Group by code -- real invitation redemption (see app/invitations/ and
+                JoinByCodeModal, shared with the Study Room/Private Channel entry points on
+                StudyGroupDetail.tsx). A room/channel code entered here is rejected with a
+                clear mismatch message, not silently treated as a Group join. */}
+            <JoinByCodeModal isOpen={isJoinModalOpen} onClose={() => setIsJoinModalOpen(false)} expectedTarget="group" />
 
             {/* Modal: Xác nhận tham gia nhóm */}
             {groupToJoin && (

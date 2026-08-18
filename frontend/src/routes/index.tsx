@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { HomePage } from '../pages/HomePage';
 import { ForumPostDetail } from '../pages/forum/ForumPostDetail';
+import { InvitationPreviewPage } from '../pages/invitations/InvitationPreviewPage';
 import { StudyRooms } from '../pages/StudyGroup/StudyGroups';
 import { StudyGroupDetail } from '../pages/StudyGroup/StudyGroupDetail';
 import { StudyRoom } from '../pages/StudyGroup/StudyRoom';
@@ -39,6 +40,7 @@ export function AppRoutes() {
         <Route path="/" element={<Layout />}>
           <Route index element={<HomePage />} />
           <Route path="forum/post/:id" element={<ForumPostDetail />} />
+          <Route path="invitations/:secret" element={<InvitationPreviewPage />} />
 
           {/* Protected Routes */}
           <Route element={<ProtectedRoute />}>

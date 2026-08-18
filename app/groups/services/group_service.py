@@ -1,10 +1,14 @@
 import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.db.enums import GroupMemberRole, MemberStatus
 from app.groups.entities.group_entity import Group, GroupMember
 from app.groups.dto.group_dto import GroupCreate, GroupUpdate
+from app.profiles.services.profile_service import ProfilesService
+
+profiles_service = ProfilesService()
 
 
 class GroupsService:
@@ -51,22 +55,32 @@ class GroupsService:
     # --- group_members ---
     async def add_member(self, session: AsyncSession, group_id: uuid.UUID, user_id: uuid.UUID) -> GroupMember:
         """Always creates a plain active member -- role/status escalation only happens
-        through the dedicated, separately-authorized endpoints (never at add-time)."""
+        through the dedicated, separately-authorized endpoints (never at add-time).
+
+        Assigns `.user` in-memory after flush (mirrors ChannelsService.create() syncing
+        `channel.conversation` the same way) -- GroupMemberResponse.user needs it, and a
+        freshly-flushed row has no relationship loaded yet; accessing it lazily during
+        response serialization would raise (async SQLAlchemy has no implicit IO)."""
         member = GroupMember(
             group_id=group_id, user_id=user_id, role=GroupMemberRole.MEMBER, status=MemberStatus.ACTIVE
         )
         session.add(member)
         await session.flush()
+        member.user = await profiles_service.get_by_id(session, user_id)
         return member
 
     async def get_member(self, session: AsyncSession, group_id: uuid.UUID, user_id: uuid.UUID) -> GroupMember | None:
         result = await session.execute(
-            select(GroupMember).where(GroupMember.group_id == group_id, GroupMember.user_id == user_id)
+            select(GroupMember)
+            .options(selectinload(GroupMember.user))
+            .where(GroupMember.group_id == group_id, GroupMember.user_id == user_id)
         )
         return result.scalar_one_or_none()
 
     async def list_members(self, session: AsyncSession, group_id: uuid.UUID) -> list[GroupMember]:
-        result = await session.execute(select(GroupMember).where(GroupMember.group_id == group_id))
+        result = await session.execute(
+            select(GroupMember).options(selectinload(GroupMember.user)).where(GroupMember.group_id == group_id)
+        )
         return list(result.scalars().all())
 
     async def list_user_memberships(self, session: AsyncSession, user_id: uuid.UUID) -> list[GroupMember]:
@@ -82,6 +96,16 @@ class GroupsService:
         self, session: AsyncSession, member: GroupMember, status: MemberStatus
     ) -> GroupMember:
         member.status = status
+        await session.flush()
+        return member
+
+    async def reactivate_member(self, session: AsyncSession, member: GroupMember) -> GroupMember:
+        """Flips a `left` membership back to `active` (mirrors StudyRoomsService.rejoin --
+        study_room_members has no reactivate/rejoin equivalent method name, but the same
+        shape: reuse the existing row instead of inserting a duplicate). Used by invitation
+        redemption only; the manual add_member endpoint still 400s on any existing row
+        (pre-existing, unrelated behavior -- not changed here)."""
+        member.status = MemberStatus.ACTIVE
         await session.flush()
         return member
 

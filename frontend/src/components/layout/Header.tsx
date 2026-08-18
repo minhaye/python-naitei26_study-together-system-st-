@@ -1,9 +1,10 @@
-import { Search, Bell, Settings } from 'lucide-react';
+import { Search, Settings } from 'lucide-react';
 import { NavLink, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useAuthContext } from '../../contexts/auth-context';
 import { supabase } from '../../lib/supabase';
 import { Avatar } from '../ui/Avatar';
+import { PendingInvitationsBell } from '../invitations/PendingInvitationsBell';
 
 export function Header() {
   const { isLoggedIn, currentUser } = useAuth();
@@ -73,9 +74,7 @@ export function Header() {
                 
                 {isLoggedIn ? (
                   <>
-                    <div style={{display: 'flex', alignItems: 'center', cursor: 'pointer'}}>
-                        <Bell size={20} color="#444651" />
-                    </div>
+                    <PendingInvitationsBell />
                     <Link to="/settings" aria-label="Cài đặt tài khoản" style={{display: 'flex', alignItems: 'center', color: '#00236F'}}>
                         <Settings size={21} strokeWidth={2.4} />
                     </Link>

@@ -146,7 +146,7 @@ groups
 | `description` | Mô tả nhóm |
 | `avatar_url` | Ảnh đại diện group |
 | `owner_id` | User sở hữu group |
-| `invite_code` | Mã mời tham gia group |
+| `invite_code` | (Superseded, unused) DB-generated column, never read/validated by any endpoint. Real invite-code generation/redemption now lives entirely in the `invitations` table -- see `docs/invitations.md`, migration 013. |
 | `is_public` | Group công khai hay riêng tư |
 | `created_at` | Thời điểm tạo |
 | `updated_at` | Thời điểm cập nhật |
@@ -1510,6 +1510,7 @@ notifications
 ├── post_id
 ├── comment_id
 ├── group_id
+├── invitation_id      -- migration 013, applied live and verified 2026-08-18, see docs/invitations.md
 ├── is_read
 └── created_at
 ```
@@ -1524,8 +1525,11 @@ notifications
 | `post_id` | Post liên quan nếu có |
 | `comment_id` | Comment liên quan nếu có |
 | `group_id` | Group liên quan nếu có |
+| `invitation_id` | Invitation liên quan nếu có (GROUP_INVITE / STUDY_ROOM_INVITATION / PRIVATE_CHANNEL_INVITATION) -- Accept/Decline trong UI luôn gọi endpoint redeem/decline của invitation, không tự viết membership. Xem `docs/invitations.md`. |
 | `is_read` | Đã đọc hay chưa |
 | `created_at` | Thời điểm tạo |
+
+**Bảo mật (2026-08-18):** `POST /notifications/` công khai đã bị **gỡ bỏ** -- audit phát hiện endpoint này không có auth, cho phép bất kỳ ai tạo notification với `user_id`/`actor_id` tuỳ ý (IDOR). Không có caller hợp lệ nào dùng endpoint này (chỉ được gọi in-process từ `InvitationsService`), nên endpoint bị gỡ thay vì chỉ thêm auth. `GET/PUT/DELETE` giờ yêu cầu đăng nhập và chỉ giới hạn ở `user_id = current_user.id`. Ở tầng RLS, `013_preflight.sql` phát hiện `notifications` **đã** bật RLS live với 3 policy chưa từng được ghi lại trong migration file nào (`notifications_select_own`/`_update_own`/`_delete_own`) -- migration 013 (đã chạy live và verify thành công 2026-08-18) giữ nguyên policy SELECT, **đã drop** hai policy UPDATE/DELETE để FastAPI (role `postgres`) là writer duy nhất, khớp với `messages`/`channels`/`invitations`. Xem `docs/invitations.md` § RLS.
 
 ## Notification Types hiện tại
 
@@ -1537,6 +1541,8 @@ group_invite
 group_role_changed
 room_kicked
 mention
+study_room_invitation      -- migration 013
+private_channel_invitation -- migration 013
 ```
 
 Ví dụ:
@@ -2086,8 +2092,8 @@ Trước khi triển khai sâu, team cần thống nhất:
 
 ### Notifications
 
-- Notification có push realtime không?
-- Có cần email notification không?
+- Notification có push realtime không? (vẫn mở -- `notifications` không nằm trong `supabase_realtime` publication)
+- Có cần email notification không? Đã trả lời một phần bởi migration 013 (`docs/invitations.md`): email invitation dùng `app/core/email_service.py` (SMTP qua stdlib `smtplib`, hoặc log ra console nếu chưa cấu hình `SMTP_HOST`). Chưa có email cho các loại notification khác (post_like, mention, ...).
 - Có gom nhiều notification giống nhau không?
 
 ---
@@ -2160,12 +2166,13 @@ luôn đồng bộ.
 17. notifications
 18. conversations              -- migration 004, đã live — xem § 12; 2 cột direct_user_min_id/max_id thêm bởi migration 006 — xem § 14
 19. conversation_members       -- migration 004, đã live — xem § 12
+20. invitations                -- migration 013, đã chạy live và verify thành công 2026-08-18 — xem docs/invitations.md
 ```
 
 Tổng cộng:
 
 ```text
-19 tables
+20 tables (tất cả đã live)
 ```
 
 `messages.channel_id` đã bị migration 005 xóa hẳn khỏi schema (contract phase đã chạy live — xem § 12); `messages.conversation_id` là FK duy nhất còn lại.

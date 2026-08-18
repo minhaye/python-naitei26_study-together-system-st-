@@ -13,6 +13,7 @@ from app.db.enums import GroupMemberRole, MemberStatus
 from app.db.session import get_db_session
 from app.groups.entities.group_entity import GroupMember
 from app.main import app
+from app.profiles.entities.profile_entity import Profile
 
 AUTH_HEADERS = {"Authorization": "Bearer testtoken"}
 
@@ -65,9 +66,13 @@ def _group_member(group_id, user_id, role=GroupMemberRole.MEMBER, status=MemberS
 
 
 def _channel_member(channel_id, user_id) -> ChannelMember:
-    return ChannelMember(
+    member = ChannelMember(
         id=uuid.uuid4(), channel_id=channel_id, user_id=user_id, joined_at=datetime.now(timezone.utc)
     )
+    # ChannelMemberResponse.user is required (see app/channels/dto/channel_dto.py) -- mirrors
+    # how ChannelsService.get_member/add_member eager-loads/assigns it for real.
+    member.user = Profile(id=user_id, username=None, display_name="Test User", avatar_url=None)
+    return member
 
 
 def _fake_session() -> AsyncMock:

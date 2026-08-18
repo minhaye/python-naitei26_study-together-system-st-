@@ -41,6 +41,21 @@ class NotificationType(str, enum.Enum):
     GROUP_ROLE_CHANGED = "group_role_changed"
     ROOM_KICKED = "room_kicked"
     MENTION = "mention"
+    STUDY_ROOM_INVITATION = "study_room_invitation"
+    PRIVATE_CHANNEL_INVITATION = "private_channel_invitation"
+
+
+class InvitationMethod(str, enum.Enum):
+    EMAIL = "email"
+    CODE = "code"
+
+
+class InvitationStatus(str, enum.Enum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    DECLINED = "declined"
+    EXPIRED = "expired"
+    REVOKED = "revoked"
 
 
 class StudyRoomMemberRole(str, enum.Enum):

@@ -4,6 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.db.enums import GroupMemberRole, MemberStatus
+from app.profiles.dto.profile_dto import UserSummary
 
 
 class GroupCreate(BaseModel):
@@ -55,3 +56,7 @@ class GroupMemberResponse(BaseModel):
     role: GroupMemberRole
     status: MemberStatus
     joined_at: datetime
+    # Canonical identity source for this member -- see UserSummary. Populated server-side
+    # (eager-loaded for list/get, assigned in-memory for a freshly created row -- see
+    # GroupsService) so the frontend never needs a separate per-member profile call.
+    user: UserSummary

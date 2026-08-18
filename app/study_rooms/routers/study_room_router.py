@@ -385,8 +385,11 @@ async def create_meeting_token(
             detail="You do not have access to this study room"
         )
 
+    # Canonical display-name fallback hierarchy (display_name -> username -> None, never a
+    # raw id/email) -- LiveKit's own SDK-level fallback (bare `identity`, a UUID) only
+    # applies if this is None too; see MeetingVideoGrid.tsx for the final generic-label step.
     profile = await profiles_service.get_by_id(session, current_user.id)
-    participant_name = profile.display_name if profile and profile.display_name else None
+    participant_name = (profile.display_name or profile.username) if profile else None
 
     token = livekit_service.create_participant_token(
         room_id=room.id, identity=current_user.id, name=participant_name

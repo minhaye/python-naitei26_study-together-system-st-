@@ -4,6 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.db.enums import ChannelType
+from app.profiles.dto.profile_dto import UserSummary
 
 
 class ChannelCreate(BaseModel):
@@ -54,3 +55,5 @@ class ChannelMemberResponse(BaseModel):
     channel_id: uuid.UUID
     user_id: uuid.UUID
     joined_at: datetime
+    # See GroupMemberResponse.user -- same canonical-identity convention.
+    user: UserSummary

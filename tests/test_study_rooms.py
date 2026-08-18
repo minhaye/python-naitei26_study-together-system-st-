@@ -21,6 +21,7 @@ from app.db.session import get_db_session
 from app.groups.entities.group_entity import Group, GroupMember
 from app.main import app
 from app.messages.routers import message_router
+from app.profiles.entities.profile_entity import Profile
 from app.study_rooms.dto.study_room_dto import RoomModerationActionCreate, StudyRoomCreate
 from app.study_rooms.entities.study_room_entity import RoomModerationAction, StudyRoom, StudyRoomMember
 from app.study_rooms.routers import study_room_router
@@ -70,7 +71,7 @@ def _make_room(
 
 
 def _room_member(room_id, user_id, role=StudyRoomMemberRole.PARTICIPANT, left_at=None) -> StudyRoomMember:
-    return StudyRoomMember(
+    member = StudyRoomMember(
         id=uuid.uuid4(),
         room_id=room_id,
         user_id=user_id,
@@ -78,6 +79,10 @@ def _room_member(room_id, user_id, role=StudyRoomMemberRole.PARTICIPANT, left_at
         joined_at=datetime.now(timezone.utc),
         left_at=left_at,
     )
+    # StudyRoomMemberResponse.user is required (see app/study_rooms/dto/study_room_dto.py) --
+    # mirrors how StudyRoomsService.get_member/join eager-loads/assigns it for real.
+    member.user = Profile(id=user_id, username=None, display_name="Test User", avatar_url=None)
+    return member
 
 
 def _group_member(group_id, user_id, role=GroupMemberRole.MEMBER, status=MemberStatus.ACTIVE) -> GroupMember:

@@ -1,3 +1,5 @@
+import type { UserSummary } from './profile.types';
+
 /** Mirrors app/db/enums.py */
 export type GroupMemberRole = 'owner' | 'moderator' | 'member';
 export type MemberStatus = 'active' | 'banned' | 'left';
@@ -15,7 +17,8 @@ export interface Group {
   updated_at: string;
 }
 
-/** Mirrors GroupMemberResponse */
+/** Mirrors GroupMemberResponse. `user` is the canonical identity source for this member --
+ * see src/utils/userDisplay.ts's getDisplayName(), never derive a label from `user_id`. */
 export interface GroupMember {
   id: string;
   group_id: string;
@@ -23,6 +26,7 @@ export interface GroupMember {
   role: GroupMemberRole;
   status: MemberStatus;
   joined_at: string;
+  user: UserSummary;
 }
 
 /** Mirrors GroupCreate (app/groups/dto/group_dto.py) — no owner_id: the backend always

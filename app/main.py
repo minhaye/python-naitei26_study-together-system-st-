@@ -13,6 +13,7 @@ from app.study_rooms.routers.study_room_router import router as study_rooms_rout
 from app.resources.routers.resource_router import router as resources_router
 from app.forum.routers.forum_router import router as forum_router
 from app.notifications.routers.notification_router import router as notifications_router
+from app.invitations.routers.invitation_router import router as invitations_router
 
 app = FastAPI(title="Study Platform API", version="1.0.0")
 
@@ -36,3 +37,4 @@ app.include_router(study_rooms_router)
 app.include_router(resources_router)
 app.include_router(forum_router)
 app.include_router(notifications_router)
+app.include_router(invitations_router)

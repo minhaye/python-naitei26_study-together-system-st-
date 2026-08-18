@@ -1,3 +1,5 @@
+import type { UserSummary } from './profile.types';
+
 /** Mirrors app/db/enums.py */
 export type StudyRoomStatus = 'waiting' | 'active' | 'ended';
 export type StudyRoomMemberRole = 'host' | 'moderator' | 'participant';
@@ -22,7 +24,8 @@ export interface StudyRoom {
   deleted_by: string | null;
 }
 
-/** Mirrors StudyRoomMemberResponse */
+/** Mirrors StudyRoomMemberResponse. `user` is the canonical identity source -- see
+ * src/utils/userDisplay.ts's getDisplayName(), never derive a label from `user_id`. */
 export interface StudyRoomMember {
   id: string;
   room_id: string;
@@ -30,6 +33,7 @@ export interface StudyRoomMember {
   role: StudyRoomMemberRole;
   joined_at: string;
   left_at: string | null;
+  user: UserSummary;
 }
 
 /** Mirrors StudyRoomCreate (app/study_rooms/dto/study_room_dto.py). No `host_id` field:

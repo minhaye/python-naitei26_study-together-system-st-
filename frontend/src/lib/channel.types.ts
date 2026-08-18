@@ -1,3 +1,5 @@
+import type { UserSummary } from './profile.types';
+
 /** Mirrors app/db/enums.py */
 export type ChannelType = 'text';
 
@@ -30,4 +32,16 @@ export interface ChannelCreate {
   name: string;
   description?: string | null;
   is_private?: boolean;
+}
+
+/** Mirrors ChannelMemberResponse. `user` is the canonical identity source -- see
+ * src/utils/userDisplay.ts's getDisplayName(), never derive a label from `user_id`. No
+ * frontend UI lists channel members yet; this type exists so the API contract stays
+ * mirrored for when one is built. */
+export interface ChannelMember {
+  id: string;
+  channel_id: string;
+  user_id: string;
+  joined_at: string;
+  user: UserSummary;
 }

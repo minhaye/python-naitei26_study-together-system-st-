@@ -1,5 +1,8 @@
-/** Mirrors MessageResponse (app/messages/dto/message_dto.py). sender_id is a bare
- * profile UUID -- the backend does not join/nest sender display info onto messages. */
+import type { UserSummary } from './profile.types';
+
+/** Mirrors MessageResponse (app/messages/dto/message_dto.py). `sender` is the canonical
+ * identity source for the message author -- see src/utils/userDisplay.ts's
+ * getDisplayName(), never derive a label from `sender_id`. */
 export interface Message {
   id: string;
   conversation_id: string;
@@ -8,6 +11,7 @@ export interface Message {
   attachment_path: string | null;
   created_at: string;
   updated_at: string;
+  sender: UserSummary;
 }
 
 /** Mirrors MessageListResponse. Cursor-based pagination, newest-first ordering. */

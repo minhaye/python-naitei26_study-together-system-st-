@@ -14,6 +14,7 @@ from app.groups.entities.group_entity import Group, GroupMember
 from app.groups.routers import group_router
 from app.groups.services.group_service import GroupsService
 from app.main import app
+from app.profiles.entities.profile_entity import Profile
 
 AUTH_HEADERS = {"Authorization": "Bearer testtoken"}
 
@@ -54,10 +55,14 @@ def _make_group(is_public: bool = True, owner_id: uuid.UUID | None = None) -> Gr
     )
 
 
+def _profile(user_id, display_name: str | None = "Test User") -> Profile:
+    return Profile(id=user_id, username=None, display_name=display_name, avatar_url=None)
+
+
 def _group_member(
     group_id, user_id, role=GroupMemberRole.MEMBER, status=MemberStatus.ACTIVE
 ) -> GroupMember:
-    return GroupMember(
+    member = GroupMember(
         id=uuid.uuid4(),
         group_id=group_id,
         user_id=user_id,
@@ -65,6 +70,11 @@ def _group_member(
         status=status,
         joined_at=datetime.now(timezone.utc),
     )
+    # GroupMemberResponse.user is required (see app/groups/dto/group_dto.py) -- every
+    # fixture returned through a response must carry it, mirroring how the real service
+    # eager-loads/assigns it (see GroupsService.get_member/add_member).
+    member.user = _profile(user_id)
+    return member
 
 
 def _fake_session() -> AsyncMock:

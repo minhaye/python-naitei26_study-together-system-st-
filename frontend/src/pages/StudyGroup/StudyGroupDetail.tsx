@@ -15,12 +15,15 @@ import {
     Users,
     Plus,
     MoreVertical,
-    Trash2
+    Trash2,
+    Ticket
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useChannelMessagesRealtime } from '../../hooks/useChannelMessagesRealtime';
 import { ApiError } from '../../lib/apiClient';
 import { getGroup, listGroupMembers, leaveGroup, updateGroup } from '../../lib/group.api';
+import { InviteModal } from '../../components/invitations/InviteModal';
+import { JoinByCodeModal } from '../../components/invitations/JoinByCodeModal';
 import { createChannel, deleteChannel, listChannelsByGroup } from '../../lib/channel.api';
 import { createStudyRoom, deleteStudyRoom, listStudyRoomsByGroup } from '../../lib/studyRoom.api';
 import { listConversationMessages, sendConversationMessage } from '../../lib/message.api';
@@ -29,6 +32,7 @@ import type { Channel } from '../../lib/channel.types';
 import type { StudyRoom } from '../../lib/studyRoom.types';
 import type { Message } from '../../lib/message.types';
 import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
+import { getDisplayName } from '../../utils/userDisplay';
 
 /** Appends `message` unless a message with the same id is already present. REST send
  * responses and Realtime INSERT events for the sender's own message both resolve to the
@@ -71,6 +75,13 @@ export function StudyGroupDetail() {
   const [toggleError, setToggleError] = useState<string | null>(null);
 
   // Create Study Room modal state
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [channelToInvite, setChannelToInvite] = useState<Channel | null>(null);
+  // Dedicated Join Study Room / Join Private Channel entry points (see JoinByCodeModal) --
+  // distinct from the group-level "Mời thêm người" (create invitation) flow above.
+  const [isJoinRoomModalOpen, setIsJoinRoomModalOpen] = useState(false);
+  const [isJoinChannelModalOpen, setIsJoinChannelModalOpen] = useState(false);
+
   const [isCreateRoomModalOpen, setIsCreateRoomModalOpen] = useState(false);
   const [createRoomName, setCreateRoomName] = useState('');
   const [createRoomDescription, setCreateRoomDescription] = useState('');
@@ -379,24 +390,26 @@ export function StudyGroupDetail() {
 
   const memberDisplay = (member: GroupMember) => {
     const isSelf = member.user_id === currentUserId;
-    const name = isSelf ? `${currentUser.name} (Bạn)` : `Người dùng #${member.user_id.slice(0, 4).toUpperCase()}`;
+    const name = isSelf ? `${currentUser.name} (Bạn)` : getDisplayName(member.user);
     return {
       name,
-      initials: isSelf ? currentUser.initials : getAvatarInitials(member.user_id),
-      color: isSelf ? currentUser.color : getAvatarColor(member.user_id),
+      initials: isSelf ? currentUser.initials : getAvatarInitials(name),
+      color: isSelf ? currentUser.color : getAvatarColor(name),
+      avatarUrl: isSelf ? null : member.user.avatar_url,
     };
   };
 
-  // Messages only carry sender_id (a bare profile UUID -- see MessageResponse); there is no
-  // profiles lookup wired into the frontend yet, so non-self senders fall back to the same
-  // "Người dùng #XXXX" placeholder already used for other group members in the right sidebar.
-  const senderDisplay = (senderId: string) => {
-    const isSelf = senderId === currentUserId;
-    const name = isSelf ? `${currentUser.name} (Bạn)` : `Người dùng #${senderId.slice(0, 4).toUpperCase()}`;
+  // GroupMemberResponse/MessageResponse now carry a real `user`/`sender` UserSummary (see
+  // app/profiles/dto/profile_dto.py) -- resolved server-side via an eager-loaded Profile
+  // join, not a per-sender frontend lookup.
+  const senderDisplay = (message: Message) => {
+    const isSelf = message.sender_id === currentUserId;
+    const name = isSelf ? `${currentUser.name} (Bạn)` : getDisplayName(message.sender);
     return {
       name,
-      initials: isSelf ? currentUser.initials : getAvatarInitials(senderId),
-      color: isSelf ? currentUser.color : getAvatarColor(senderId),
+      initials: isSelf ? currentUser.initials : getAvatarInitials(name),
+      color: isSelf ? currentUser.color : getAvatarColor(name),
+      avatarUrl: isSelf ? null : message.sender.avatar_url,
     };
   };
 
@@ -633,17 +646,28 @@ export function StudyGroupDetail() {
                     <div style={{marginBottom: 24}}>
                         <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingLeft: 8, paddingRight: 4}}>
                             <div style={{color: '#64748B', fontSize: 12, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase'}}>Kênh Chat</div>
-                            {isGroupManager && (
+                            <div style={{display: 'flex', alignItems: 'center', gap: 4}}>
                                 <button
-                                    onClick={() => { setCreateChannelError(null); setIsCreateChannelModalOpen(true); }}
-                                    title="Tạo kênh chat mới"
+                                    onClick={() => setIsJoinChannelModalOpen(true)}
+                                    title="Tham gia kênh riêng tư bằng mã"
                                     style={{width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#64748B'}}
                                     onMouseOver={e => { e.currentTarget.style.background = '#E2E8F0'; e.currentTarget.style.color = '#0B1C30'; }}
                                     onMouseOut={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#64748B'; }}
                                 >
-                                    <Plus size={14} />
+                                    <Ticket size={14} />
                                 </button>
-                            )}
+                                {isGroupManager && (
+                                    <button
+                                        onClick={() => { setCreateChannelError(null); setIsCreateChannelModalOpen(true); }}
+                                        title="Tạo kênh chat mới"
+                                        style={{width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#64748B'}}
+                                        onMouseOver={e => { e.currentTarget.style.background = '#E2E8F0'; e.currentTarget.style.color = '#0B1C30'; }}
+                                        onMouseOut={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#64748B'; }}
+                                    >
+                                        <Plus size={14} />
+                                    </button>
+                                )}
+                            </div>
                         </div>
                         <div style={{display: 'flex', flexDirection: 'column', gap: 2}}>
                             {channels.length === 0 && (
@@ -677,6 +701,16 @@ export function StudyGroupDetail() {
                                             <div
                                                 style={{position: 'absolute', top: '100%', right: 4, zIndex: 60, background: 'white', borderRadius: 8, boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)', border: '1px solid #E2E8F0', padding: '6px', marginTop: 2, minWidth: 160}}
                                             >
+                                                {channel.is_private && (
+                                                    <div
+                                                        onClick={() => { setOpenChannelMenuId(null); setChannelToInvite(channel); }}
+                                                        style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#0F172A', cursor: 'pointer'}}
+                                                        onMouseOver={e => e.currentTarget.style.background = '#F1F5F9'}
+                                                        onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                                                    >
+                                                        <UserPlus size={16} color="#00236F" /> Mời vào kênh
+                                                    </div>
+                                                )}
                                                 <div
                                                     onClick={() => { setOpenChannelMenuId(null); setDeleteChannelError(null); setChannelPendingDelete(channel); }}
                                                     style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#DC2626', cursor: 'pointer'}}
@@ -697,17 +731,28 @@ export function StudyGroupDetail() {
                     <div style={{marginBottom: 24}}>
                         <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingLeft: 8, paddingRight: 4}}>
                             <div style={{color: '#64748B', fontSize: 12, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase'}}>Phòng học</div>
-                            {isGroupManager && (
+                            <div style={{display: 'flex', alignItems: 'center', gap: 4}}>
                                 <button
-                                    onClick={() => { setCreateRoomError(null); setIsCreateRoomModalOpen(true); }}
-                                    title="Tạo phòng học mới"
+                                    onClick={() => setIsJoinRoomModalOpen(true)}
+                                    title="Tham gia phòng học bằng mã"
                                     style={{width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#64748B'}}
                                     onMouseOver={e => { e.currentTarget.style.background = '#E2E8F0'; e.currentTarget.style.color = '#0B1C30'; }}
                                     onMouseOut={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#64748B'; }}
                                 >
-                                    <Plus size={14} />
+                                    <Ticket size={14} />
                                 </button>
-                            )}
+                                {isGroupManager && (
+                                    <button
+                                        onClick={() => { setCreateRoomError(null); setIsCreateRoomModalOpen(true); }}
+                                        title="Tạo phòng học mới"
+                                        style={{width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#64748B'}}
+                                        onMouseOver={e => { e.currentTarget.style.background = '#E2E8F0'; e.currentTarget.style.color = '#0B1C30'; }}
+                                        onMouseOut={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#64748B'; }}
+                                    >
+                                        <Plus size={14} />
+                                    </button>
+                                )}
+                            </div>
                         </div>
 
                         <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
@@ -864,12 +909,16 @@ export function StudyGroupDetail() {
                             </div>
                         ) : (
                             messages.map((msg) => {
-                                const display = senderDisplay(msg.sender_id);
+                                const display = senderDisplay(msg);
                                 return (
                                     <div key={msg.id} style={{display: 'flex', gap: 16}}>
-                                        <div style={{width: 40, height: 40, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flexShrink: 0}}>
-                                            {display.initials}
-                                        </div>
+                                        {display.avatarUrl ? (
+                                            <img src={display.avatarUrl} alt={display.name} style={{width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', flexShrink: 0}} />
+                                        ) : (
+                                            <div style={{width: 40, height: 40, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flexShrink: 0}}>
+                                                {display.initials}
+                                            </div>
+                                        )}
                                         <div>
                                             <div style={{display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4}}>
                                                 <span style={{color: '#0F172A', fontSize: 15, fontWeight: '600'}}>{display.name}</span>
@@ -1014,9 +1063,13 @@ export function StudyGroupDetail() {
                                 const display = memberDisplay(member);
                                 return (
                                     <div key={member.id} style={{display: 'flex', alignItems: 'center', gap: 12, padding: '8px', borderRadius: 6, cursor: 'default'}} onMouseOver={e => e.currentTarget.style.background = '#E2E8F0'} onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
-                                        <div style={{width: 36, height: 36, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: '700', fontSize: 13}}>
-                                            {display.initials}
-                                        </div>
+                                        {display.avatarUrl ? (
+                                            <img src={display.avatarUrl} alt={display.name} style={{width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0}} />
+                                        ) : (
+                                            <div style={{width: 36, height: 36, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: '700', fontSize: 13}}>
+                                                {display.initials}
+                                            </div>
+                                        )}
                                         <div style={{flex: 1}}>
                                             <div style={{color: '#0F172A', fontSize: 14, fontWeight: '600'}}>{display.name}</div>
                                             <div style={{color: '#64748B', fontSize: 12}}>Host</div>
@@ -1038,9 +1091,13 @@ export function StudyGroupDetail() {
                                 const display = memberDisplay(member);
                                 return (
                                     <div key={member.id} style={{display: 'flex', alignItems: 'center', gap: 12, padding: '8px', borderRadius: 6, cursor: 'default'}} onMouseOver={e => e.currentTarget.style.background = '#E2E8F0'} onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
-                                        <div style={{width: 36, height: 36, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: '700', fontSize: 13}}>
-                                            {display.initials}
-                                        </div>
+                                        {display.avatarUrl ? (
+                                            <img src={display.avatarUrl} alt={display.name} style={{width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0}} />
+                                        ) : (
+                                            <div style={{width: 36, height: 36, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: '700', fontSize: 13}}>
+                                                {display.initials}
+                                            </div>
+                                        )}
                                         <div style={{flex: 1}}>
                                             <div style={{color: '#0F172A', fontSize: 14, fontWeight: '600'}}>{display.name}</div>
                                             {member.role === 'moderator' && <div style={{color: '#7C3AED', fontSize: 12}}>Điều hành viên</div>}
@@ -1053,18 +1110,55 @@ export function StudyGroupDetail() {
 
                 </div>
 
-                {/* Invite Button */}
-                <div style={{padding: '16px', borderTop: '1px solid #E2E8F0', background: 'white'}}>
-                    <button
-                        onClick={() => alert('Đã sao chép liên kết mời tham gia nhóm học!')}
-                        style={{width: '100%', padding: '10px', background: '#00236F', color: 'white', border: 'none', borderRadius: 6, fontWeight: '600', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, cursor: 'pointer'}}
-                    >
-                        <UserPlus size={18} /> Mời thêm người
-                    </button>
-                </div>
+                {/* Invite Button -- only an active group owner/moderator may create
+                    invitations (backend rule, is_group_manager on POST /invitations/); this
+                    is UX-only, the endpoint independently re-checks the same rule. */}
+                {isGroupManager && (
+                    <div style={{padding: '16px', borderTop: '1px solid #E2E8F0', background: 'white'}}>
+                        <button
+                            onClick={() => setIsInviteModalOpen(true)}
+                            style={{width: '100%', padding: '10px', background: '#00236F', color: 'white', border: 'none', borderRadius: 6, fontWeight: '600', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, cursor: 'pointer'}}
+                        >
+                            <UserPlus size={18} /> Mời thêm người
+                        </button>
+                    </div>
+                )}
             </div>
 
         </div>
+
+        {group && (
+            <InviteModal
+                isOpen={isInviteModalOpen}
+                onClose={() => setIsInviteModalOpen(false)}
+                target={{ groupId: group.id }}
+                targetLabel={group.name}
+            />
+        )}
+
+        {channelToInvite && (
+            <InviteModal
+                isOpen={!!channelToInvite}
+                onClose={() => setChannelToInvite(null)}
+                target={{ channelId: channelToInvite.id }}
+                targetLabel={channelToInvite.name}
+            />
+        )}
+
+        {/* Dedicated Join Study Room / Join Private Channel entry points -- same reusable
+            flow as Join Group on the Groups list page, just target-aware (see
+            JoinByCodeModal). A Group/Channel code entered here is rejected with a clear
+            mismatch message rather than silently mishandled. */}
+        <JoinByCodeModal
+            isOpen={isJoinRoomModalOpen}
+            onClose={() => setIsJoinRoomModalOpen(false)}
+            expectedTarget="study_room"
+        />
+        <JoinByCodeModal
+            isOpen={isJoinChannelModalOpen}
+            onClose={() => setIsJoinChannelModalOpen(false)}
+            expectedTarget="private_channel"
+        />
 
         {/* Modal: Tạo phòng học mới */}
         {isCreateRoomModalOpen && (
