@@ -52,6 +52,23 @@ async def _authorize_send(session: AsyncSession, conversation: Conversation, use
         raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have access to this conversation")
 
 
+async def _authorize_mutation_conversation_access(
+    session: AsyncSession, conversation: Conversation | None, user_id: uuid.UUID
+) -> None:
+    """Edit/delete authorize primarily by sender identity (or, for delete, channel-manager
+    override) -- but that ownership rule alone is not sufficient. A message mutation must
+    also require that the caller can still access the message's parent Conversation, via
+    the same generic can_access_conversation() entry point every other conversation-scoped
+    endpoint uses (list/get/send). This is what makes a soft-deleted Channel's messages
+    stop being PATCH/DELETE-able (see docs/db/STUDY_PLATFORM_DATABASE_SPEC.md § 9) without
+    any Channel-specific logic in this router -- can_access_conversation already
+    type-dispatches to channel/room/direct and denies a deleted channel on its own. Being
+    the sender never bypasses this: sender-only access to a conversation you can no longer
+    reach is exactly the case this closes."""
+    if conversation is None or not await can_access_conversation(session, conversation, user_id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have access to this conversation")
+
+
 @router.get("/conversations/{conversation_id}/messages", response_model=MessageListResponse)
 async def list_messages(
     conversation_id: uuid.UUID,
@@ -162,7 +179,8 @@ async def update_message(
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the sender can edit this message")
 
     conversation = await conversation_service.get_by_id(session, message.conversation_id)
-    if conversation is not None and not await is_room_conversation_open_for_writes(session, conversation):
+    await _authorize_mutation_conversation_access(session, conversation, current_user.id)
+    if not await is_room_conversation_open_for_writes(session, conversation):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "This study room has ended; messages can no longer be edited")
 
     try:
@@ -196,7 +214,8 @@ async def delete_message(
     if not allowed:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have permission to delete this message")
 
-    if conversation is not None and not await is_room_conversation_open_for_writes(session, conversation):
+    await _authorize_mutation_conversation_access(session, conversation, current_user.id)
+    if not await is_room_conversation_open_for_writes(session, conversation):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "This study room has ended; messages can no longer be deleted")
 
     attachment_path = message.attachment_path

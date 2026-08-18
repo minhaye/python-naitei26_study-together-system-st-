@@ -7,12 +7,14 @@ from app.db.enums import ChannelType
 
 
 class ChannelCreate(BaseModel):
+    """No `created_by` field: attribution always comes from the authenticated caller
+    (see ChannelsService.create / channel_router.create_channel), never client-supplied."""
+
     group_id: uuid.UUID
     name: str = Field(min_length=1, max_length=80)
     description: str | None = None
     type: ChannelType = ChannelType.TEXT
     is_private: bool = False
-    created_by: uuid.UUID
 
 
 class ChannelUpdate(BaseModel):
@@ -34,10 +36,14 @@ class ChannelResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     conversation_id: uuid.UUID | None
+    deleted_at: datetime | None
+    deleted_by: uuid.UUID | None
 
 
 class ChannelMemberCreate(BaseModel):
-    channel_id: uuid.UUID
+    """Target user for a group manager (owner/moderator) adding someone to a (typically
+    private) channel. There is no self-join case for channels in this task's scope."""
+
     user_id: uuid.UUID
 
 

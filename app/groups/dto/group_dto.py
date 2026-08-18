@@ -7,10 +7,12 @@ from app.db.enums import GroupMemberRole, MemberStatus
 
 
 class GroupCreate(BaseModel):
+    """No `owner_id` field: the group owner is always the authenticated caller
+    (see GroupsService.create / group_router.create_group), never client-supplied."""
+
     name: str = Field(min_length=1, max_length=100)
     description: str | None = None
     avatar_url: str | None = None
-    owner_id: uuid.UUID
     is_public: bool = True
 
 
@@ -36,10 +38,12 @@ class GroupResponse(BaseModel):
 
 
 class GroupMemberCreate(BaseModel):
-    group_id: uuid.UUID
-    user_id: uuid.UUID
-    role: GroupMemberRole = GroupMemberRole.MEMBER
-    status: MemberStatus = MemberStatus.ACTIVE
+    """Target user for a manager (owner/moderator) adding someone else; omit to self-join
+    as the authenticated caller. `role`/`status` are intentionally absent -- a new membership
+    always starts as an active plain member; promote via the owner-only
+    PUT /groups/{group_id}/members/{user_id}/role endpoint afterward."""
+
+    user_id: uuid.UUID | None = None
 
 
 class GroupMemberResponse(BaseModel):

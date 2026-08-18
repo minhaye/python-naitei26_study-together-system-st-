@@ -6,7 +6,7 @@ from app.channels.entities.channel_entity import Channel, ChannelMember
 from app.conversations.entities.conversation_entity import Conversation
 from app.core import permissions
 from app.db.enums import ConversationType, GroupMemberRole, MemberStatus, StudyRoomMemberRole, StudyRoomStatus
-from app.groups.entities.group_entity import GroupMember
+from app.groups.entities.group_entity import Group, GroupMember
 from app.study_rooms.entities.study_room_entity import StudyRoom, StudyRoomMember
 
 
@@ -14,8 +14,12 @@ def _group_member(role: GroupMemberRole, status: MemberStatus) -> GroupMember:
     return GroupMember(group_id=uuid.uuid4(), user_id=uuid.uuid4(), role=role, status=status)
 
 
-def _channel(is_private: bool) -> Channel:
-    return Channel(id=uuid.uuid4(), group_id=uuid.uuid4(), name="general", is_private=is_private)
+def _group(owner_id: uuid.UUID | None = None) -> Group:
+    return Group(id=uuid.uuid4(), name="Group", owner_id=owner_id or uuid.uuid4(), is_public=True)
+
+
+def _channel(is_private: bool, deleted_at: datetime | None = None) -> Channel:
+    return Channel(id=uuid.uuid4(), group_id=uuid.uuid4(), name="general", is_private=is_private, deleted_at=deleted_at)
 
 
 def _room(status: StudyRoomStatus = StudyRoomStatus.ACTIVE, host_id: uuid.UUID | None = None) -> StudyRoom:
@@ -72,6 +76,19 @@ async def test_is_group_manager_false_for_plain_member(monkeypatch):
     assert not await permissions.is_group_manager(session=None, group_id=uuid.uuid4(), user_id=uuid.uuid4())
 
 
+def test_is_group_owner_true_for_owner():
+    owner_id = uuid.uuid4()
+    group = _group(owner_id=owner_id)
+
+    assert permissions.is_group_owner(group, owner_id)
+
+
+def test_is_group_owner_false_for_non_owner():
+    group = _group(owner_id=uuid.uuid4())
+
+    assert not permissions.is_group_owner(group, uuid.uuid4())
+
+
 async def test_can_access_channel_public_requires_only_group_membership(monkeypatch):
     channel = _channel(is_private=False)
     member = _group_member(GroupMemberRole.MEMBER, MemberStatus.ACTIVE)
@@ -99,6 +116,114 @@ async def test_can_access_channel_private_requires_channel_membership(monkeypatc
     monkeypatch.setattr(permissions.channels_service, "get_member", AsyncMock(return_value=channel_member))
 
     assert await permissions.can_access_channel(session=None, channel=channel, user_id=uuid.uuid4())
+
+
+async def test_can_access_channel_private_grants_implicit_access_to_owner_without_membership_row(monkeypatch):
+    """Mirrors the SQL `can_access_channel()` RLS helper (docs/db/migrations/
+    004_refactor_chat_to_conversations.sql § 8), which ORs in `is_group_manager` alongside
+    the channel_members check. Channel creation never inserts the creator into
+    channel_members, so without this branch the creator would be locked out of their own
+    private channel."""
+    channel = _channel(is_private=True)
+    owner = _group_member(GroupMemberRole.OWNER, MemberStatus.ACTIVE)
+    monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock(return_value=owner))
+    get_channel_member_mock = AsyncMock(return_value=None)
+    monkeypatch.setattr(permissions.channels_service, "get_member", get_channel_member_mock)
+
+    assert await permissions.can_access_channel(session=None, channel=channel, user_id=uuid.uuid4())
+    get_channel_member_mock.assert_not_awaited()
+
+
+async def test_can_access_channel_private_grants_implicit_access_to_moderator_without_membership_row(monkeypatch):
+    channel = _channel(is_private=True)
+    moderator = _group_member(GroupMemberRole.MODERATOR, MemberStatus.ACTIVE)
+    monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock(return_value=moderator))
+    monkeypatch.setattr(permissions.channels_service, "get_member", AsyncMock(return_value=None))
+
+    assert await permissions.can_access_channel(session=None, channel=channel, user_id=uuid.uuid4())
+
+
+async def test_can_access_channel_private_denies_plain_member_without_membership_row(monkeypatch):
+    """Contrast with the manager tests above: an ordinary active member (not owner/moderator)
+    must NOT get implicit private-channel access -- they still need an explicit
+    channel_members row."""
+    channel = _channel(is_private=True)
+    plain_member = _group_member(GroupMemberRole.MEMBER, MemberStatus.ACTIVE)
+    monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock(return_value=plain_member))
+    monkeypatch.setattr(permissions.channels_service, "get_member", AsyncMock(return_value=None))
+
+    assert not await permissions.can_access_channel(session=None, channel=channel, user_id=uuid.uuid4())
+
+
+async def test_can_access_channel_private_denies_banned_owner_even_with_stale_membership_row(monkeypatch):
+    """A banned/inactive group_members row must deny access outright, regardless of role or
+    of a leftover channel_members row -- is_active_group_member is checked first and gates
+    both the manager branch and the explicit-membership branch."""
+    channel = _channel(is_private=True)
+    banned_owner = _group_member(GroupMemberRole.OWNER, MemberStatus.BANNED)
+    monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock(return_value=banned_owner))
+    stale_channel_member = ChannelMember(channel_id=channel.id, user_id=uuid.uuid4())
+    get_channel_member_mock = AsyncMock(return_value=stale_channel_member)
+    monkeypatch.setattr(permissions.channels_service, "get_member", get_channel_member_mock)
+
+    assert not await permissions.can_access_channel(session=None, channel=channel, user_id=uuid.uuid4())
+    get_channel_member_mock.assert_not_awaited()
+
+
+# --- can_access_channel: soft-deleted channel (migration 009) ---
+
+
+async def test_can_access_channel_false_when_deleted_even_for_active_member(monkeypatch):
+    channel = _channel(is_private=False, deleted_at=datetime.now(timezone.utc))
+    get_member_mock = AsyncMock(return_value=_group_member(GroupMemberRole.MEMBER, MemberStatus.ACTIVE))
+    monkeypatch.setattr(permissions.groups_service, "get_member", get_member_mock)
+
+    assert not await permissions.can_access_channel(session=None, channel=channel, user_id=uuid.uuid4())
+    # Deletion is checked before any group-membership lookup -- deny fast, no wasted query.
+    get_member_mock.assert_not_awaited()
+
+
+async def test_can_access_channel_false_when_deleted_even_for_group_owner(monkeypatch):
+    """A deleted channel must deny everyone through normal access paths, including the
+    group owner/moderator who could otherwise use the implicit-manager-access branch."""
+    channel = _channel(is_private=True, deleted_at=datetime.now(timezone.utc))
+    get_member_mock = AsyncMock(return_value=_group_member(GroupMemberRole.OWNER, MemberStatus.ACTIVE))
+    monkeypatch.setattr(permissions.groups_service, "get_member", get_member_mock)
+
+    assert not await permissions.can_access_channel(session=None, channel=channel, user_id=uuid.uuid4())
+    get_member_mock.assert_not_awaited()
+
+
+async def test_can_access_channel_false_when_deleted_even_for_explicit_channel_member(monkeypatch):
+    channel = _channel(is_private=True, deleted_at=datetime.now(timezone.utc))
+    monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock())
+    get_channel_member_mock = AsyncMock()
+    monkeypatch.setattr(permissions.channels_service, "get_member", get_channel_member_mock)
+
+    assert not await permissions.can_access_channel(session=None, channel=channel, user_id=uuid.uuid4())
+    get_channel_member_mock.assert_not_awaited()
+
+
+async def test_can_access_channel_true_when_deleted_at_is_none(monkeypatch):
+    """Contrast case: an explicit deleted_at=None (the default/not-deleted state) must not
+    itself deny access -- only an actually-set deleted_at does."""
+    channel = _channel(is_private=False, deleted_at=None)
+    monkeypatch.setattr(
+        permissions.groups_service, "get_member", AsyncMock(return_value=_group_member(GroupMemberRole.MEMBER, MemberStatus.ACTIVE))
+    )
+
+    assert await permissions.can_access_channel(session=None, channel=channel, user_id=uuid.uuid4())
+
+
+async def test_can_access_conversation_channel_type_false_when_channel_deleted(monkeypatch):
+    """End-to-end through the dispatch entry point: can_access_conversation for a channel-type
+    conversation must deny once the underlying channel is soft-deleted."""
+    channel = _channel(is_private=False, deleted_at=datetime.now(timezone.utc))
+    conversation = Conversation(id=uuid.uuid4(), type=ConversationType.CHANNEL, channel_id=channel.id, created_by=uuid.uuid4())
+    monkeypatch.setattr(permissions.channels_service, "get_by_id", AsyncMock(return_value=channel))
+    monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock(return_value=_group_member(GroupMemberRole.OWNER, MemberStatus.ACTIVE)))
+
+    assert not await permissions.can_access_conversation(session=None, conversation=conversation, user_id=uuid.uuid4())
 
 
 # --- can_access_conversation ---

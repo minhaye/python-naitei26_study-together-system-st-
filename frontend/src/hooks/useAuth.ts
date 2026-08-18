@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { useAuthContext } from '../contexts/auth-context';
 import { getAvatarInitials, getAvatarColor } from '../utils/avatarUtils';
 
 export interface AuthUser {
@@ -8,23 +9,39 @@ export interface AuthUser {
   color: string;
 }
 
+const GUEST_NAME = 'Người dùng';
+const GUEST_USER: AuthUser = {
+  id: 'user-current',
+  name: GUEST_NAME,
+  initials: getAvatarInitials(GUEST_NAME),
+  color: getAvatarColor(GUEST_NAME),
+};
+
 /**
- * useAuth — Hook toàn cục kiểm tra trạng thái đăng nhập và thông tin người dùng hiện tại.
+ * useAuth — Hook toàn cục kiểm tra trạng thái đăng nhập và thông tin người dùng hiện tại,
+ * dựa trên phiên đăng nhập Supabase thực (qua AuthContext).
  */
 export function useAuth() {
   const navigate = useNavigate();
-  const isLoggedIn = localStorage.getItem('auth') === 'true';
+  const { session, user, loading } = useAuthContext();
+  const isLoggedIn = !!session;
 
-  // Lấy thông tin user từ localStorage hoặc mặc định khi đăng nhập
-  const storedName = localStorage.getItem('user_name') || 'Người dùng';
-  const storedId = localStorage.getItem('user_id') || 'user-current';
+  const displayName =
+    (user?.user_metadata?.full_name as string | undefined) ||
+    (user?.user_metadata?.name as string | undefined) ||
+    user?.email ||
+    GUEST_NAME;
 
-  const currentUser: AuthUser = {
-    id: storedId,
-    name: storedName,
-    initials: getAvatarInitials(storedName),
-    color: getAvatarColor(storedName),
-  };
+  // Luôn trả về một currentUser hợp lệ (kể cả khi chưa đăng nhập) để các nơi
+  // dùng currentUser.id / currentUser.name (VD: Forum mock) không bị lỗi.
+  const currentUser: AuthUser = user
+    ? {
+        id: user.id,
+        name: displayName,
+        initials: getAvatarInitials(displayName),
+        color: getAvatarColor(displayName),
+      }
+    : GUEST_USER;
 
   /**
    * Bọc một action cần đăng nhập.
@@ -39,5 +56,5 @@ export function useAuth() {
     action();
   };
 
-  return { isLoggedIn, currentUser, requireAuth };
+  return { isLoggedIn, loading, currentUser, user, session, requireAuth };
 }

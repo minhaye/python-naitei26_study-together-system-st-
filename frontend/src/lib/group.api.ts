@@ -1,0 +1,36 @@
+import { apiClient } from './apiClient';
+import type { Group, GroupCreate, GroupMember, GroupMemberCreate, GroupUpdate } from './group.types';
+
+export function getGroups(publicOnly: boolean): Promise<Group[]> {
+  return apiClient.get<Group[]>(`/groups/?public_only=${publicOnly}`);
+}
+
+export function getGroup(groupId: string): Promise<Group> {
+  return apiClient.get<Group>(`/groups/${groupId}`);
+}
+
+export function listGroupMembers(groupId: string): Promise<GroupMember[]> {
+  return apiClient.get<GroupMember[]>(`/groups/${groupId}/members`);
+}
+
+/** Owner is always derived from the bearer token on the backend; no owner_id is ever sent. */
+export function createGroup(data: GroupCreate): Promise<Group> {
+  return apiClient.post<Group>('/groups/', data);
+}
+
+/** Owner-only; caller identity/authority is enforced server-side. */
+export function updateGroup(groupId: string, data: GroupUpdate): Promise<Group> {
+  return apiClient.put<Group>(`/groups/${groupId}`, data);
+}
+
+/** Self-join a public group: omitting user_id means "join myself" — the backend derives the
+ * caller from the bearer token and always assigns the plain `member` role. */
+export function joinGroup(groupId: string): Promise<GroupMember> {
+  const body: GroupMemberCreate = {};
+  return apiClient.post<GroupMember>(`/groups/${groupId}/members`, body);
+}
+
+/** Self-leave: the caller's own membership status becomes `left`. Cannot affect another member. */
+export function leaveGroup(groupId: string, userId: string): Promise<GroupMember> {
+  return apiClient.put<GroupMember>(`/groups/${groupId}/members/${userId}/status?member_status=left`);
+}

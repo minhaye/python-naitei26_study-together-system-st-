@@ -1,7 +1,20 @@
 import { Search, Bell, Settings } from 'lucide-react';
-import { NavLink, Link } from 'react-router-dom';
+import { NavLink, Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../hooks/useAuth';
+import { useAuthContext } from '../../contexts/auth-context';
+import { supabase } from '../../lib/supabase';
 
 export function Header() {
+  const { isLoggedIn } = useAuth();
+  const { setDevSession } = useAuthContext();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    setDevSession(null);
+    await supabase.auth.signOut().catch(() => {});
+    navigate('/');
+  };
+
   return (
     <div style={{width: '100%', background: 'white', borderBottom: '1px #E2E8F0 solid', display: 'flex', justifyContent: 'center', zIndex: 10, position: 'sticky', top: 0}}>
         <div style={{width: '100%', maxWidth: '100%', paddingLeft: 32, paddingRight: 32, height: 64, justifyContent: 'space-between', alignItems: 'center', display: 'flex'}}>
@@ -57,7 +70,7 @@ export function Header() {
                     </div>
                 </div>
                 
-                {localStorage.getItem('auth') === 'true' ? (
+                {isLoggedIn ? (
                   <>
                     <div style={{display: 'flex', alignItems: 'center', cursor: 'pointer'}}>
                         <Bell size={20} color="#444651" />
@@ -69,11 +82,8 @@ export function Header() {
                         <Link to="/settings" aria-label="Trang cài đặt">
                           <img style={{width: 32, height: 32, borderRadius: 12, border: '1px #E2E8F0 solid', cursor: 'pointer', display: 'block'}} src="https://i.pravatar.cc/150?img=11" alt="Ảnh đại diện" />
                         </Link>
-                        <div 
-                          onClick={() => {
-                            localStorage.removeItem('auth');
-                            window.location.reload();
-                          }}
+                        <div
+                          onClick={handleLogout}
                           style={{color: '#EF4444', fontSize: 14, fontWeight: '600', cursor: 'pointer'}}
                         >
                           Đăng xuất

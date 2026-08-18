@@ -303,6 +303,18 @@ Insert group_members
 
 Hai thao tác nên được thực hiện trong **cùng một transaction**.
 
+**Cơ chế thực tế (xác nhận live 2026-08-17, xem migration 008):** invariant này
+được đảm bảo bởi trigger DB `groups_add_owner` (AFTER INSERT ON `groups`, gọi
+`add_group_owner()` — SECURITY DEFINER, dùng `INSERT ... ON CONFLICT (group_id,
+user_id) DO UPDATE`), **không phải** bởi application code. `GroupsService.create()`
+(app/groups/services/group_service.py) chỉ insert vào `groups` — nó **không được**
+tự insert `group_members(role=owner)` nữa. Trước đây `GroupsService.create()` từng
+làm việc này song song với trigger, và hai insert đó đụng độ, gây
+`UniqueViolation` trên `group_members_group_id_user_id_key` (mỗi INSERT vào
+`groups` chỉ nên dẫn tới đúng MỘT insert vào `group_members` cho owner). Nếu cần
+thay đổi cơ chế này trong tương lai, sửa ở tầng trigger (và cập nhật migration
+008), không thêm lại insert phía application.
+
 Không được để xảy ra trạng thái:
 
 ```text
@@ -344,7 +356,9 @@ channels
 ├── is_private
 ├── created_by
 ├── created_at
-└── updated_at
+├── updated_at
+├── deleted_at
+└── deleted_by
 ```
 
 | Field | Ý nghĩa |
@@ -358,6 +372,67 @@ channels
 | `created_by` | Người tạo |
 | `created_at` | Thời điểm tạo |
 | `updated_at` | Thời điểm cập nhật |
+| `deleted_at` | Thời điểm soft-delete, `NULL` nếu channel chưa bị xóa |
+| `deleted_by` | Người thực hiện soft-delete (FK -> `profiles.id`, `ON DELETE RESTRICT`), `NULL` nếu channel chưa bị xóa |
+
+## Soft Delete (migration 009, xác nhận thiết kế 2026-08-18)
+
+`deleted_at`/`deleted_by` dùng để soft-delete channel — cùng quy ước với
+`forum_posts` (§ 26), cộng thêm `deleted_by` để ghi lại ai đã xóa. Backend
+luôn tự lấy `deleted_by` từ người gọi đã xác thực (bearer token), không bao
+giờ tin một giá trị `deleted_by` do client gửi lên.
+
+```text
+deleted_at IS NULL
+```
+
+→ channel đang hoạt động bình thường.
+
+```text
+deleted_at IS NOT NULL
+```
+
+→ channel đã bị xóa về mặt logic. Row `channels`, `conversations`, và toàn
+bộ `messages` lịch sử của nó **vẫn còn nguyên trong database** — không có gì
+bị xóa vật lý. Chỉ có quyền truy cập bị thu hồi:
+
+```text
+Channel deleted
+→ Channel row vẫn còn
+→ Conversation vẫn còn
+→ Messages vẫn còn
+→ truy cập qua Conversation đó bị từ chối
+```
+
+`can_access_channel()` (cả bản Python trong `app/core/permissions.py` lẫn
+bản SQL/RLS) kiểm tra `deleted_at IS NULL` trước tiên, trước mọi nhánh
+public/private/manager/member khác — một channel đã xóa bị từ chối cho MỌI
+người gọi, kể cả group owner/moderator. Vì `channels_select`,
+`channel_members_select`, `conversations_select`, và `messages_select` (bao
+gồm cả đường Realtime) đều gọi qua hàm này, việc sửa một hàm duy nhất áp
+dụng cho tất cả các đường đó.
+
+Backend nên mặc định filter:
+
+```sql
+WHERE deleted_at IS NULL
+```
+
+khi trả danh sách channel thông thường (`ChannelsService.list_by_group`).
+`GET /channels/{id}` và các endpoint quản lý thành viên trả `404 Not Found`
+cho một channel đã bị xóa, giống như thể nó không tồn tại.
+
+Chỉ group owner/moderator (`is_group_manager`) mới được phép soft-delete
+(`DELETE /channels/{id}`) — thành viên thường hoặc người ngoài nhóm bị từ
+chối. Migration 009 cũng khóa 2 đường bypass trực tiếp qua Postgres/PostgREST
+đã phát hiện khi rà soát RLS live: `channels_delete_manager` (cho phép DELETE
+vật lý — đã bị xóa hẳn, không có policy thay thế, giống quy ước đã áp dụng
+cho `messages`) và `channels_update_manager` (thiếu điều kiện `deleted_at is
+null`, cho phép sửa/undelete một channel đã xóa trực tiếp qua Postgres).
+
+Không có tính năng Restore (khôi phục) trong phạm vi hiện tại, nhưng thiết
+kế cho phép làm điều đó sau này chỉ bằng cách set lại
+`deleted_at = NULL, deleted_by = NULL`.
 
 Hiện tại `channel_type`:
 
@@ -1483,7 +1558,12 @@ Cần:
 2. Create group_members(role=owner)
 ```
 
-trong cùng transaction.
+trong cùng transaction — nhưng bước 2 do DB trigger `groups_add_owner` /
+`add_group_owner()` đảm nhiệm (xem § 8 và migration 008), **không phải**
+`GroupsService.create()`. Service chỉ làm bước 1 (insert `groups` với
+`owner_id` là caller đã xác thực); tự insert thêm `group_members` ở tầng
+application sẽ đụng độ với trigger và vi phạm unique constraint
+`group_members_group_id_user_id_key`.
 
 ## create_study_room()
 

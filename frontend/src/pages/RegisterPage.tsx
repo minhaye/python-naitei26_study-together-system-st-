@@ -1,14 +1,44 @@
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, User, ArrowRight } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 export function RegisterPage() {
   const navigate = useNavigate();
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    localStorage.setItem('auth', 'true');
-    navigate('/');
-    window.location.reload(); // Quick reload to update Header state
+    if (isSubmitting) return;
+
+    setError(null);
+    setInfo(null);
+    setIsSubmitting(true);
+    const { data, error: signUpError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { full_name: fullName } },
+    });
+    setIsSubmitting(false);
+
+    if (signUpError) {
+      setError(signUpError.message);
+      return;
+    }
+
+    if (data.session) {
+      // Email confirmation is disabled for this project — a session is issued immediately.
+      navigate('/');
+      return;
+    }
+
+    // Email confirmation is required: signUp succeeded but there is no session yet.
+    setInfo('Đăng ký thành công! Vui lòng kiểm tra email để xác nhận tài khoản trước khi đăng nhập.');
   };
 
   return (
@@ -26,9 +56,11 @@ export function RegisterPage() {
               <label style={{display: 'block', fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 8}}>Họ và tên</label>
               <div style={{position: 'relative'}}>
                 <User size={18} color="#94A3B8" style={{position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)'}} />
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   required
+                  value={fullName}
+                  onChange={e => setFullName(e.target.value)}
                   placeholder="Nguyễn Văn A"
                   style={{width: '100%', padding: '12px 16px 12px 42px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, outline: 'none', fontSize: 15, color: '#0F172A', boxSizing: 'border-box', transition: 'border-color 0.2s'}}
                   onFocus={e => e.currentTarget.style.borderColor = '#3B82F6'}
@@ -41,9 +73,11 @@ export function RegisterPage() {
               <label style={{display: 'block', fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 8}}>Email</label>
               <div style={{position: 'relative'}}>
                 <Mail size={18} color="#94A3B8" style={{position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)'}} />
-                <input 
-                  type="email" 
+                <input
+                  type="email"
                   required
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
                   placeholder="nhapemail@example.com"
                   style={{width: '100%', padding: '12px 16px 12px 42px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, outline: 'none', fontSize: 15, color: '#0F172A', boxSizing: 'border-box', transition: 'border-color 0.2s'}}
                   onFocus={e => e.currentTarget.style.borderColor = '#3B82F6'}
@@ -56,9 +90,12 @@ export function RegisterPage() {
               <label style={{display: 'block', fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 8}}>Mật khẩu</label>
               <div style={{position: 'relative'}}>
                 <Lock size={18} color="#94A3B8" style={{position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)'}} />
-                <input 
-                  type="password" 
+                <input
+                  type="password"
                   required
+                  minLength={6}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
                   placeholder="••••••••"
                   style={{width: '100%', padding: '12px 16px 12px 42px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, outline: 'none', fontSize: 15, color: '#0F172A', boxSizing: 'border-box', transition: 'border-color 0.2s'}}
                   onFocus={e => e.currentTarget.style.borderColor = '#3B82F6'}
@@ -66,9 +103,16 @@ export function RegisterPage() {
                 />
               </div>
             </div>
-            
-            <button type="submit" style={{width: '100%', marginTop: 8, padding: '14px', background: '#00236F', color: 'white', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: '600', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, transition: 'background 0.2s'}} onMouseOver={e => e.currentTarget.style.background = '#1E3A8A'} onMouseOut={e => e.currentTarget.style.background = '#00236F'}>
-              Đăng ký tài khoản
+
+            {error && (
+              <p style={{color: '#EF4444', fontSize: 14, margin: 0}}>{error}</p>
+            )}
+            {info && (
+              <p style={{color: '#16A34A', fontSize: 14, margin: 0}}>{info}</p>
+            )}
+
+            <button type="submit" disabled={isSubmitting} style={{width: '100%', marginTop: 8, padding: '14px', background: '#00236F', color: 'white', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: '600', cursor: isSubmitting ? 'default' : 'pointer', opacity: isSubmitting ? 0.7 : 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, transition: 'background 0.2s'}} onMouseOver={e => e.currentTarget.style.background = '#1E3A8A'} onMouseOut={e => e.currentTarget.style.background = '#00236F'}>
+              {isSubmitting ? 'Đang đăng ký...' : 'Đăng ký tài khoản'}
               <ArrowRight size={18} />
             </button>
           </form>
