@@ -1,12 +1,11 @@
-/**
- * ForumSidebar — Sidebar danh mục bên trái trang Forum.
- *
- * Giao diện dạng phẳng (Flat list, không Accordion, không Icon), width 280px chuẩn style ban đầu.
- * Tích hợp ô tìm kiếm thông minh kiểu Google: Click gợi ý -> Tự chọn -> Scroll Into View & Highlight xanh.
- */
-
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, X } from 'lucide-react';
+import { 
+  Search, X, Hash, Code, LineChart, Megaphone, 
+  Calculator, FlaskConical, Languages, Stethoscope, 
+  Scale, BookOpen, Lightbulb, PenTool, GraduationCap, 
+  School, HeartPulse, Briefcase, Smile, MessageCircle,
+  LayoutGrid
+} from 'lucide-react';
 import { forumApi } from '../lib/forum.api';
 import type { ForumCategoryResponse } from '../types/forum.types';
 
@@ -15,6 +14,33 @@ interface ForumSidebarProps {
   onSelectCategory: (id: string | null, name?: string | null) => void;
   onSearchChange: (search: string) => void;
 }
+
+// Hàm trợ giúp để gán icon cho từng chuyên mục dựa trên tên
+const getCategoryIcon = (name: string, isActive: boolean) => {
+  const color = isActive ? '#1D4ED8' : '#64748B';
+  const size = 18;
+  const n = name.toLowerCase();
+
+  if (n.includes('công nghệ') || n.includes('it')) return <Code size={size} color={color} />;
+  if (n.includes('kinh tế') || n.includes('tài chính')) return <LineChart size={size} color={color} />;
+  if (n.includes('quản trị') || n.includes('marketing')) return <Megaphone size={size} color={color} />;
+  if (n.includes('toán')) return <Calculator size={size} color={color} />;
+  if (n.includes('tự nhiên') || n.includes('hoá') || n.includes('sinh')) return <FlaskConical size={size} color={color} />;
+  if (n.includes('ngoại ngữ')) return <Languages size={size} color={color} />;
+  if (n.includes('y khoa') || n.includes('dược')) return <Stethoscope size={size} color={color} />;
+  if (n.includes('luật')) return <Scale size={size} color={color} />;
+  if (n.includes('xã hội') || n.includes('nhân văn')) return <BookOpen size={size} color={color} />;
+  if (n.includes('triết')) return <Lightbulb size={size} color={color} />;
+  if (n.includes('kiến trúc') || n.includes('thiết kế')) return <PenTool size={size} color={color} />;
+  if (n.includes('thpt') || n.includes('đại học')) return <GraduationCap size={size} color={color} />;
+  if (n.includes('thcs')) return <School size={size} color={color} />;
+  if (n.includes('sức khỏe')) return <HeartPulse size={size} color={color} />;
+  if (n.includes('kỹ năng') || n.includes('nghề nghiệp')) return <Briefcase size={size} color={color} />;
+  if (n.includes('thư giãn')) return <Smile size={size} color={color} />;
+  if (n.includes('hỏi đáp')) return <MessageCircle size={size} color={color} />;
+  
+  return <Hash size={size} color={color} />;
+};
 
 export const ForumSidebar: React.FC<ForumSidebarProps> = ({
   selectedCategoryId,
@@ -29,14 +55,17 @@ export const ForumSidebar: React.FC<ForumSidebarProps> = ({
   const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const searchBoxRef = useRef<HTMLDivElement | null>(null);
 
-  // Lấy danh mục từ Backend API
   useEffect(() => {
     forumApi.getCategories().then((apiCats) => {
-      setCategories(apiCats);
+      const sortedCats = [...apiCats].sort((a, b) => {
+        if (a.name === 'Hỏi đáp chung') return 1;
+        if (b.name === 'Hỏi đáp chung') return -1;
+        return 0;
+      });
+      setCategories(sortedCats);
     });
   }, []);
 
-  // Đóng dropdown tìm kiếm khi click ra ngoài ô Search Box
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (searchBoxRef.current && !searchBoxRef.current.contains(event.target as Node)) {
@@ -47,19 +76,16 @@ export const ForumSidebar: React.FC<ForumSidebarProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Danh sách gợi ý tìm kiếm (Google Search Suggestions)
   const suggestions = searchQuery.trim()
     ? categories.filter((cat) => cat.name.toLowerCase().includes(searchQuery.toLowerCase().trim()))
     : [];
 
-  // Khi click chọn 1 gợi ý từ dropdown Google
   const handleSelectSuggestion = (catId: string, catName: string) => {
     setSearchQuery(catName);
     onSearchChange(catName);
     setShowSuggestions(false);
     onSelectCategory(catId, catName);
 
-    // Tự động cuộn mượt (Scroll Into View) & Highlight xanh trong 2s
     setTimeout(() => {
       const el = itemRefs.current[catId];
       if (el) {
@@ -85,129 +111,143 @@ export const ForumSidebar: React.FC<ForumSidebarProps> = ({
 
   const isActive = (id: string | null) => selectedCategoryId === id;
 
+  // Custom CSS scrollbar chèn trực tiếp qua style (có thể cần bỏ vào App.css nếu muốn đồng bộ)
   return (
-    <aside style={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <aside style={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
       <div
         style={{
           background: 'white',
           borderRadius: 12,
-          padding: 20,
+          padding: 16,
           outline: '1px solid #E2E8F0',
           boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+          display: 'flex',
+          flexDirection: 'column',
+          maxHeight: 'calc(100vh - 120px)', // Giới hạn chiều cao tổng để không bị lố màn hình
         }}
       >
-        {/* Search Box với Gợi ý tìm kiếm (Search Suggestions kiểu Google) */}
-        <div ref={searchBoxRef} style={{ position: 'relative', marginBottom: 20 }}>
-          <div
-            style={{
-              position: 'relative',
-              display: 'flex',
-              alignItems: 'center',
-            }}
-          >
-            <Search size={16} color="#94A3B8" style={{ position: 'absolute', left: 12 }} />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={handleInputChange}
-              onFocus={() => searchQuery.trim().length > 0 && setShowSuggestions(true)}
-              placeholder="Tìm môn học..."
-              style={{
-                width: '100%',
-                padding: '10px 36px 10px 36px',
-                background: '#F1F5F9',
-                border: '1px solid #E2E8F0',
-                borderRadius: 8,
-                outline: 'none',
-                fontSize: 14,
-                color: '#334155',
-                fontWeight: '500',
-              }}
-            />
-            {searchQuery && (
-              <X
-                size={16}
-                color="#64748B"
-                style={{ position: 'absolute', right: 12, cursor: 'pointer' }}
-                onClick={handleClearSearch}
+        {/* Header & Search */}
+        <div style={{ flexShrink: 0, marginBottom: 16 }}>
+          <div ref={searchBoxRef} style={{ position: 'relative' }}>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <Search size={16} color="#94A3B8" style={{ position: 'absolute', left: 12 }} />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={handleInputChange}
+                onFocus={() => searchQuery.trim().length > 0 && setShowSuggestions(true)}
+                placeholder="Tìm môn học..."
+                style={{
+                  width: '100%',
+                  padding: '10px 36px',
+                  background: '#F8FAFC',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: 10,
+                  outline: 'none',
+                  fontSize: 14,
+                  color: '#334155',
+                  transition: 'border-color 0.2s',
+                }}
               />
+              {searchQuery && (
+                <X
+                  size={16}
+                  color="#64748B"
+                  style={{ position: 'absolute', right: 12, cursor: 'pointer' }}
+                  onClick={handleClearSearch}
+                />
+              )}
+            </div>
+
+            {/* Gợi ý */}
+            {showSuggestions && suggestions.length > 0 && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  marginTop: 8,
+                  background: 'white',
+                  border: '1px solid #CBD5E1',
+                  borderRadius: 10,
+                  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
+                  zIndex: 99,
+                  maxHeight: 240,
+                  overflowY: 'auto',
+                  padding: '6px 0',
+                }}
+              >
+                <div style={{ padding: '6px 12px', fontSize: 11, fontWeight: '700', color: '#94A3B8' }}>GỢI Ý</div>
+                {suggestions.map((cat) => (
+                  <div
+                    key={cat.id}
+                    onClick={() => handleSelectSuggestion(cat.id, cat.name)}
+                    style={{
+                      padding: '8px 14px',
+                      fontSize: 13,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                    }}
+                    onMouseOver={(e) => (e.currentTarget.style.background = '#EFF6FF')}
+                    onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <span style={{ fontWeight: '500', color: '#1D4ED8' }}>{cat.name}</span>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
-
-          {/* Search Suggestions Dropdown kiểu Google */}
-          {showSuggestions && suggestions.length > 0 && (
-            <div
-              style={{
-                position: 'absolute',
-                top: '100%',
-                left: 0,
-                right: 0,
-                marginTop: 6,
-                background: 'white',
-                border: '1px solid #CBD5E1',
-                borderRadius: 10,
-                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
-                zIndex: 99,
-                maxHeight: 240,
-                overflowY: 'auto',
-                padding: '6px 0',
-              }}
-            >
-              <div style={{ padding: '6px 12px', fontSize: 11, fontWeight: '700', color: '#94A3B8', letterSpacing: '0.05em' }}>
-                GỢI Ý TÌM KIẾM
-              </div>
-              {suggestions.map((cat) => (
-                <div
-                  key={cat.id}
-                  onClick={() => handleSelectSuggestion(cat.id, cat.name)}
-                  style={{
-                    padding: '9px 14px',
-                    fontSize: 13,
-                    color: '#1E293B',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    transition: 'background 0.15s',
-                  }}
-                  onMouseOver={(e) => (e.currentTarget.style.background = '#EFF6FF')}
-                  onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
-                >
-                  <span style={{ fontWeight: '500', color: '#1D4ED8' }}>{cat.name}</span>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
-        {/* Lựa chọn: Tất cả môn học */}
-        <div
-          onClick={() => {
-            onSelectCategory(null, null);
-            handleClearSearch();
-          }}
-          style={{
-            padding: '10px 16px',
-            background: isActive(null) ? '#EFF6FF' : 'transparent',
-            color: isActive(null) ? '#1D4ED8' : '#475569',
-            fontWeight: isActive(null) ? '600' : '500',
-            borderRadius: 8,
-            cursor: 'pointer',
-            marginBottom: 16,
-            fontSize: 14,
-            transition: 'all 0.2s',
-          }}
-          onMouseOver={(e) => {
-            if (!isActive(null)) e.currentTarget.style.background = '#F8FAFC';
-          }}
-          onMouseOut={(e) => {
-            if (!isActive(null)) e.currentTarget.style.background = 'transparent';
+        {/* Scrollable List Container */}
+        <div 
+          className="forum-sidebar-scroll"
+          style={{ 
+            overflowY: 'auto', 
+            paddingRight: 4,
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: 4 
           }}
         >
-          Tất cả môn học
-        </div>
+          {/* Nút Tất cả */}
+          <div
+            onClick={() => {
+              onSelectCategory(null, null);
+              handleClearSearch();
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '10px 12px',
+              background: isActive(null) ? '#EFF6FF' : 'transparent',
+              borderRadius: 8,
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              marginBottom: 8,
+            }}
+            onMouseOver={(e) => { if (!isActive(null)) e.currentTarget.style.background = '#F8FAFC'; }}
+            onMouseOut={(e) => { if (!isActive(null)) e.currentTarget.style.background = 'transparent'; }}
+          >
+            <div style={{
+              width: 32, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: isActive(null) ? '#DBEAFE' : '#F1F5F9'
+            }}>
+              <LayoutGrid size={16} color={isActive(null) ? '#1D4ED8' : '#64748B'} />
+            </div>
+            <span style={{ 
+              fontWeight: isActive(null) ? '600' : '500', 
+              color: isActive(null) ? '#1D4ED8' : '#334155',
+              fontSize: 14 
+            }}>
+              Tất cả danh mục
+            </span>
+          </div>
 
-        {/* Danh sách danh mục dạng phẳng (Flat Category List - Không Accordion, Không Icon) */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {/* Danh mục */}
           {categories.map((cat) => {
             const selected = isActive(cat.id);
             const isHighlighted = highlightedId === cat.id;
@@ -215,32 +255,35 @@ export const ForumSidebar: React.FC<ForumSidebarProps> = ({
             return (
               <div
                 key={cat.id}
-                ref={(el) => {
-                  itemRefs.current[cat.id] = el;
-                }}
+                ref={(el) => { itemRefs.current[cat.id] = el; }}
                 onClick={() => onSelectCategory(cat.id, cat.name)}
                 style={{
-                  padding: '10px 16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: '8px 12px',
                   borderRadius: 8,
                   cursor: 'pointer',
-                  fontSize: 14,
-                  fontWeight: selected ? '600' : '400',
-                  color: selected ? '#1D4ED8' : '#334155',
-                  background: selected
-                    ? '#EFF6FF'
-                    : isHighlighted
-                    ? '#DBEAFE'
-                    : 'transparent',
+                  background: selected ? '#EFF6FF' : isHighlighted ? '#DBEAFE' : 'transparent',
                   transition: 'all 0.2s ease',
                 }}
-                onMouseOver={(e) => {
-                  if (!selected && !isHighlighted) e.currentTarget.style.background = '#F8FAFC';
-                }}
-                onMouseOut={(e) => {
-                  if (!selected && !isHighlighted) e.currentTarget.style.background = 'transparent';
-                }}
+                onMouseOver={(e) => { if (!selected && !isHighlighted) e.currentTarget.style.background = '#F8FAFC'; }}
+                onMouseOut={(e) => { if (!selected && !isHighlighted) e.currentTarget.style.background = 'transparent'; }}
               >
-                <span style={{ flex: 1, lineHeight: 1.3 }}>{cat.name}</span>
+                <div style={{
+                  width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: selected ? '#DBEAFE' : '#F8FAFC'
+                }}>
+                  {getCategoryIcon(cat.name, selected)}
+                </div>
+                <span style={{ 
+                  flex: 1, lineHeight: 1.3, fontSize: 13,
+                  fontWeight: selected ? '600' : '500', 
+                  color: selected ? '#1D4ED8' : '#475569' 
+                }}>
+                  {cat.name}
+                </span>
               </div>
             );
           })}
@@ -249,3 +292,4 @@ export const ForumSidebar: React.FC<ForumSidebarProps> = ({
     </aside>
   );
 };
+

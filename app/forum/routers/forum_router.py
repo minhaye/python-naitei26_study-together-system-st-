@@ -43,6 +43,38 @@ async def create_category(data: ForumCategoryCreate, session: AsyncSession = Dep
 async def list_categories(session: AsyncSession = Depends(get_db_session)):
     return await service.list_categories(session)
 
+@router.get("/migrate-categories")
+async def migrate_categories(session: AsyncSession = Depends(get_db_session)):
+    from sqlalchemy import select, update, delete
+    from app.forum.entities.forum_entity import ForumCategory, ForumPost
+    new_names = [
+        'Công nghệ thông tin (IT)', 'Kinh tế & Tài chính', 'Quản trị & Marketing',
+        'Toán học & Toán cao cấp', 'Khoa học Tự nhiên', 'Ngoại ngữ',
+        'Y khoa & Dược học', 'Luật học', 'Khoa học Xã hội & Nhân văn',
+        'Triết học & Chính trị', 'Kiến trúc & Thiết kế', 'Ôn thi THPT Quốc gia-TSA-HSA',
+        'Trung học Cơ sở (THCS)','Trung học Phổ Thông (THPT)', 'Sức khỏe', 'Kỹ năng mềm & Nghề nghiệp', 'Góc thư giãn', 'Hỏi đáp chung'
+    ]
+    res = await session.execute(select(ForumCategory))
+    existing_cats = res.scalars().all()
+    existing_names = {c.name: c for c in existing_cats}
+    
+    created_cats = {}
+    for name in new_names:
+        if name not in existing_names:
+            cat = ForumCategory(name=name, description='')
+            session.add(cat)
+            created_cats[name] = cat
+        else:
+            created_cats[name] = existing_names[name]
+    await session.flush()
+    fallback_cat = created_cats['Hỏi đáp chung']
+    for old_cat in existing_cats:
+        if old_cat.name not in new_names:
+            await session.execute(update(ForumPost).where(ForumPost.category_id == old_cat.id).values(category_id=fallback_cat.id))
+            await session.execute(delete(ForumCategory).where(ForumCategory.id == old_cat.id))
+    await session.commit()
+    return {"message": "migrated"}
+
 
 @router.get("/categories/{category_id}", response_model=ForumCategoryResponse)
 async def get_category(category_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)):
