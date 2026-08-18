@@ -101,8 +101,16 @@ async def test_meeting_token_forbidden_for_left_member(async_client, monkeypatch
 
 
 async def test_meeting_token_success_for_host(async_client, monkeypatch, as_fake_user):
+    """A host needs the same active study_room_members row as anyone else (2026-08-18 --
+    host_id alone no longer bypasses the membership check); guaranteed in practice by
+    StudyRoomsService.create()."""
     room = _make_room(host_id=as_fake_user.id)
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=StudyRoomMember(room_id=room.id, user_id=as_fake_user.id)),
+    )
     monkeypatch.setattr(study_room_router.profiles_service, "get_by_id", AsyncMock(return_value=None))
 
     response = await async_client.post(f"/study-rooms/{room.id}/meeting/token", headers=AUTH_HEADERS)
@@ -111,6 +119,20 @@ async def test_meeting_token_success_for_host(async_client, monkeypatch, as_fake
     body = response.json()
     assert body["server_url"] == settings.livekit_url
     assert body["participant_token"]
+
+
+async def test_meeting_token_forbidden_for_host_without_active_room_membership(
+    async_client, monkeypatch, as_fake_user
+):
+    """2026-08-18 policy: a meeting token must never be issued solely because host_id matches
+    the caller -- host_id alone (no active study_room_members row) must not bypass the normal
+    participation check."""
+    room = _make_room(host_id=as_fake_user.id)
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
+
+    response = await async_client.post(f"/study-rooms/{room.id}/meeting/token", headers=AUTH_HEADERS)
+    assert response.status_code == 403
 
 
 async def test_meeting_token_success_for_active_member(async_client, monkeypatch, as_fake_user):
@@ -169,17 +191,19 @@ async def test_meeting_token_ended_room_authorized_member_denied(async_client, m
 
 
 async def test_meeting_token_ended_room_host_denied(async_client, monkeypatch, as_fake_user):
-    """Even the host -- who bypasses the membership check entirely in can_access_room -- must
-    still be denied once the room has ended."""
+    """Even a host with a valid active membership row must be denied once the room has
+    ended -- the lifecycle gate applies on top of (not instead of) the membership check."""
     room = _make_room(status=StudyRoomStatus.ENDED, host_id=as_fake_user.id)
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
-    get_member_mock = AsyncMock()
-    monkeypatch.setattr(permissions.study_rooms_service, "get_member", get_member_mock)
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=StudyRoomMember(room_id=room.id, user_id=as_fake_user.id)),
+    )
     monkeypatch.setattr(study_room_router.profiles_service, "get_by_id", AsyncMock(return_value=None))
 
     response = await async_client.post(f"/study-rooms/{room.id}/meeting/token", headers=AUTH_HEADERS)
     assert response.status_code == 403
-    get_member_mock.assert_not_awaited()
 
 
 # --- Deleted room: no new LiveKit token for anyone, regardless of prior authority ---
@@ -208,7 +232,8 @@ async def test_meeting_token_deleted_room_denied_for_previously_active_member(as
 async def test_meeting_token_deleted_room_denied_via_can_access_room_directly(monkeypatch):
     """Defense-in-depth unit check on the permission helper itself, independent of the router's
     404 gate: can_access_room (and therefore can_join_room_meeting) must deny a deleted room
-    even for the host, who otherwise bypasses the membership check entirely."""
+    for every caller, including the host -- the deleted_at guard is checked first,
+    unconditionally, before the (now membership-only) participation check."""
     room = _make_room(host_id=uuid.uuid4())
     room.deleted_at = datetime.now(timezone.utc)
 
@@ -218,6 +243,11 @@ async def test_meeting_token_deleted_room_denied_via_can_access_room_directly(mo
 async def test_meeting_token_response_never_leaks_livekit_secret(async_client, monkeypatch, as_fake_user):
     room = _make_room(host_id=as_fake_user.id)
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=StudyRoomMember(room_id=room.id, user_id=as_fake_user.id)),
+    )
     monkeypatch.setattr(study_room_router.profiles_service, "get_by_id", AsyncMock(return_value=None))
 
     response = await async_client.post(f"/study-rooms/{room.id}/meeting/token", headers=AUTH_HEADERS)
@@ -234,6 +264,11 @@ async def test_meeting_token_response_never_leaks_livekit_secret(async_client, m
 async def test_meeting_token_identity_matches_authenticated_user(async_client, monkeypatch, as_fake_user):
     room = _make_room(host_id=as_fake_user.id)
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=StudyRoomMember(room_id=room.id, user_id=as_fake_user.id)),
+    )
     monkeypatch.setattr(study_room_router.profiles_service, "get_by_id", AsyncMock(return_value=None))
 
     response = await async_client.post(f"/study-rooms/{room.id}/meeting/token", headers=AUTH_HEADERS)
@@ -245,6 +280,11 @@ async def test_meeting_token_identity_matches_authenticated_user(async_client, m
 async def test_meeting_token_room_restricted_to_study_room(async_client, monkeypatch, as_fake_user):
     room = _make_room(host_id=as_fake_user.id)
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=StudyRoomMember(room_id=room.id, user_id=as_fake_user.id)),
+    )
     monkeypatch.setattr(study_room_router.profiles_service, "get_by_id", AsyncMock(return_value=None))
 
     response = await async_client.post(f"/study-rooms/{room.id}/meeting/token", headers=AUTH_HEADERS)
@@ -257,6 +297,11 @@ async def test_meeting_token_room_restricted_to_study_room(async_client, monkeyp
 async def test_meeting_token_grants_are_minimal(async_client, monkeypatch, as_fake_user):
     room = _make_room(host_id=as_fake_user.id)
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=StudyRoomMember(room_id=room.id, user_id=as_fake_user.id)),
+    )
     monkeypatch.setattr(study_room_router.profiles_service, "get_by_id", AsyncMock(return_value=None))
 
     response = await async_client.post(f"/study-rooms/{room.id}/meeting/token", headers=AUTH_HEADERS)
@@ -278,6 +323,11 @@ async def test_meeting_token_uses_display_name_when_available(async_client, monk
     room = _make_room(host_id=as_fake_user.id)
     profile = Profile(id=as_fake_user.id, display_name="Study Buddy")
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=StudyRoomMember(room_id=room.id, user_id=as_fake_user.id)),
+    )
     monkeypatch.setattr(study_room_router.profiles_service, "get_by_id", AsyncMock(return_value=profile))
 
     response = await async_client.post(f"/study-rooms/{room.id}/meeting/token", headers=AUTH_HEADERS)
@@ -298,8 +348,13 @@ async def test_meeting_token_isolation_across_rooms(async_client, monkeypatch, a
     async def get_by_id(session, room_id):
         return room_a if room_id == room_a.id else room_b
 
+    async def get_member(session, room_id, user_id):
+        # The caller has an active membership row in room A only (their own room) -- room B
+        # must fall through to the non-member denial, not any host_id-based shortcut.
+        return StudyRoomMember(room_id=room_a.id, user_id=as_fake_user.id) if room_id == room_a.id else None
+
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(side_effect=get_by_id))
-    monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
+    monkeypatch.setattr(permissions.study_rooms_service, "get_member", get_member)
     monkeypatch.setattr(study_room_router.profiles_service, "get_by_id", AsyncMock(return_value=None))
 
     response_a = await async_client.post(f"/study-rooms/{room_a.id}/meeting/token", headers=AUTH_HEADERS)

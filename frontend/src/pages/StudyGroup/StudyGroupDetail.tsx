@@ -140,17 +140,17 @@ export function StudyGroupDetail() {
 
   const activeMembers = groupMembers.filter((m) => m.status === 'active');
   const isOwner = !!group && !!currentUserId && group.owner_id === currentUserId;
-  // Backend rule (POST /study-rooms/): any ACTIVE group member -- any role, not just
-  // owner/moderator -- may create a study room (STUDY_PLATFORM_DATABASE_SPEC.md §16).
-  const isActiveMember = isOwner || (!!currentUserId && activeMembers.some((m) => m.user_id === currentUserId));
-  // Backend rule (POST /channels/, is_group_manager): only the group owner or an active
-  // moderator may create a channel -- unlike Study Rooms, plain members cannot.
+  // Backend rule (POST /channels/ and POST /study-rooms/, both via is_group_manager): only
+  // the group owner or an active moderator may create a channel or a study room -- a plain
+  // member cannot (changed 2026-08-18: study room creation used to be open to any active
+  // member, see STUDY_PLATFORM_DATABASE_SPEC.md §16).
   const isGroupManager =
     isOwner || (!!currentUserId && activeMembers.some((m) => m.user_id === currentUserId && m.role === 'moderator'));
-  // Backend rule (DELETE /study-rooms/{id}): the room's host, OR an active group owner/
-  // moderator, may delete it -- an ordinary member or non-member cannot. This is UX-only;
-  // the backend independently re-checks the same rule (study_room_router.delete_room).
-  const canDeleteRoom = (room: StudyRoom) => (!!currentUserId && room.host_id === currentUserId) || isGroupManager;
+  // Backend rule (DELETE /study-rooms/{id}): only an active group owner/moderator may delete
+  // a room -- being its host is not sufficient on its own (2026-08-18 policy change: host_id
+  // is creator metadata, not an independent authorization grant). This is UX-only; the
+  // backend independently re-checks the same rule (study_room_router.delete_room).
+  const canDeleteRoom = isGroupManager;
 
   async function handleLeaveGroup() {
     if (!group || !currentUserId || isLeaving) return;
@@ -697,7 +697,7 @@ export function StudyGroupDetail() {
                     <div style={{marginBottom: 24}}>
                         <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingLeft: 8, paddingRight: 4}}>
                             <div style={{color: '#64748B', fontSize: 12, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase'}}>Phòng học</div>
-                            {isActiveMember && (
+                            {isGroupManager && (
                                 <button
                                     onClick={() => { setCreateRoomError(null); setIsCreateRoomModalOpen(true); }}
                                     title="Tạo phòng học mới"
@@ -727,7 +727,7 @@ export function StudyGroupDetail() {
                                             <div style={{background: room.status === 'active' ? '#10B981' : '#F59E0B', color: 'white', fontSize: 10, fontWeight: '700', padding: '2px 6px', borderRadius: 4}}>
                                                 {room.status === 'active' ? 'LIVE' : 'CHỜ'}
                                             </div>
-                                            {canDeleteRoom(room) && (
+                                            {canDeleteRoom && (
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); setOpenRoomMenuId(isRoomMenuOpen ? null : room.id); }}
                                                     title="Tùy chọn phòng học"
@@ -930,7 +930,7 @@ export function StudyGroupDetail() {
                                 <div style={{padding: 20, flex: 1, display: 'flex', flexDirection: 'column'}}>
                                     <div style={{display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 6}}>
                                         <div style={{fontSize: 18, fontWeight: '700', color: '#0F172A'}}>{room.name}</div>
-                                        {canDeleteRoom(room) && (
+                                        {canDeleteRoom && (
                                             <button
                                                 onClick={() => { setOpenRoomMenuId(null); setDeleteRoomError(null); setRoomPendingDelete(room); }}
                                                 title="Xóa phòng học"

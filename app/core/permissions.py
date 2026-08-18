@@ -6,7 +6,7 @@ from app.channels.entities.channel_entity import Channel
 from app.channels.services.channel_service import ChannelsService
 from app.conversations.entities.conversation_entity import Conversation
 from app.conversations.services.conversation_service import ConversationsService
-from app.db.enums import ConversationType, GroupMemberRole, MemberStatus, StudyRoomMemberRole, StudyRoomStatus
+from app.db.enums import ConversationType, GroupMemberRole, MemberStatus, StudyRoomStatus
 from app.groups.entities.group_entity import Group
 from app.groups.services.group_service import GroupsService
 from app.study_rooms.entities.study_room_entity import StudyRoom
@@ -34,10 +34,10 @@ async def is_group_manager(session: AsyncSession, group_id: uuid.UUID, user_id: 
 
 def is_group_owner(group: Group, user_id: uuid.UUID) -> bool:
     """Stricter than `is_group_manager` (owner-only, not owner-or-moderator). Reads the
-    denormalized `groups.owner_id` directly rather than re-querying group_members --
-    mirrors `is_room_host` below. Used for operations the spec keeps conservative/owner-only:
-    group update/delete, member role changes, and ban/reactivate/remove (moderator authority
-    over these is explicitly left unresolved by the spec, so it is not granted here)."""
+    denormalized `groups.owner_id` directly rather than re-querying group_members. Used for
+    operations the spec keeps conservative/owner-only: group update/delete, member role
+    changes, and ban/reactivate/remove (moderator authority over these is explicitly left
+    unresolved by the spec, so it is not granted here)."""
     return group.owner_id == user_id
 
 
@@ -74,29 +74,22 @@ async def is_active_room_member(session: AsyncSession, room_id: uuid.UUID, user_
     return member is not None and member.left_at is None
 
 
-def is_room_host(room: StudyRoom, user_id: uuid.UUID) -> bool:
-    return room.host_id == user_id
-
-
-async def is_room_moderator(session: AsyncSession, room_id: uuid.UUID, user_id: uuid.UUID) -> bool:
-    member = await study_rooms_service.get_member(session, room_id, user_id)
-    return member is not None and member.left_at is None and member.role == StudyRoomMemberRole.MODERATOR
-
-
 async def can_manage_room(session: AsyncSession, room: StudyRoom, user_id: uuid.UUID) -> bool:
-    """Mirrors the documented `is_room_manager = host OR room moderator` concept
-    (STUDY_PLATFORM_DATABASE_SPEC.md §35): who may take moderator-level actions
-    (KICK/MUTE/UNMUTE) in a room. Deliberately narrower than `can_access_room` --
-    a plain participant has room access but not management authority.
+    """Room management authority (update/start/end/delete, KICK/MUTE/UNMUTE, member-role
+    changes) derives entirely from the actor's CURRENT Group role -- `is_group_manager`
+    (active owner or moderator of `room.group_id`), never from `study_rooms.host_id` or from
+    a room-scoped `study_room_members.role` (2026-08-18 policy: `host_id` identifies the
+    original creator, it is not an independent or permanent authorization grant -- see
+    STUDY_PLATFORM_DATABASE_SPEC.md §16/§22). Without this, a Moderator who creates a room and
+    is later demoted to plain Member (or leaves/is banned from the Group) would keep
+    unconditional host authority over that room forever, since `host_id` never changes.
 
     A soft-deleted room (deleted_at set) is denied outright, before any other check --
     this does not go through `can_access_room`, so it needs its own guard (see
     docs/db/migrations/010_soft_delete_study_rooms.sql)."""
     if room.deleted_at is not None:
         return False
-    if is_room_host(room, user_id):
-        return True
-    return await is_room_moderator(session, room.id, user_id)
+    return await is_group_manager(session, room.group_id, user_id)
 
 
 def can_join_room(room: StudyRoom) -> bool:
@@ -108,10 +101,16 @@ def can_join_room(room: StudyRoom) -> bool:
 
 async def can_access_room(session: AsyncSession, room: StudyRoom, user_id: uuid.UUID) -> bool:
     """Mirrors the intended `can_access_conversation` RLS helper for room conversations.
-    The host always has access, even if their own membership row is somehow inactive;
-    everyone else needs an active (non-left) `study_room_members` row. Study rooms have
-    no separate "banned" concept -- `RoomModerationAction.KICK` is only an audit log entry,
-    so a kicked member is indistinguishable from one who left (`left_at` set).
+    Participation requires an active (non-left) `study_room_members` row -- `room.host_id` is
+    NOT an independent access grant (2026-08-18 policy change: `host_id` identifies the
+    original creator, it does not confer standing authorization -- see
+    STUDY_PLATFORM_DATABASE_SPEC.md §16). This is safe because room creation always inserts an
+    active HOST-role `study_room_members` row for the creator in the same transaction (see
+    `StudyRoomsService.create`) -- a legitimate, still-participating host is covered by the
+    same membership check as everyone else; only a host who has since left the room (or was
+    never actually a member, a data anomaly) loses the access `host_id` alone used to grant.
+    Study rooms have no separate "banned" concept -- `RoomModerationAction.KICK` is only an
+    audit log entry, so a kicked member is indistinguishable from one who left (`left_at` set).
 
     A soft-deleted room (deleted_at set) is denied outright, before any other check -- this
     must hold for every caller, including the host, so a deleted room behaves as if it no
@@ -121,8 +120,6 @@ async def can_access_room(session: AsyncSession, room: StudyRoom, user_id: uuid.
     `can_access_conversation`/`can_send_to_conversation`/`can_join_room_meeting`)."""
     if room.deleted_at is not None:
         return False
-    if room.host_id == user_id:
-        return True
     return await is_active_room_member(session, room.id, user_id)
 
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from './useAuth';
 import { ApiError } from '../lib/apiClient';
+import { listGroupMembers } from '../lib/group.api';
 import {
   deleteStudyRoom,
   endStudyRoom,
@@ -57,6 +58,7 @@ export function useStudyRoom(roomId: string | undefined) {
   const [room, setRoom] = useState<StudyRoom | null>(null);
   const [members, setMembers] = useState<StudyRoomMember[]>([]);
   const [moderationActions, setModerationActions] = useState<RoomModerationAction[]>([]);
+  const [groupManagerIds, setGroupManagerIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [roomError, setRoomError] = useState<StudyRoomError | null>(null);
   const [membersError, setMembersError] = useState<StudyRoomError | null>(null);
@@ -106,6 +108,29 @@ export function useStudyRoom(roomId: string | undefined) {
     }
   }, [roomId, isLoggedIn]);
 
+  // Backend rule (app/core/permissions.py::is_group_manager, used by can_manage_room): room
+  // MANAGEMENT authority (update/start/end/delete, kick/mute/unmute, member-role changes) is
+  // derived entirely from the caller's CURRENT active Group owner/moderator status -- never
+  // from study_rooms.host_id or a room-scoped member role (2026-08-18 policy change). This is
+  // UX-only; the backend independently re-checks the same rule on every request.
+  const loadGroupManagerIds = useCallback(async () => {
+    if (!room || !isLoggedIn) return;
+    try {
+      const data = await listGroupMembers(room.group_id);
+      setGroupManagerIds(
+        new Set(
+          data
+            .filter((m) => m.status === 'active' && (m.role === 'owner' || m.role === 'moderator'))
+            .map((m) => m.user_id)
+        )
+      );
+    } catch {
+      // Non-critical for read access -- only used to gate management-action buttons; the
+      // backend is the real authorization boundary regardless of this state.
+      setGroupManagerIds(new Set());
+    }
+  }, [room, isLoggedIn]);
+
   useEffect(() => {
     loadRoom();
   }, [loadRoom]);
@@ -114,17 +139,16 @@ export function useStudyRoom(roomId: string | undefined) {
     if (!room) return;
     loadMembers();
     loadModeration();
-  }, [room, loadMembers, loadModeration]);
+    loadGroupManagerIds();
+  }, [room, loadMembers, loadModeration, loadGroupManagerIds]);
 
   const currentMember = useMemo(
     () => members.find((m) => m.user_id === currentUserId) ?? null,
     [members, currentUserId]
   );
 
-  const isCurrentUserHost = !!room && !!currentUserId && room.host_id === currentUserId;
-  const isCurrentUserModerator = currentMember?.role === 'moderator';
-  const isCurrentUserMember = isCurrentUserHost || (!!currentMember && !currentMember.left_at);
-  const canModerate = isCurrentUserHost || isCurrentUserModerator;
+  const isCurrentUserMember = !!currentMember && !currentMember.left_at;
+  const isGroupManager = !!currentUserId && groupManagerIds.has(currentUserId);
 
   // Derived, real-data-backed indicators from the moderation audit log (latest action per user wins).
   // These are NOT LiveKit/media state — see studyRoom.types.ts ModerationAction.
@@ -239,10 +263,8 @@ export function useStudyRoom(roomId: string | undefined) {
     clearActionError: () => setActionError(null),
     currentUserId,
     currentMember,
-    isCurrentUserHost,
-    isCurrentUserModerator,
     isCurrentUserMember,
-    canModerate,
+    isGroupManager,
     handRaisedUserIds,
     moderationMutedUserIds,
     join,

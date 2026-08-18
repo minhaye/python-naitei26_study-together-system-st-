@@ -72,8 +72,7 @@ export function StudyRoom() {
     actionError,
     clearActionError,
     currentUserId,
-    isCurrentUserHost,
-    canModerate,
+    isGroupManager,
     isCurrentUserMember,
     handRaisedUserIds,
     moderationMutedUserIds,
@@ -414,7 +413,7 @@ export function StudyRoom() {
               {actionError.message}
             </div>
           )}
-          {isCurrentUserHost && room.status === 'waiting' && (
+          {isGroupManager && room.status === 'waiting' && (
             <button
               onClick={handleStartRoom}
               disabled={isLifecycleBusy}
@@ -423,7 +422,7 @@ export function StudyRoom() {
               Bắt đầu phòng
             </button>
           )}
-          {isCurrentUserHost && room.status === 'active' && (
+          {isGroupManager && room.status === 'active' && (
             <button
               onClick={handleEndRoom}
               disabled={isLifecycleBusy}
@@ -432,7 +431,7 @@ export function StudyRoom() {
               Kết thúc phòng
             </button>
           )}
-          {isCurrentUserHost && (
+          {isGroupManager && (
             <button
               onClick={() => setIsDeleteRoomModalOpen(true)}
               title="Xóa phòng học"
@@ -944,7 +943,11 @@ export function StudyRoom() {
               <div style={{flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12}}>
                 <span style={{color: '#94A3B8', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5}}>Danh sách đang tham gia</span>
                 {participants.map((p) => {
-                  const canActOnThisMember = canModerate && !p.isSelf && !p.isHost;
+                  // Backend rule (can_manage_room / is_group_manager): a current active Group
+                  // owner/moderator may moderate any room member, including whoever holds the
+                  // HOST role -- the room-scoped "moderators cannot act against the host"
+                  // carve-out was removed 2026-08-18 alongside the host_id authorization fix.
+                  const canActOnThisMember = isGroupManager && !p.isSelf;
                   return (
                   <div key={p.id} style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: '#0F172A', borderRadius: 10, border: '1px solid #334155', gap: 8}}>
                     <div style={{display: 'flex', alignItems: 'center', gap: 10, minWidth: 0}}>
@@ -974,15 +977,16 @@ export function StudyRoom() {
                           >
                             {p.isMuted ? <Mic size={15} /> : <MicOff size={15} />}
                           </button>
-                          {isCurrentUserHost && (
-                            <button
-                              onClick={() => handleToggleModerator(p.userId, p.isModerator)}
-                              title={p.isModerator ? 'Bỏ quyền điều hành' : 'Đặt làm điều hành viên'}
-                              style={{background: 'transparent', border: 'none', color: p.isModerator ? '#7C3AED' : '#94A3B8', cursor: 'pointer', padding: 4, display: 'flex'}}
-                            >
-                              {p.isModerator ? <ShieldOff size={15} /> : <ShieldCheck size={15} />}
-                            </button>
-                          )}
+                          {/* Backend rule (update_member_role): also requires an active
+                              Group owner/moderator, same as canActOnThisMember above -- no
+                              separate host-only gate needed here any more. */}
+                          <button
+                            onClick={() => handleToggleModerator(p.userId, p.isModerator)}
+                            title={p.isModerator ? 'Bỏ quyền điều hành' : 'Đặt làm điều hành viên'}
+                            style={{background: 'transparent', border: 'none', color: p.isModerator ? '#7C3AED' : '#94A3B8', cursor: 'pointer', padding: 4, display: 'flex'}}
+                          >
+                            {p.isModerator ? <ShieldOff size={15} /> : <ShieldCheck size={15} />}
+                          </button>
                           <button
                             onClick={() => handleKick(p.userId)}
                             title="Mời ra khỏi phòng"

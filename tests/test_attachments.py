@@ -583,8 +583,9 @@ async def test_room_upload_url_denied_for_ended_room(async_client, monkeypatch, 
 
 async def test_room_upload_url_denied_for_deleted_room_even_for_host(async_client, monkeypatch, as_fake_user):
     """A soft-deleted room must reject uploads for every caller, including its own host --
-    mirrors the ended-room lifecycle gate above but is stricter (host bypasses membership
-    checks but not the deleted_at guard, see can_access_room)."""
+    mirrors the ended-room lifecycle gate above but is stricter: the deleted_at guard is
+    checked first, unconditionally, before the (membership-only) participation check, see
+    can_access_room."""
     from datetime import datetime, timezone
 
     room = _make_room(host_id=as_fake_user.id)
