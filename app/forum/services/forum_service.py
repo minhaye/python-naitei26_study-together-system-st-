@@ -160,6 +160,56 @@ class ForumService:
 
     # --- Likes ---
 
+    async def list_liked_posts(
+        self, session: AsyncSession, user_id: uuid.UUID, skip: int = 0, limit: int = 50
+    ) -> list[ForumPost]:
+        from sqlalchemy import func, select
+        from sqlalchemy.orm import selectinload, aliased
+        from app.forum.entities.forum_entity import Comment, PostLike, ForumPost
+        
+        comments_count_subq = (
+            select(func.count(Comment.id))
+            .where(Comment.post_id == ForumPost.id)
+            .scalar_subquery()
+        )
+        
+        PostLikeAlias = aliased(PostLike)
+        likes_count_subq = (
+            select(func.count(PostLikeAlias.id))
+            .where(PostLikeAlias.post_id == ForumPost.id)
+            .scalar_subquery()
+        )
+        
+        stmt = select(
+            ForumPost, 
+            comments_count_subq.label("comments_count"), 
+            likes_count_subq.label("likes_count")
+        ).join(
+            PostLike, PostLike.post_id == ForumPost.id
+        ).options(
+            selectinload(ForumPost.category),
+            selectinload(ForumPost.author)
+        ).where(
+            ForumPost.deleted_at.is_(None),
+            PostLike.user_id == user_id
+        ).order_by(
+            PostLike.created_at.desc()
+        ).offset(skip).limit(limit)
+        
+        result = await session.execute(stmt)
+        rows = result.all()
+        
+        posts = []
+        for post, c_count, l_count in rows:
+            post.category_name = post.category.name if post.category else None
+            post.author_name = post.author.display_name if post.author else None
+            post.likes_count = l_count
+            post.comments_count = c_count
+            post.is_liked = True
+            posts.append(post)
+            
+        return posts
+
     async def like_post(self, session: AsyncSession, post_id: uuid.UUID, user_id: uuid.UUID) -> PostLike:
         like = PostLike(post_id=post_id, user_id=user_id)
         session.add(like)

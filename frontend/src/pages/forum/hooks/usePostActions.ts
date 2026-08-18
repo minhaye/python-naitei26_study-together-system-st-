@@ -36,9 +36,9 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
       const isCurrentlyLiked = current?.isLiked ?? false;
 
       if (isCurrentlyLiked) {
-        await forumApi.unlikePost(postId);
+        await forumApi.unlikePost(postId, currentUser.id);
       } else {
-        await forumApi.likePost(postId);
+        await forumApi.likePost(postId, currentUser.id);
       }
 
       setPosts((prev) =>
@@ -52,6 +52,8 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
             : p
         )
       );
+
+      window.dispatchEvent(new CustomEvent('post_liked_toggled'));
     });
   };
 

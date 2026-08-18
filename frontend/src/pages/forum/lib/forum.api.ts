@@ -125,13 +125,17 @@ export const forumApi = {
   },
 
   likePost: async (postId: string, userId?: string): Promise<void> => {
-    // TODO: implement real endpoints logic handling user ID gracefully. For now sending dummy if needed.
-    // If backend requires auth token, apiClient sets it.
-    await apiClient.post(`/forum/posts/${postId}/like`, { post_id: postId, user_id: userId ?? '00000000-0000-0000-0000-000000000000' });
+    // Backend expects user_id as query param
+    await apiClient.post(`/forum/posts/${postId}/like?user_id=${userId ?? '00000000-0000-0000-0000-000000000000'}`, {});
   },
 
   unlikePost: async (postId: string, userId?: string): Promise<void> => {
     await apiClient.delete(`/forum/posts/${postId}/unlike?user_id=${userId ?? '00000000-0000-0000-0000-000000000000'}`);
+  },
+
+  getLikedPosts: async (userId: string, skip = 0, limit = 50): Promise<Post[]> => {
+    const response = await apiClient.get<ForumPostResponse[]>(`/forum/users/${userId}/liked-posts?skip=${skip}&limit=${limit}`);
+    return response.map((p) => mapPost(p));
   },
 
   getComments: async (postId: string): Promise<Comment[]> => {

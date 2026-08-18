@@ -4,54 +4,46 @@
  * Tích hợp <Avatar name={...} size="sm" /> đồng bộ.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../../hooks/useAuth';
 import { LikedPostSkeleton, TrendingTopicSkeleton } from '../../../components/ui/Skeleton';
 import { Avatar } from '../../../components/ui/Avatar';
+import { forumApi } from '../lib/forum.api';
+import type { Post } from '../types/forum.types';
+import { LikedPostsModal } from './LikedPostsModal';
 
 export const ForumRightSidebar: React.FC = () => {
-  const { isLoggedIn } = useAuth();
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [isLoadingLiked] = useState(false);
+  const { isLoggedIn, currentUser } = useAuth();
+  const [isLoadingLiked, setIsLoadingLiked] = useState(false);
   const [isLoadingTrending] = useState(false);
+  const [likedPosts, setLikedPosts] = useState<Post[]>([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const likedPosts = [
-    {
-      id: 'post-1',
-      authorName: 'Hải Minh',
-      timeAgo: '4 ngày trước',
-      title: 'most useful barrier oat',
-      likes: 85,
-      comments: 1,
-    },
-    {
-      id: 'post-2',
-      authorName: 'Tuấn Tú',
-      timeAgo: '6 ngày trước',
-      title: 'Sự khác biệt giữa Abstract Class',
-      likes: 76,
-      comments: 33,
-    },
-    {
-      id: 'post-3',
-      authorName: 'Ngọc Anh',
-      timeAgo: '1 tuần trước',
-      title: 'Giải thích hiện tượng giao thoa ánh sáng',
-      likes: 42,
-      comments: 15,
-    },
-    {
-      id: 'liked-4',
-      authorName: 'Khánh Hoàng',
-      timeAgo: '2 tuần trước',
-      title: 'Ôn thi Cấu trúc dữ liệu & Giải thuật',
-      likes: 95,
-      comments: 28,
-    },
-  ];
+  useEffect(() => {
+    const fetchLikedPosts = () => {
+      if (isLoggedIn && currentUser?.id) {
+        setIsLoadingLiked(true);
+        forumApi.getLikedPosts(currentUser.id, 0, 50)
+          .then(posts => {
+            setLikedPosts(posts);
+          })
+          .catch(console.error)
+          .finally(() => {
+            setIsLoadingLiked(false);
+          });
+      }
+    };
 
-  const visiblePosts = isExpanded ? likedPosts : likedPosts.slice(0, 2);
+    fetchLikedPosts();
+    
+    window.addEventListener('post_liked_toggled', fetchLikedPosts);
+    return () => {
+      window.removeEventListener('post_liked_toggled', fetchLikedPosts);
+    };
+  }, [isLoggedIn, currentUser?.id]);
+
+  const visiblePosts = likedPosts.slice(0, 2);
 
   return (
     <aside
@@ -183,10 +175,10 @@ export const ForumRightSidebar: React.FC = () => {
               BÀI VIẾT ĐÃ THÍCH
             </div>
             <div
-              onClick={() => setIsExpanded((prev) => !prev)}
+              onClick={() => setIsModalOpen(true)}
               style={{ color: '#1E3A8A', fontSize: 12, fontWeight: '500', cursor: 'pointer' }}
             >
-              {isExpanded ? 'Thu gọn' : 'Xem thêm'}
+              Xem thêm
             </div>
           </div>
 
@@ -196,6 +188,12 @@ export const ForumRightSidebar: React.FC = () => {
                 <LikedPostSkeleton />
                 <LikedPostSkeleton />
               </>
+            )}
+
+            {!isLoadingLiked && likedPosts.length === 0 && (
+              <div style={{ fontSize: 13, color: '#64748B', textAlign: 'center', padding: '8px 0' }}>
+                Chưa có bài viết nào
+              </div>
             )}
 
             {!isLoadingLiked &&
@@ -216,6 +214,10 @@ export const ForumRightSidebar: React.FC = () => {
                         fontWeight: '500',
                         textDecoration: 'none',
                         transition: 'color 0.2s',
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
                       }}
                       onMouseOver={(e) => (e.currentTarget.style.color = '#1D4ED8')}
                       onMouseOut={(e) => (e.currentTarget.style.color = '#0F172A')}
@@ -223,30 +225,56 @@ export const ForumRightSidebar: React.FC = () => {
                       {post.title}
                     </Link>
                     <div style={{ display: 'flex', gap: 12, fontSize: 11, color: '#64748B', paddingTop: 2 }}>
-                      <span>{post.likes} thích</span>
-                      <span>{post.comments} bình luận</span>
+                      <span>{post.likesCount} thích</span>
+                      <span>{post.commentsCount} bình luận</span>
                     </div>
                   </div>
-                  <div
-                    style={{
-                      width: 48,
-                      height: 48,
-                      background: '#F1F5F9',
-                      borderRadius: 6,
-                      border: '1px #E2E8F0 solid',
-                      display: 'flex',
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <div style={{ width: 18, height: 18, background: '#CBD5E1', borderRadius: 2 }} />
-                  </div>
+                  {post.imagePath ? (
+                    <div
+                      style={{
+                        width: 48,
+                        height: 48,
+                        background: '#F1F5F9',
+                        borderRadius: 6,
+                        border: '1px #E2E8F0 solid',
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        flexShrink: 0,
+                        overflow: 'hidden'
+                      }}
+                    >
+                      <img src={post.imagePath} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        width: 48,
+                        height: 48,
+                        background: '#F1F5F9',
+                        borderRadius: 6,
+                        border: '1px #E2E8F0 solid',
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <div style={{ width: 18, height: 18, background: '#CBD5E1', borderRadius: 2 }} />
+                    </div>
+                  )}
                 </div>
               ))}
           </div>
         </div>
       )}
+
+      {/* Modal hiển thị tất cả bài viết đã thích */}
+      <LikedPostsModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        posts={likedPosts}
+      />
     </aside>
   );
 };

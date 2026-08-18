@@ -260,6 +260,16 @@ async def delete_comment(comment_id: uuid.UUID, session: AsyncSession = Depends(
 # --- Likes ---
 
 
+@router.get("/users/{user_id}/liked-posts", response_model=list[ForumPostResponse])
+async def list_liked_posts(
+    user_id: uuid.UUID,
+    skip: int = 0,
+    limit: int = 50,
+    session: AsyncSession = Depends(get_db_session)
+):
+    return await service.list_liked_posts(session, user_id, skip=skip, limit=limit)
+
+
 @router.post("/posts/{post_id}/like", response_model=PostLikeResponse, status_code=status.HTTP_201_CREATED)
 async def like_post(
     post_id: uuid.UUID,
