@@ -87,17 +87,23 @@ async def can_manage_room(session: AsyncSession, room: StudyRoom, user_id: uuid.
     """Mirrors the documented `is_room_manager = host OR room moderator` concept
     (STUDY_PLATFORM_DATABASE_SPEC.md §35): who may take moderator-level actions
     (KICK/MUTE/UNMUTE) in a room. Deliberately narrower than `can_access_room` --
-    a plain participant has room access but not management authority."""
+    a plain participant has room access but not management authority.
+
+    A soft-deleted room (deleted_at set) is denied outright, before any other check --
+    this does not go through `can_access_room`, so it needs its own guard (see
+    docs/db/migrations/010_soft_delete_study_rooms.sql)."""
+    if room.deleted_at is not None:
+        return False
     if is_room_host(room, user_id):
         return True
     return await is_room_moderator(session, room.id, user_id)
 
 
 def can_join_room(room: StudyRoom) -> bool:
-    """Lifecycle gate for joining: an ended room's session is over, so it must not
-    accept new/returning participants, even though it stays readable as history
-    (see `can_access_room` / `is_room_conversation_open_for_writes`)."""
-    return room.status != StudyRoomStatus.ENDED
+    """Lifecycle gate for joining: an ended OR soft-deleted room must not accept new/returning
+    participants, even though an ended (but not deleted) room stays readable as history (see
+    `can_access_room` / `is_room_conversation_open_for_writes`)."""
+    return room.deleted_at is None and room.status != StudyRoomStatus.ENDED
 
 
 async def can_access_room(session: AsyncSession, room: StudyRoom, user_id: uuid.UUID) -> bool:
@@ -105,7 +111,16 @@ async def can_access_room(session: AsyncSession, room: StudyRoom, user_id: uuid.
     The host always has access, even if their own membership row is somehow inactive;
     everyone else needs an active (non-left) `study_room_members` row. Study rooms have
     no separate "banned" concept -- `RoomModerationAction.KICK` is only an audit log entry,
-    so a kicked member is indistinguishable from one who left (`left_at` set)."""
+    so a kicked member is indistinguishable from one who left (`left_at` set).
+
+    A soft-deleted room (deleted_at set) is denied outright, before any other check -- this
+    must hold for every caller, including the host, so a deleted room behaves as if it no
+    longer exists for everyone (mirrors `can_access_channel`, see
+    docs/db/migrations/010_soft_delete_study_rooms.sql). This is the single choke point every
+    read/write path for room messages, attachments, and meeting tokens goes through (via
+    `can_access_conversation`/`can_send_to_conversation`/`can_join_room_meeting`)."""
+    if room.deleted_at is not None:
+        return False
     if room.host_id == user_id:
         return True
     return await is_active_room_member(session, room.id, user_id)

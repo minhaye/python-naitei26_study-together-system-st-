@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from './useAuth';
 import { ApiError } from '../lib/apiClient';
 import {
+  deleteStudyRoom,
   endStudyRoom,
   getStudyRoom,
   joinStudyRoom,
@@ -199,6 +200,20 @@ export function useStudyRoom(roomId: string | undefined) {
     [roomId, currentUserId, loadMembers, loadModeration]
   );
 
+  /** Soft delete (see docs/db/migrations/010_soft_delete_study_rooms.sql). Deliberately does
+   * NOT call loadRoom() afterward -- the room is no longer normally accessible, so the caller
+   * (StudyRoom.tsx) is responsible for navigating away on success. */
+  const deleteRoom = useCallback(async () => {
+    if (!roomId) return;
+    setActionError(null);
+    try {
+      await deleteStudyRoom(roomId);
+    } catch (err) {
+      setActionError(toStudyRoomError(err));
+      throw err;
+    }
+  }, [roomId]);
+
   const changeMemberRole = useCallback(
     async (userId: string, role: StudyRoomMemberRole) => {
       if (!roomId) return;
@@ -234,6 +249,7 @@ export function useStudyRoom(roomId: string | undefined) {
     leave,
     start,
     end,
+    deleteRoom,
     moderate,
     changeMemberRole,
     refetchMembers: loadMembers,

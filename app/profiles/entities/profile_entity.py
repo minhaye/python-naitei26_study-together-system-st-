@@ -48,7 +48,7 @@ class Profile(Base):
     )
     created_resource_folders: Mapped[list["ResourceFolder"]] = relationship(back_populates="creator")
     uploaded_resources: Mapped[list["Resource"]] = relationship(back_populates="uploader")
-    hosted_study_rooms: Mapped[list["StudyRoom"]] = relationship(back_populates="host")
+    hosted_study_rooms: Mapped[list["StudyRoom"]] = relationship(back_populates="host", foreign_keys="StudyRoom.host_id")
     study_room_memberships: Mapped[list["StudyRoomMember"]] = relationship(back_populates="user")
     moderation_actions_performed: Mapped[list["RoomModerationAction"]] = relationship(
         back_populates="moderator", foreign_keys="RoomModerationAction.moderator_id"
