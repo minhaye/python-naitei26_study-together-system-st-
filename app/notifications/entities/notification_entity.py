@@ -12,6 +12,7 @@ from app.db.enums import NotificationType, pg_enum
 if TYPE_CHECKING:
     from app.forum.entities.forum_entity import Comment, ForumPost
     from app.groups.entities.group_entity import Group
+    from app.invitations.entities.invitation_entity import Invitation
     from app.profiles.entities.profile_entity import Profile
 
 
@@ -37,6 +38,13 @@ class Notification(Base):
     group_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("groups.id", ondelete="CASCADE")
     )
+    # Set only for GROUP_INVITE / STUDY_ROOM_INVITATION / PRIVATE_CHANNEL_INVITATION
+    # notifications -- the notification references the invitation rather than duplicating
+    # its target/status; Accept/Decline in the UI call the invitation redemption endpoints,
+    # never write membership directly (see docs/db/migrations/013_create_invitations.sql).
+    invitation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("invitations.id", ondelete="CASCADE")
+    )
     is_read: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
 
@@ -45,3 +53,4 @@ class Notification(Base):
     post: Mapped["ForumPost | None"] = relationship(back_populates="notifications")
     comment: Mapped["Comment | None"] = relationship(back_populates="notifications")
     group: Mapped["Group | None"] = relationship(back_populates="notifications")
+    invitation: Mapped["Invitation | None"] = relationship(back_populates="notifications")

@@ -24,12 +24,14 @@ import {
   Download,
   UserX,
   ShieldCheck,
-  ShieldOff
+  ShieldOff,
+  UserPlus
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { useStudyRoom } from '../../hooks/useStudyRoom';
 import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
+import { InviteModal } from '../../components/invitations/InviteModal';
 import { MeetingProvider } from './meeting/MeetingProvider';
 import { MeetingVideoGrid } from './meeting/MeetingVideoGrid';
 import { MeetingControls } from './meeting/MeetingControls';
@@ -94,6 +96,7 @@ export function StudyRoom() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isJoining, setIsJoining] = useState(false);
   const [isDeleteRoomModalOpen, setIsDeleteRoomModalOpen] = useState(false);
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [isDeletingRoom, setIsDeletingRoom] = useState(false);
   const [isLifecycleBusy, setIsLifecycleBusy] = useState(false);
 
@@ -429,6 +432,17 @@ export function StudyRoom() {
           )}
           {isGroupManager && (
             <button
+              onClick={() => setIsInviteModalOpen(true)}
+              title="Mời thêm người"
+              style={{background: 'transparent', border: '1px solid #475569', color: '#94A3B8', padding: '8px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: '600', display: 'flex', alignItems: 'center'}}
+              onMouseOver={e => { e.currentTarget.style.borderColor = '#00236F'; e.currentTarget.style.color = '#00236F'; }}
+              onMouseOut={e => { e.currentTarget.style.borderColor = '#475569'; e.currentTarget.style.color = '#94A3B8'; }}
+            >
+              <UserPlus size={16} />
+            </button>
+          )}
+          {isGroupManager && (
+            <button
               onClick={() => setIsDeleteRoomModalOpen(true)}
               title="Xóa phòng học"
               style={{background: 'transparent', border: '1px solid #475569', color: '#94A3B8', padding: '8px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: '600', display: 'flex', alignItems: 'center'}}
@@ -443,6 +457,13 @@ export function StudyRoom() {
           </div>
         </div>
       </header>
+
+      <InviteModal
+        isOpen={isInviteModalOpen}
+        onClose={() => setIsInviteModalOpen(false)}
+        target={{ roomId: room.id }}
+        targetLabel={room.name}
+      />
 
       {/* Modal: Xác nhận xóa phòng học */}
       {isDeleteRoomModalOpen && (

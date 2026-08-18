@@ -19,10 +19,110 @@ here is auto-applied by the app or by CI. Status below confirmed live
 | 010 | `010_soft_delete_study_rooms.sql` | ✅ Applied live | Adds `study_rooms.deleted_at`/`study_rooms.deleted_by` (same soft-delete shape as 009). Updates `can_access_room_conversation()` to deny outright once `deleted_at` is set (cascades to `conversations_select`/`messages_select`/Realtime for ROOM-type conversations), and adds an `sr.host_id = auth.uid()` OR branch closing a pre-existing Python/SQL parity gap (Python's `can_access_room()` has always granted the host unconditional access; this SQL function never had that branch — the non-host `study_room_members`+`is_group_member` branch is untouched). Drops any authenticated-role physical DELETE policy on `study_rooms` (discovered dynamically — names not tracked in this repo). Unlike 009, the base `study_rooms`/`study_room_members`/`room_moderation_actions` RLS policies were never captured in this repo, so instead of replacing unknown permissive policies, this migration adds new RESTRICTIVE `deleted_at IS NULL` policies (safe to add without knowing the existing permissive bodies, since a restrictive policy can only narrow access, never widen it) — see `STUDY_PLATFORM_DATABASE_SPEC.md` § 16. |
 | 011 | `011_room_manage_authority_current_group_role.sql` | ✅ Applied live, verified | Follow-up authorization audit (2026-08-18) found `study_rooms.host_id` was being treated as a permanent, independent authorization grant rather than creator metadata — both for room MANAGEMENT (fixed Python-only, same commit, no SQL surface since FastAPI's Postgres connection bypasses RLS) and for room PARTICIPATION via `can_access_room_conversation()`, which Realtime/PostgREST evaluate directly. This migration removes the `sr.host_id = auth.uid()` OR branch 010 added, leaving only the pre-existing `is_group_member(...) AND active study_room_members row` branch untouched. Safe because `StudyRoomsService.create()` has always inserted an active HOST-role `study_room_members` row for the creator atomically with the room — a currently-participating host is unaffected; only a host who has since left the room loses the unconditional bypass — see `STUDY_PLATFORM_DATABASE_SPEC.md` § 16/§ 22. `011_verify.sql` confirmed live: host_id branch removed, `deleted_at`/`is_group_member`/active-membership branches all still present, `study_rooms_hide_deleted` RESTRICTIVE policy untouched, no authenticated DELETE policy on `study_rooms`. Row counts observed at verify time (historical, not an invariant): `study_rooms`=11, `study_room_members`=35. `011_preflight.sql` found 5 hosts without an active Room membership row, all reviewed manually and confirmed legitimate (`HOST_LEFT_ROOM` — each already had a `study_room_members` row with `left_at IS NOT NULL`); no backfill was needed. |
 | 012 | `012_backfill_missing_room_conversations.sql` | ✅ Applied live, verified | Study Room → Conversation creation invariant fix (2026-08-18). 004 backfilled one `room`-type Conversation per Study Room that existed at the time, but `StudyRoomsService.create()` was never updated to create one for rooms created afterward — every Study Room created since 004 (until the same-commit application fix) had NO Conversation at all, breaking chat/attachments/meeting-token for it even though other room operations worked fine. This migration backfilled the missing `room`-type Conversation for every orphaned `study_rooms` row (active AND soft-deleted — see `STUDY_PLATFORM_DATABASE_SPEC.md` § 16 for why deleted rooms are included). It did NOT add a new unique constraint: `conversations_room_id_key` (partial unique index on `conversations.room_id`) and `conversations_type_target_check` already existed from 004 and already guaranteed at most one `room`-type Conversation per room — `012_verify.sql` confirmed both still present. The application-side fix (`StudyRoomsService.create()` now creates Room + host `study_room_members` + Conversation atomically in one transaction, mirroring `ChannelsService.create()`) is what prevents this gap from reopening for future rooms — see `app/study_rooms/services/study_room_service.py`. `012_verify.sql` confirmed live: every Study Room (including the soft-deleted one) has exactly one `room`-type Conversation, no room has more than one, backfilled `created_by` values match their room's `host_id`, soft-delete state was preserved, no `study_rooms`/pre-existing `conversations` rows were lost, and RLS remains enabled on `conversations`/`messages`/`study_rooms`. Row counts observed at verify time (historical, not an invariant): `study_rooms`=11, room-type conversations before=8, backfilled=3, after=11. |
+| 013 | `013_create_invitations.sql` | ✅ Applied live, verified | Unified invitation system (2026-08-18) backing the new `app/invitations/` API — replaces the previously-fake "copy invite link" UX. Creates `invitation_method`/`invitation_status` enums and `invitations` (exactly one of `group_id`/`room_id`/`channel_id` set via CHECK; `secret_hash` is the only persisted form of the plaintext token/code, returned exactly once at creation). Adds `notifications.invitation_id` (nullable FK) and two `notification_type` values (`study_room_invitation`, `private_channel_invitation`) — `group_invite` is reused for Group invitations. Enables RLS on `invitations` from scratch (SELECT-own: creator or JWT-email-matching recipient), no write policy for `authenticated`. `notifications` RLS was found live (never tracked in any migration file before now) via `013_preflight.sql`: already enabled with `notifications_select_own`/`notifications_update_own`/`notifications_delete_own`. This migration kept `notifications_select_own` as-is and **explicitly dropped** `notifications_update_own`/`notifications_delete_own`, so `notifications` now matches `invitations`/`messages`/`channels`: FastAPI (`postgres` role) is the sole writer, no authenticated write policy remains on any of the four tables. `013_verify.sql` confirmed live: table/columns/CHECKs/unique constraint present, both new `notification_type` values present, RLS enabled on both tables, `invitations_select_own`/`notifications_select_own` present, `notifications_update_own`/`notifications_delete_own` gone, no authenticated write policy remains anywhere, `notifications` row count unchanged (135) with 0 rows unexpectedly carrying `invitation_id`, `invitations` had 0 rows immediately after (expected — nothing had used the API against this DB yet). Row counts observed at verify time (historical, not an invariant): `notifications`=135, `invitations`=0. See `docs/invitations.md` for the full API/lifecycle design and the RLS reconciliation rationale. |
 
-Full design/rationale for 004-006: `docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` § 12–15. For 007: § 37. For 008: § 8, § 34. For 009: § 9. For 010/011: § 16, § 22. For 012: § 14.
+Full design/rationale for 004-006: `docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` § 12–15. For 007: § 37. For 008: § 8, § 34. For 009: § 9. For 010/011: § 16, § 22. For 012: § 14. For 013: `docs/invitations.md`.
 
 **004_rollback.sql, 005_rollback.sql, 006_rollback.sql, 007_rollback.sql were NOT run** — all four migrations are live and working; each rollback exists only as a reviewed, ready-to-use undo path if one of them ever needs reverting.
+
+## Running 013
+
+013 has since been run live and verified (see the status table above) —
+this section is kept as a record of the intended run procedure, not a
+pending TODO (same as 005's/011's/012's note).
+
+A live preflight run (2026-08-18) found `notifications` was NOT wide-open as
+originally assumed: RLS was already enabled with three existing policies
+never captured in any migration file in this repo before then --
+`notifications_select_own` (SELECT), `notifications_update_own` (UPDATE),
+`notifications_delete_own` (DELETE) -- 135 rows. The migration file and
+scripts below were updated to reconcile this: `notifications_select_own` was
+kept as-is (same semantics), and `notifications_update_own`/
+`notifications_delete_own` were **explicitly dropped** by
+`013_create_invitations.sql` § 5, so `notifications` now matches
+`invitations`/`messages`/`channels` -- FastAPI (`postgres` role) is the sole
+writer, no authenticated write policy remains. See `docs/invitations.md`'s
+RLS section for the full reasoning.
+
+Live verify results (2026-08-18): every check OK -- `invitations` table,
+all 14 required columns, `invitations_exactly_one_target` CHECK,
+`invitations_email_recipient` CHECK, and the `secret_hash` unique constraint
+all present; `study_room_invitation`/`private_channel_invitation`
+`notification_type` values present; `notifications.invitation_id` column
+present; RLS enabled on both `invitations` and `notifications`;
+`invitations_select_own`/`notifications_select_own` present;
+`notifications_update_own`/`notifications_delete_own` confirmed absent; no
+authenticated write policy remains on either table. `notifications` row
+count unchanged at 135, with 0 pre-existing rows unexpectedly carrying
+`invitation_id`. `invitations` had 0 rows immediately after (expected --
+nothing had used the API against this DB yet). These row counts are
+historical observations from the verify run, not invariants to assert
+against in future runs (same convention as 011's/012's notes above).
+
+```text
+1. 013_preflight.sql   — READ-ONLY. Confirms groups/study_rooms/channels/
+                          profiles/notifications exist, confirms invitations
+                          does not already exist, prints the FULL body
+                          (USING/WITH CHECK) of every existing policy on
+                          notifications -- READ EVERY ONE before proceeding,
+                          expected to be exactly the three named above, each
+                          a plain "user_id = auth.uid()" own-row check --
+                          lists notification_type's current enum values,
+                          confirms auth.users is reachable from the
+                          connecting role (required for
+                          InvitationsService.lookup_user_id_by_email), and
+                          reports the current notifications row count (used
+                          to confirm 013 doesn't change it).
+
+                          If any policy body is not a plain own-row check, or
+                          an unexpected policy name appears, or anything is
+                          found to depend on writing to notifications via
+                          PostgREST/Supabase client directly, STOP and
+                          reconsider before running 013 as written.
+
+2. 013_create_invitations.sql
+                        — The actual migration (two transactions -- see the
+                          file's own comment on why). Creates
+                          invitation_method/invitation_status enums and the
+                          invitations table (CHECK: exactly one target;
+                          CHECK: recipient_email required iff method=email;
+                          secret_hash unique). Adds notifications.
+                          invitation_id (nullable) and two new
+                          notification_type values. Enables RLS on
+                          invitations from scratch (SELECT-own, no write
+                          policy for authenticated). Recreates
+                          notifications_select_own (idempotent, unchanged
+                          semantics) and explicitly DROPS
+                          notifications_update_own/notifications_delete_own.
+                          Idempotent: safe to re-run.
+
+3. 013_verify.sql      — READ-ONLY. Confirms the table/columns/CHECKs/unique
+                          constraint exist, invitations has 0 rows (nothing
+                          has used the API against this DB yet), every
+                          pre-existing notifications row still has
+                          invitation_id IS NULL and the row count is
+                          unchanged from preflight, both new
+                          notification_type values are present, RLS is
+                          enabled on both tables, notifications_select_own
+                          is present, notifications_update_own/
+                          notifications_delete_own are GONE, and no
+                          authenticated write policy remains on either
+                          table.
+```
+
+No `013_rollback.sql`: no row is deleted, modified, or backfilled by this
+migration (same reasoning 008/009/012 used to skip one) -- the only
+non-additive part is removing two RLS *policy objects* (not data), which
+013_preflight.sql's output captures the exact bodies of for the record. If
+ever needed: `drop table public.invitations cascade; alter table
+public.notifications drop column invitation_id;` plus dropping
+`invitations_select_own`/`notifications_select_own` and recreating
+`notifications_update_own`/`notifications_delete_own` from the bodies
+captured in that preflight run -- the two new notification_type enum values
+cannot be removed without recreating the type, which isn't worth scripting
+for a change this size.
+
+Full design/rationale: `docs/invitations.md`.
 
 ## Running 012
 

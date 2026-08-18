@@ -85,6 +85,16 @@ class GroupsService:
         await session.flush()
         return member
 
+    async def reactivate_member(self, session: AsyncSession, member: GroupMember) -> GroupMember:
+        """Flips a `left` membership back to `active` (mirrors StudyRoomsService.rejoin --
+        study_room_members has no reactivate/rejoin equivalent method name, but the same
+        shape: reuse the existing row instead of inserting a duplicate). Used by invitation
+        redemption only; the manual add_member endpoint still 400s on any existing row
+        (pre-existing, unrelated behavior -- not changed here)."""
+        member.status = MemberStatus.ACTIVE
+        await session.flush()
+        return member
+
     async def remove_member(self, session: AsyncSession, member: GroupMember) -> None:
         await session.delete(member)
         await session.flush()

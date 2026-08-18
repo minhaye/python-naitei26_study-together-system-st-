@@ -21,6 +21,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useChannelMessagesRealtime } from '../../hooks/useChannelMessagesRealtime';
 import { ApiError } from '../../lib/apiClient';
 import { getGroup, listGroupMembers, leaveGroup, updateGroup } from '../../lib/group.api';
+import { InviteModal } from '../../components/invitations/InviteModal';
 import { createChannel, deleteChannel, listChannelsByGroup } from '../../lib/channel.api';
 import { createStudyRoom, deleteStudyRoom, listStudyRoomsByGroup } from '../../lib/studyRoom.api';
 import { listConversationMessages, sendConversationMessage } from '../../lib/message.api';
@@ -71,6 +72,9 @@ export function StudyGroupDetail() {
   const [toggleError, setToggleError] = useState<string | null>(null);
 
   // Create Study Room modal state
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [channelToInvite, setChannelToInvite] = useState<Channel | null>(null);
+
   const [isCreateRoomModalOpen, setIsCreateRoomModalOpen] = useState(false);
   const [createRoomName, setCreateRoomName] = useState('');
   const [createRoomDescription, setCreateRoomDescription] = useState('');
@@ -677,6 +681,16 @@ export function StudyGroupDetail() {
                                             <div
                                                 style={{position: 'absolute', top: '100%', right: 4, zIndex: 60, background: 'white', borderRadius: 8, boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)', border: '1px solid #E2E8F0', padding: '6px', marginTop: 2, minWidth: 160}}
                                             >
+                                                {channel.is_private && (
+                                                    <div
+                                                        onClick={() => { setOpenChannelMenuId(null); setChannelToInvite(channel); }}
+                                                        style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#0F172A', cursor: 'pointer'}}
+                                                        onMouseOver={e => e.currentTarget.style.background = '#F1F5F9'}
+                                                        onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                                                    >
+                                                        <UserPlus size={16} color="#00236F" /> Mời vào kênh
+                                                    </div>
+                                                )}
                                                 <div
                                                     onClick={() => { setOpenChannelMenuId(null); setDeleteChannelError(null); setChannelPendingDelete(channel); }}
                                                     style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#DC2626', cursor: 'pointer'}}
@@ -1053,18 +1067,40 @@ export function StudyGroupDetail() {
 
                 </div>
 
-                {/* Invite Button */}
-                <div style={{padding: '16px', borderTop: '1px solid #E2E8F0', background: 'white'}}>
-                    <button
-                        onClick={() => alert('Đã sao chép liên kết mời tham gia nhóm học!')}
-                        style={{width: '100%', padding: '10px', background: '#00236F', color: 'white', border: 'none', borderRadius: 6, fontWeight: '600', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, cursor: 'pointer'}}
-                    >
-                        <UserPlus size={18} /> Mời thêm người
-                    </button>
-                </div>
+                {/* Invite Button -- only an active group owner/moderator may create
+                    invitations (backend rule, is_group_manager on POST /invitations/); this
+                    is UX-only, the endpoint independently re-checks the same rule. */}
+                {isGroupManager && (
+                    <div style={{padding: '16px', borderTop: '1px solid #E2E8F0', background: 'white'}}>
+                        <button
+                            onClick={() => setIsInviteModalOpen(true)}
+                            style={{width: '100%', padding: '10px', background: '#00236F', color: 'white', border: 'none', borderRadius: 6, fontWeight: '600', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, cursor: 'pointer'}}
+                        >
+                            <UserPlus size={18} /> Mời thêm người
+                        </button>
+                    </div>
+                )}
             </div>
 
         </div>
+
+        {group && (
+            <InviteModal
+                isOpen={isInviteModalOpen}
+                onClose={() => setIsInviteModalOpen(false)}
+                target={{ groupId: group.id }}
+                targetLabel={group.name}
+            />
+        )}
+
+        {channelToInvite && (
+            <InviteModal
+                isOpen={!!channelToInvite}
+                onClose={() => setChannelToInvite(null)}
+                target={{ channelId: channelToInvite.id }}
+                targetLabel={channelToInvite.name}
+            />
+        )}
 
         {/* Modal: Tạo phòng học mới */}
         {isCreateRoomModalOpen && (
