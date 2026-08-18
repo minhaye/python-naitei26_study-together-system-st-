@@ -25,13 +25,6 @@ function applyFilterAndSearch(
     case 'latest':
       result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       break;
-    case 'unanswered':
-      result = result.filter((p) => p.commentsCount === 0);
-      break;
-    case 'popular':
-      result = result.filter((p) => p.likesCount >= 5 || p.commentsCount >= 3);
-      result.sort((a, b) => b.likesCount + b.commentsCount - (a.likesCount + a.commentsCount));
-      break;
     case 'my_questions':
       if (currentUserId) {
         result = result.filter((p) => p.authorId === currentUserId || p.authorId === 'user-1');

@@ -11,12 +11,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Filter, ChevronDown, Edit3, Check } from 'lucide-react';
 
-export type FilterOption = 'latest' | 'unanswered' | 'popular' | 'my_questions';
+export type FilterOption = 'latest' | 'my_questions';
 
 export const FILTER_LABELS: Record<FilterOption, string> = {
   latest: 'Mới nhất',
-  unanswered: 'Chưa trả lời',
-  popular: 'Câu hỏi hay',
   my_questions: 'Câu hỏi của tôi',
 };
 
@@ -47,7 +45,7 @@ export const ForumFilterBar: React.FC<ForumFilterBarProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const options: FilterOption[] = ['latest', 'unanswered', 'popular', 'my_questions'];
+  const options: FilterOption[] = ['latest', 'my_questions'];
 
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
