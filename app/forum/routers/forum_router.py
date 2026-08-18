@@ -128,7 +128,7 @@ async def get_post(post_id: uuid.UUID, session: AsyncSession = Depends(get_db_se
 
 @router.get("/posts", response_model=list[ForumPostResponse])
 async def list_posts(
-    category_id: uuid.UUID,
+    category_id: uuid.UUID | None = None,
     skip: int = 0,
     limit: int = 50,
     session: AsyncSession = Depends(get_db_session)
