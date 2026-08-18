@@ -13,13 +13,15 @@ import {
     Lock,
     LogOut,
     Users,
-    Plus
+    Plus,
+    MoreVertical,
+    Trash2
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useChannelMessagesRealtime } from '../../hooks/useChannelMessagesRealtime';
 import { ApiError } from '../../lib/apiClient';
 import { getGroup, listGroupMembers, leaveGroup, updateGroup } from '../../lib/group.api';
-import { createChannel, listChannelsByGroup } from '../../lib/channel.api';
+import { createChannel, deleteChannel, listChannelsByGroup } from '../../lib/channel.api';
 import { createStudyRoom, listStudyRoomsByGroup } from '../../lib/studyRoom.api';
 import { listConversationMessages, sendConversationMessage } from '../../lib/message.api';
 import type { Group, GroupMember } from '../../lib/group.types';
@@ -82,6 +84,12 @@ export function StudyGroupDetail() {
   const [createChannelIsPrivate, setCreateChannelIsPrivate] = useState(false);
   const [isCreatingChannel, setIsCreatingChannel] = useState(false);
   const [createChannelError, setCreateChannelError] = useState<string | null>(null);
+
+  // Delete Channel: per-row "⋮" menu + confirmation modal state
+  const [openChannelMenuId, setOpenChannelMenuId] = useState<string | null>(null);
+  const [channelPendingDelete, setChannelPendingDelete] = useState<Channel | null>(null);
+  const [isDeletingChannel, setIsDeletingChannel] = useState(false);
+  const [deleteChannelError, setDeleteChannelError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!groupId) return;
@@ -213,6 +221,30 @@ export function StudyGroupDetail() {
       setCreateChannelError(err instanceof ApiError ? err.message : 'Không thể tạo kênh chat.');
     } finally {
       setIsCreatingChannel(false);
+    }
+  }
+
+  async function handleConfirmDeleteChannel() {
+    if (!channelPendingDelete || isDeletingChannel) return;
+    const deletedId = channelPendingDelete.id;
+    setIsDeletingChannel(true);
+    setDeleteChannelError(null);
+    try {
+      await deleteChannel(deletedId);
+      // Only touch local state after the backend confirms the delete -- no optimistic/fake
+      // success. Removing it from `channels` also makes `activeChannelObj` resolve to null
+      // if this was the active channel, which in turn clears its conversation_id and lets
+      // the messages-loading effect and useChannelMessagesRealtime (both keyed off
+      // activeChannelObj?.conversation_id) reset/unsubscribe on their own -- no separate
+      // cleanup call needed here.
+      setChannels((prev) => prev.filter((c) => c.id !== deletedId));
+      setActiveChannel((prev) => (prev === deletedId ? '' : prev));
+      setChannelPendingDelete(null);
+    } catch (err) {
+      // Keep the channel in the list and the modal open so the user can see the error and retry.
+      setDeleteChannelError(err instanceof ApiError ? err.message : 'Không thể xóa kênh chat.');
+    } finally {
+      setIsDeletingChannel(false);
     }
   }
 
@@ -590,16 +622,42 @@ export function StudyGroupDetail() {
                             )}
                             {channels.map((channel) => {
                                 const isActive = activeChannel === channel.id && mainView === 'chat';
+                                const isMenuOpen = openChannelMenuId === channel.id;
                                 return (
-                                    <div
-                                        key={channel.id}
-                                        onClick={() => { setActiveChannel(channel.id); setMainView('chat'); }}
-                                        style={{padding: '8px 12px', background: isActive ? '#E2E8F0' : 'transparent', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8, color: isActive ? '#0F172A' : '#475569', fontWeight: isActive ? '600' : '500', cursor: 'pointer'}}
-                                        onMouseOver={e => !isActive && (e.currentTarget.style.background = '#F1F5F9')}
-                                        onMouseOut={e => !isActive && (e.currentTarget.style.background = 'transparent')}
-                                    >
-                                        {channel.is_private ? <Lock size={16} color={isActive ? '#64748B' : '#94A3B8'} /> : <Hash size={18} color={isActive ? '#64748B' : '#94A3B8'} />}
-                                        {channel.name}
+                                    <div key={channel.id} style={{position: 'relative'}}>
+                                        <div
+                                            onClick={() => { setActiveChannel(channel.id); setMainView('chat'); }}
+                                            style={{padding: '8px 8px 8px 12px', background: isActive ? '#E2E8F0' : 'transparent', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8, color: isActive ? '#0F172A' : '#475569', fontWeight: isActive ? '600' : '500', cursor: 'pointer'}}
+                                            onMouseOver={e => !isActive && (e.currentTarget.style.background = '#F1F5F9')}
+                                            onMouseOut={e => !isActive && (e.currentTarget.style.background = 'transparent')}
+                                        >
+                                            {channel.is_private ? <Lock size={16} color={isActive ? '#64748B' : '#94A3B8'} /> : <Hash size={18} color={isActive ? '#64748B' : '#94A3B8'} />}
+                                            <span style={{flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{channel.name}</span>
+                                            {isGroupManager && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); setOpenChannelMenuId(isMenuOpen ? null : channel.id); }}
+                                                    title="Tùy chọn kênh"
+                                                    style={{width: 20, height: 20, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isMenuOpen ? '#E2E8F0' : 'transparent', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#64748B'}}
+                                                >
+                                                    <MoreVertical size={14} />
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {isMenuOpen && (
+                                            <div
+                                                style={{position: 'absolute', top: '100%', right: 4, zIndex: 60, background: 'white', borderRadius: 8, boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)', border: '1px solid #E2E8F0', padding: '6px', marginTop: 2, minWidth: 160}}
+                                            >
+                                                <div
+                                                    onClick={() => { setOpenChannelMenuId(null); setDeleteChannelError(null); setChannelPendingDelete(channel); }}
+                                                    style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#DC2626', cursor: 'pointer'}}
+                                                    onMouseOver={e => e.currentTarget.style.background = '#FEF2F2'}
+                                                    onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                                                >
+                                                    <Trash2 size={16} color="#DC2626" /> Xóa kênh
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })}
@@ -1073,6 +1131,55 @@ export function StudyGroupDetail() {
                             style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: (isCreatingChannel || !createChannelName.trim()) ? '#93A4C7' : '#00236F', color: 'white', border: 'none', fontSize: 14, fontWeight: 600, cursor: (isCreatingChannel || !createChannelName.trim()) ? 'not-allowed' : 'pointer', fontFamily: 'Inter' }}
                         >
                             {isCreatingChannel ? 'Đang tạo...' : 'Tạo kênh'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* Modal: Xác nhận xóa kênh chat */}
+        {channelPendingDelete && (
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.4)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
+                <div style={{ background: 'white', borderRadius: 12, width: 420, padding: 32, display: 'flex', flexDirection: 'column', position: 'relative', boxShadow: '0px 10px 25px rgba(0, 0, 0, 0.1)' }}>
+                    <button
+                        onClick={() => { if (!isDeletingChannel) { setChannelPendingDelete(null); setDeleteChannelError(null); } }}
+                        disabled={isDeletingChannel}
+                        style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', cursor: isDeletingChannel ? 'not-allowed' : 'pointer', color: '#64748B', fontSize: 18 }}
+                    >
+                        ✕
+                    </button>
+
+                    <h2 style={{ fontSize: 18, fontWeight: 600, color: '#0F172A', marginBottom: 12, fontFamily: 'Inter' }}>
+                        Xóa "{channelPendingDelete.name}"?
+                    </h2>
+
+                    <p style={{ fontSize: 14, color: '#475569', lineHeight: 1.5, marginBottom: 8, fontFamily: 'Inter' }}>
+                        Kênh này sẽ không còn truy cập được nữa.
+                    </p>
+                    <p style={{ fontSize: 13, color: '#94A3B8', lineHeight: 1.5, marginBottom: 24, fontFamily: 'Inter' }}>
+                        Thao tác này hiện chưa thể hoàn tác.
+                    </p>
+
+                    {deleteChannelError && (
+                        <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: 12, color: '#B91C1C', fontSize: 13, marginBottom: 16 }}>
+                            {deleteChannelError}
+                        </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                        <button
+                            onClick={() => { if (!isDeletingChannel) { setChannelPendingDelete(null); setDeleteChannelError(null); } }}
+                            disabled={isDeletingChannel}
+                            style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: '#F1F5F9', color: '#475569', border: 'none', fontSize: 14, fontWeight: 600, cursor: isDeletingChannel ? 'not-allowed' : 'pointer', fontFamily: 'Inter' }}
+                        >
+                            Hủy
+                        </button>
+                        <button
+                            onClick={handleConfirmDeleteChannel}
+                            disabled={isDeletingChannel}
+                            style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: isDeletingChannel ? '#F1A9A0' : '#DC2626', color: 'white', border: 'none', fontSize: 14, fontWeight: 600, cursor: isDeletingChannel ? 'not-allowed' : 'pointer', fontFamily: 'Inter' }}
+                        >
+                            {isDeletingChannel ? 'Đang xóa...' : 'Xóa kênh'}
                         </button>
                     </div>
                 </div>

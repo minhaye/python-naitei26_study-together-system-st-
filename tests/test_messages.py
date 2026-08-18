@@ -44,13 +44,14 @@ def as_fake_user(fake_user):
     app.dependency_overrides.pop(get_current_user, None)
 
 
-def _make_channel(group_id=None, is_private=False):
+def _make_channel(group_id=None, is_private=False, deleted_at=None):
     return Channel(
         id=uuid.uuid4(),
         group_id=group_id or uuid.uuid4(),
         name="general",
         is_private=is_private,
         created_by=uuid.uuid4(),
+        deleted_at=deleted_at,
     )
 
 
@@ -290,6 +291,41 @@ async def test_create_message_forbidden_banned_owner_private_channel_even_with_s
     assert response.status_code == 403
 
 
+# --- Deleted channel: no messaging through its conversation for anyone (migration 009) ---
+
+
+async def test_create_message_forbidden_deleted_channel_even_for_active_member(async_client, monkeypatch, as_fake_user):
+    channel = _make_channel(is_private=False, deleted_at=datetime.now(timezone.utc))
+    conversation = _make_conversation(channel)
+    _wire_conversation(monkeypatch, channel, conversation)
+    monkeypatch.setattr(
+        permissions.groups_service, "get_member", AsyncMock(return_value=_active_member(channel.group_id, as_fake_user.id))
+    )
+
+    response = await async_client.post(
+        f"/conversations/{conversation.id}/messages", json={"content": "hi"}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 403
+
+
+async def test_create_message_forbidden_deleted_channel_even_for_group_owner(async_client, monkeypatch, as_fake_user):
+    """A deleted channel must deny everyone, including the group owner/moderator who would
+    otherwise get implicit access to a (non-deleted) private channel."""
+    channel = _make_channel(is_private=True, deleted_at=datetime.now(timezone.utc))
+    conversation = _make_conversation(channel)
+    _wire_conversation(monkeypatch, channel, conversation)
+    monkeypatch.setattr(
+        permissions.groups_service,
+        "get_member",
+        AsyncMock(return_value=_active_member(channel.group_id, as_fake_user.id, role=GroupMemberRole.OWNER)),
+    )
+
+    response = await async_client.post(
+        f"/conversations/{conversation.id}/messages", json={"content": "hi"}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 403
+
+
 async def test_create_message_valid_member_returns_201(async_client, monkeypatch, as_fake_user):
     channel = _make_channel(is_private=False)
     conversation = _make_conversation(channel)
@@ -361,6 +397,21 @@ async def test_list_messages_valid_user_returns_200_and_uses_path_conversation_i
     assert called_conversation_id == conversation.id
 
 
+async def test_list_messages_forbidden_deleted_channel(async_client, monkeypatch, as_fake_user):
+    channel = _make_channel(is_private=False, deleted_at=datetime.now(timezone.utc))
+    conversation = _make_conversation(channel)
+    _wire_conversation(monkeypatch, channel, conversation)
+    monkeypatch.setattr(
+        permissions.groups_service, "get_member", AsyncMock(return_value=_active_member(channel.group_id, as_fake_user.id))
+    )
+    list_mock = AsyncMock()
+    monkeypatch.setattr(message_router.message_service, "list_by_conversation", list_mock)
+
+    response = await async_client.get(f"/conversations/{conversation.id}/messages", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+    list_mock.assert_not_awaited()
+
+
 # --- Edit / Delete ---
 
 
@@ -375,9 +426,15 @@ async def test_update_message_forbidden_for_non_sender(async_client, monkeypatch
 
 
 async def test_update_message_success_for_sender(async_client, monkeypatch, as_fake_user):
-    message = _make_message(sender_id=as_fake_user.id, conversation_id=uuid.uuid4())
+    channel = _make_channel(is_private=False)
+    conversation = _make_conversation(channel)
+    message = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id)
     monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
-    updated = _make_message(sender_id=as_fake_user.id, conversation_id=message.conversation_id, content="edited")
+    _wire_conversation(monkeypatch, channel, conversation)
+    monkeypatch.setattr(
+        permissions.groups_service, "get_member", AsyncMock(return_value=_active_member(channel.group_id, as_fake_user.id))
+    )
+    updated = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="edited")
     monkeypatch.setattr(message_router.message_service, "update", AsyncMock(return_value=updated))
 
     response = await async_client.patch(
@@ -385,6 +442,27 @@ async def test_update_message_success_for_sender(async_client, monkeypatch, as_f
     )
     assert response.status_code == 200
     assert response.json()["content"] == "edited"
+
+
+async def test_update_message_forbidden_deleted_channel_even_for_author(async_client, monkeypatch, as_fake_user):
+    """Regression test: being the sender is not sufficient once the parent Channel is
+    soft-deleted -- can_access_conversation (via can_access_channel) must also pass."""
+    channel = _make_channel(is_private=False, deleted_at=datetime.now(timezone.utc))
+    conversation = _make_conversation(channel)
+    message = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id)
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_conversation(monkeypatch, channel, conversation)
+    monkeypatch.setattr(
+        permissions.groups_service, "get_member", AsyncMock(return_value=_active_member(channel.group_id, as_fake_user.id))
+    )
+    update_mock = AsyncMock()
+    monkeypatch.setattr(message_router.message_service, "update", update_mock)
+
+    response = await async_client.patch(
+        f"/messages/{message.id}", json={"content": "edited"}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 403
+    update_mock.assert_not_awaited()
 
 
 async def test_delete_message_forbidden_for_non_sender_non_manager(async_client, monkeypatch, as_fake_user):
@@ -401,12 +479,37 @@ async def test_delete_message_forbidden_for_non_sender_non_manager(async_client,
 
 
 async def test_delete_message_success_for_sender(async_client, monkeypatch, as_fake_user):
-    message = _make_message(sender_id=as_fake_user.id, conversation_id=uuid.uuid4())
+    channel = _make_channel(is_private=False)
+    conversation = _make_conversation(channel)
+    message = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id)
     monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_conversation(monkeypatch, channel, conversation)
+    monkeypatch.setattr(
+        permissions.groups_service, "get_member", AsyncMock(return_value=_active_member(channel.group_id, as_fake_user.id))
+    )
     monkeypatch.setattr(message_router.message_service, "delete", AsyncMock(return_value=None))
 
     response = await async_client.delete(f"/messages/{message.id}", headers=AUTH_HEADERS)
     assert response.status_code == 204
+
+
+async def test_delete_message_forbidden_deleted_channel_even_for_author(async_client, monkeypatch, as_fake_user):
+    """Regression test: being the sender is not sufficient once the parent Channel is
+    soft-deleted -- can_access_conversation (via can_access_channel) must also pass."""
+    channel = _make_channel(is_private=False, deleted_at=datetime.now(timezone.utc))
+    conversation = _make_conversation(channel)
+    message = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id)
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_conversation(monkeypatch, channel, conversation)
+    monkeypatch.setattr(
+        permissions.groups_service, "get_member", AsyncMock(return_value=_active_member(channel.group_id, as_fake_user.id))
+    )
+    delete_mock = AsyncMock()
+    monkeypatch.setattr(message_router.message_service, "delete", delete_mock)
+
+    response = await async_client.delete(f"/messages/{message.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+    delete_mock.assert_not_awaited()
 
 
 async def test_delete_message_success_for_group_manager(async_client, monkeypatch, as_fake_user):
@@ -416,6 +519,11 @@ async def test_delete_message_success_for_group_manager(async_client, monkeypatc
     monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
     monkeypatch.setattr(message_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
     monkeypatch.setattr(message_router.channel_service, "get_by_id", AsyncMock(return_value=channel))
+    # can_access_conversation (app/core/permissions.py) reads the channel via its own
+    # ChannelsService instance (permissions.channels_service) -- see _wire_conversation's
+    # docstring -- separate from message_router.channel_service above, which the router
+    # uses for the manager-override branch/attachment path derivation.
+    monkeypatch.setattr(permissions.channels_service, "get_by_id", AsyncMock(return_value=channel))
     monkeypatch.setattr(
         permissions.groups_service,
         "get_member",
@@ -425,6 +533,30 @@ async def test_delete_message_success_for_group_manager(async_client, monkeypatc
 
     response = await async_client.delete(f"/messages/{message.id}", headers=AUTH_HEADERS)
     assert response.status_code == 204
+
+
+async def test_delete_message_forbidden_deleted_channel_even_for_group_manager(async_client, monkeypatch, as_fake_user):
+    """A deleted channel must deny everyone through the normal message-delete path too,
+    including the manager-override branch that would otherwise let an owner/moderator
+    delete someone else's message."""
+    channel = _make_channel(deleted_at=datetime.now(timezone.utc))
+    conversation = _make_conversation(channel)
+    message = _make_message(sender_id=uuid.uuid4(), conversation_id=conversation.id)
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    monkeypatch.setattr(message_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
+    monkeypatch.setattr(message_router.channel_service, "get_by_id", AsyncMock(return_value=channel))
+    monkeypatch.setattr(permissions.channels_service, "get_by_id", AsyncMock(return_value=channel))
+    monkeypatch.setattr(
+        permissions.groups_service,
+        "get_member",
+        AsyncMock(return_value=_active_member(channel.group_id, as_fake_user.id, role=GroupMemberRole.OWNER)),
+    )
+    delete_mock = AsyncMock()
+    monkeypatch.setattr(message_router.message_service, "delete", delete_mock)
+
+    response = await async_client.delete(f"/messages/{message.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+    delete_mock.assert_not_awaited()
 
 
 # --- Room conversation: list / send ---
@@ -614,6 +746,10 @@ async def test_room_member_can_patch_own_message(async_client, monkeypatch, as_f
     conversation = _make_room_conversation(room)
     message = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="hi")
     monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_room_conversation(monkeypatch, room, conversation)
+    monkeypatch.setattr(
+        permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
+    )
     updated = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="edited")
     monkeypatch.setattr(message_router.message_service, "update", AsyncMock(return_value=updated))
 
@@ -627,6 +763,10 @@ async def test_room_member_can_delete_own_message(async_client, monkeypatch, as_
     conversation = _make_room_conversation(room)
     message = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="hi")
     monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_room_conversation(monkeypatch, room, conversation)
+    monkeypatch.setattr(
+        permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
+    )
     monkeypatch.setattr(message_router.message_service, "delete", AsyncMock(return_value=None))
 
     response = await async_client.delete(f"/messages/{message.id}", headers=AUTH_HEADERS)
@@ -684,7 +824,10 @@ async def test_room_ended_member_can_get_message(async_client, monkeypatch, as_f
 
 
 async def test_room_ended_member_cannot_patch_own_message(async_client, monkeypatch, as_fake_user):
-    room = _make_room(status=StudyRoomStatus.ENDED)
+    # host_id=as_fake_user.id grants conversation access via can_access_room's host branch
+    # without needing to mock study_room_members -- isolates the assertion to the
+    # ended-room lifecycle gate this test is actually about, not incidental access denial.
+    room = _make_room(status=StudyRoomStatus.ENDED, host_id=as_fake_user.id)
     conversation = _make_room_conversation(room)
     message = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="old")
     monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
@@ -696,7 +839,7 @@ async def test_room_ended_member_cannot_patch_own_message(async_client, monkeypa
 
 
 async def test_room_ended_member_cannot_delete_own_message(async_client, monkeypatch, as_fake_user):
-    room = _make_room(status=StudyRoomStatus.ENDED)
+    room = _make_room(status=StudyRoomStatus.ENDED, host_id=as_fake_user.id)
     conversation = _make_room_conversation(room)
     message = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="old")
     monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
@@ -709,7 +852,7 @@ async def test_room_ended_member_cannot_delete_own_message(async_client, monkeyp
 
 async def test_room_active_member_can_still_patch_own_message(async_client, monkeypatch, as_fake_user):
     """Regression guard: the new ended-room gate must not affect active/waiting rooms."""
-    room = _make_room(status=StudyRoomStatus.ACTIVE)
+    room = _make_room(status=StudyRoomStatus.ACTIVE, host_id=as_fake_user.id)
     conversation = _make_room_conversation(room)
     message = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="old")
     monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
@@ -817,9 +960,12 @@ async def test_direct_third_user_cannot_get_message(async_client, monkeypatch, a
 
 
 async def test_direct_sender_can_patch_own_message(async_client, monkeypatch, as_fake_user):
-    message = _make_message(sender_id=as_fake_user.id, conversation_id=uuid.uuid4(), content="hi")
+    other_user = uuid.uuid4()
+    conversation = _make_direct_conversation(as_fake_user.id, other_user)
+    message = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="hi")
     monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
-    updated = _make_message(sender_id=as_fake_user.id, conversation_id=message.conversation_id, content="edited")
+    _wire_direct_conversation(monkeypatch, conversation, {as_fake_user.id, other_user})
+    updated = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="edited")
     monkeypatch.setattr(message_router.message_service, "update", AsyncMock(return_value=updated))
 
     response = await async_client.patch(f"/messages/{message.id}", json={"content": "edited"}, headers=AUTH_HEADERS)
@@ -839,8 +985,11 @@ async def test_direct_other_participant_cannot_patch_sender_message(async_client
 
 
 async def test_direct_sender_can_delete_own_message(async_client, monkeypatch, as_fake_user):
-    message = _make_message(sender_id=as_fake_user.id, conversation_id=uuid.uuid4(), content="hi")
+    other_user = uuid.uuid4()
+    conversation = _make_direct_conversation(as_fake_user.id, other_user)
+    message = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="hi")
     monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_direct_conversation(monkeypatch, conversation, {as_fake_user.id, other_user})
     monkeypatch.setattr(message_router.message_service, "delete", AsyncMock(return_value=None))
 
     response = await async_client.delete(f"/messages/{message.id}", headers=AUTH_HEADERS)
@@ -981,9 +1130,12 @@ async def test_create_message_rejects_nonexistent_attachment(async_client, monke
 
 
 async def test_delete_message_removes_attachment_object(async_client, monkeypatch, as_fake_user):
+    other_user = uuid.uuid4()
+    conversation = _make_direct_conversation(as_fake_user.id, other_user)
     path = "groups/a/channels/b/c/d/lesson.pdf"
-    message = _make_message(sender_id=as_fake_user.id, conversation_id=uuid.uuid4(), content=None, attachment_path=path)
+    message = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content=None, attachment_path=path)
     monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_direct_conversation(monkeypatch, conversation, {as_fake_user.id, other_user})
     monkeypatch.setattr(message_router.message_service, "delete", AsyncMock(return_value=None))
     delete_object_mock = AsyncMock(return_value=None)
     monkeypatch.setattr(message_router.attachments_service, "delete_object", delete_object_mock)
@@ -997,9 +1149,12 @@ async def test_delete_message_removes_attachment_object(async_client, monkeypatc
 async def test_delete_message_succeeds_even_if_storage_cleanup_fails(async_client, monkeypatch, as_fake_user):
     from app.attachments.services.attachment_service import AttachmentStorageError
 
+    other_user = uuid.uuid4()
+    conversation = _make_direct_conversation(as_fake_user.id, other_user)
     path = "groups/a/channels/b/c/d/lesson.pdf"
-    message = _make_message(sender_id=as_fake_user.id, conversation_id=uuid.uuid4(), content=None, attachment_path=path)
+    message = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content=None, attachment_path=path)
     monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_direct_conversation(monkeypatch, conversation, {as_fake_user.id, other_user})
     monkeypatch.setattr(message_router.message_service, "delete", AsyncMock(return_value=None))
     monkeypatch.setattr(
         message_router.attachments_service, "delete_object", AsyncMock(side_effect=AttachmentStorageError("boom"))

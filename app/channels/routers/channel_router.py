@@ -63,15 +63,21 @@ async def list_channels(
     return await service.list_by_group(session, group_id)
 
 
+async def _get_active_channel_or_404(session: AsyncSession, channel_id: uuid.UUID) -> Channel:
+    """Shared "not found or soft-deleted" gate: a deleted channel must behave as if it no
+    longer exists for every normal read/write entry point (get, update, delete, and all
+    channel_members endpoints) -- see docs/db/STUDY_PLATFORM_DATABASE_SPEC.md § 9. Deleting
+    an already-deleted channel therefore also 404s here, same as deleting a missing one --
+    there is no distinct "already deleted" status, by design."""
+    channel = await service.get_by_id(session, channel_id)
+    if channel is None or channel.deleted_at is not None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Channel not found")
+    return channel
+
+
 @router.get("/{channel_id}", response_model=ChannelResponse)
 async def get_channel(channel_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)):
-    channel = await service.get_by_id(session, channel_id)
-    if not channel:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Channel not found"
-        )
-    return channel
+    return await _get_active_channel_or_404(session, channel_id)
 
 
 @router.put("/{channel_id}", response_model=ChannelResponse)
@@ -81,12 +87,7 @@ async def update_channel(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
-    channel = await service.get_by_id(session, channel_id)
-    if not channel:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Channel not found"
-        )
+    channel = await _get_active_channel_or_404(session, channel_id)
     # Authorization follows the channel's *actual stored* group_id, never a client-supplied
     # one -- ChannelUpdate has no group_id field, so there is no bypass surface here.
     if not await is_group_manager(session, channel.group_id, current_user.id):
@@ -109,16 +110,17 @@ async def delete_channel(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
-    channel = await service.get_by_id(session, channel_id)
-    if not channel:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Channel not found"
-        )
+    """Soft delete: the Channel row, its Conversation, and all historical Messages remain in
+    the database (see docs/db/migrations/009_soft_delete_channels.sql). An already-deleted
+    or missing channel both 404 via _get_active_channel_or_404 -- a deleted channel is not
+    re-deletable/re-authorizable through this endpoint."""
+    channel = await _get_active_channel_or_404(session, channel_id)
     if not await is_group_manager(session, channel.group_id, current_user.id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the group owner or a moderator can delete this channel")
     try:
-        await service.delete(session, channel)
+        # deleted_by always comes from the authenticated caller, never a client-supplied
+        # value -- there is no such field on this endpoint's request at all.
+        await service.soft_delete(session, channel, deleted_by=current_user.id)
         await session.commit()
     except Exception as e:
         await session.rollback()
@@ -138,12 +140,7 @@ async def add_member(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
-    channel = await service.get_by_id(session, channel_id)
-    if not channel:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Channel not found"
-        )
+    channel = await _get_active_channel_or_404(session, channel_id)
     # No self-join case for channels (unlike groups) -- managing (typically private)
     # channel membership always requires group manager authority over channel.group_id.
     if not await is_group_manager(session, channel.group_id, current_user.id):
@@ -176,12 +173,7 @@ async def list_members(
     current_user: CurrentUser | None = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_db_session)
 ):
-    channel = await service.get_by_id(session, channel_id)
-    if not channel:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Channel not found"
-        )
+    channel = await _get_active_channel_or_404(session, channel_id)
     await _require_channel_member_access(session, channel, current_user)
     return await service.list_members(session, channel_id)
 
@@ -193,9 +185,7 @@ async def get_member(
     current_user: CurrentUser | None = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_db_session)
 ):
-    channel = await service.get_by_id(session, channel_id)
-    if not channel:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Channel not found")
+    channel = await _get_active_channel_or_404(session, channel_id)
     await _require_channel_member_access(session, channel, current_user)
     member = await service.get_member(session, channel_id, user_id)
     if not member:
@@ -234,12 +224,7 @@ async def remove_member(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
-    channel = await service.get_by_id(session, channel_id)
-    if not channel:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Channel not found"
-        )
+    channel = await _get_active_channel_or_404(session, channel_id)
     member = await service.get_member(session, channel_id, user_id)
     if not member:
         raise HTTPException(

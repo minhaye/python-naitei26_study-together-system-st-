@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -25,14 +26,21 @@ class ChannelsService:
         return channel
 
     async def get_by_id(self, session: AsyncSession, channel_id: uuid.UUID) -> Channel | None:
+        """Returns the channel regardless of deleted_at -- callers (channel_router) decide
+        whether a soft-deleted channel should be treated as not-found, since some call
+        sites (e.g. delete_channel's own idempotency check) need to see it either way."""
         result = await session.execute(
             select(Channel).options(selectinload(Channel.conversation)).where(Channel.id == channel_id)
         )
         return result.scalar_one_or_none()
 
     async def list_by_group(self, session: AsyncSession, group_id: uuid.UUID) -> list[Channel]:
+        """Soft-deleted channels are excluded unconditionally -- a deleted channel must not
+        appear in Channel lists (see docs/db/STUDY_PLATFORM_DATABASE_SPEC.md § 9)."""
         result = await session.execute(
-            select(Channel).options(selectinload(Channel.conversation)).where(Channel.group_id == group_id)
+            select(Channel)
+            .options(selectinload(Channel.conversation))
+            .where(Channel.group_id == group_id, Channel.deleted_at.is_(None))
         )
         return list(result.scalars().all())
 
@@ -42,9 +50,15 @@ class ChannelsService:
         await session.flush()
         return channel
 
-    async def delete(self, session: AsyncSession, channel: Channel) -> None:
-        await session.delete(channel)
+    async def soft_delete(self, session: AsyncSession, channel: Channel, deleted_by: uuid.UUID) -> Channel:
+        """`deleted_by` is the authenticated caller, passed explicitly by the router --
+        never trust a client-supplied deleted_by. Never physically deletes the row: the
+        Channel, its Conversation, and all historical Messages remain in the database (see
+        docs/db/migrations/009_soft_delete_channels.sql)."""
+        channel.deleted_at = datetime.now(timezone.utc)
+        channel.deleted_by = deleted_by
         await session.flush()
+        return channel
 
     # --- channel_members ---
 

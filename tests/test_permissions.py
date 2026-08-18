@@ -18,8 +18,8 @@ def _group(owner_id: uuid.UUID | None = None) -> Group:
     return Group(id=uuid.uuid4(), name="Group", owner_id=owner_id or uuid.uuid4(), is_public=True)
 
 
-def _channel(is_private: bool) -> Channel:
-    return Channel(id=uuid.uuid4(), group_id=uuid.uuid4(), name="general", is_private=is_private)
+def _channel(is_private: bool, deleted_at: datetime | None = None) -> Channel:
+    return Channel(id=uuid.uuid4(), group_id=uuid.uuid4(), name="general", is_private=is_private, deleted_at=deleted_at)
 
 
 def _room(status: StudyRoomStatus = StudyRoomStatus.ACTIVE, host_id: uuid.UUID | None = None) -> StudyRoom:
@@ -168,6 +168,62 @@ async def test_can_access_channel_private_denies_banned_owner_even_with_stale_me
 
     assert not await permissions.can_access_channel(session=None, channel=channel, user_id=uuid.uuid4())
     get_channel_member_mock.assert_not_awaited()
+
+
+# --- can_access_channel: soft-deleted channel (migration 009) ---
+
+
+async def test_can_access_channel_false_when_deleted_even_for_active_member(monkeypatch):
+    channel = _channel(is_private=False, deleted_at=datetime.now(timezone.utc))
+    get_member_mock = AsyncMock(return_value=_group_member(GroupMemberRole.MEMBER, MemberStatus.ACTIVE))
+    monkeypatch.setattr(permissions.groups_service, "get_member", get_member_mock)
+
+    assert not await permissions.can_access_channel(session=None, channel=channel, user_id=uuid.uuid4())
+    # Deletion is checked before any group-membership lookup -- deny fast, no wasted query.
+    get_member_mock.assert_not_awaited()
+
+
+async def test_can_access_channel_false_when_deleted_even_for_group_owner(monkeypatch):
+    """A deleted channel must deny everyone through normal access paths, including the
+    group owner/moderator who could otherwise use the implicit-manager-access branch."""
+    channel = _channel(is_private=True, deleted_at=datetime.now(timezone.utc))
+    get_member_mock = AsyncMock(return_value=_group_member(GroupMemberRole.OWNER, MemberStatus.ACTIVE))
+    monkeypatch.setattr(permissions.groups_service, "get_member", get_member_mock)
+
+    assert not await permissions.can_access_channel(session=None, channel=channel, user_id=uuid.uuid4())
+    get_member_mock.assert_not_awaited()
+
+
+async def test_can_access_channel_false_when_deleted_even_for_explicit_channel_member(monkeypatch):
+    channel = _channel(is_private=True, deleted_at=datetime.now(timezone.utc))
+    monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock())
+    get_channel_member_mock = AsyncMock()
+    monkeypatch.setattr(permissions.channels_service, "get_member", get_channel_member_mock)
+
+    assert not await permissions.can_access_channel(session=None, channel=channel, user_id=uuid.uuid4())
+    get_channel_member_mock.assert_not_awaited()
+
+
+async def test_can_access_channel_true_when_deleted_at_is_none(monkeypatch):
+    """Contrast case: an explicit deleted_at=None (the default/not-deleted state) must not
+    itself deny access -- only an actually-set deleted_at does."""
+    channel = _channel(is_private=False, deleted_at=None)
+    monkeypatch.setattr(
+        permissions.groups_service, "get_member", AsyncMock(return_value=_group_member(GroupMemberRole.MEMBER, MemberStatus.ACTIVE))
+    )
+
+    assert await permissions.can_access_channel(session=None, channel=channel, user_id=uuid.uuid4())
+
+
+async def test_can_access_conversation_channel_type_false_when_channel_deleted(monkeypatch):
+    """End-to-end through the dispatch entry point: can_access_conversation for a channel-type
+    conversation must deny once the underlying channel is soft-deleted."""
+    channel = _channel(is_private=False, deleted_at=datetime.now(timezone.utc))
+    conversation = Conversation(id=uuid.uuid4(), type=ConversationType.CHANNEL, channel_id=channel.id, created_by=uuid.uuid4())
+    monkeypatch.setattr(permissions.channels_service, "get_by_id", AsyncMock(return_value=channel))
+    monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock(return_value=_group_member(GroupMemberRole.OWNER, MemberStatus.ACTIVE)))
+
+    assert not await permissions.can_access_conversation(session=None, conversation=conversation, user_id=uuid.uuid4())
 
 
 # --- can_access_conversation ---

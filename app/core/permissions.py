@@ -44,10 +44,18 @@ def is_group_owner(group: Group, user_id: uuid.UUID) -> bool:
 async def can_access_channel(session: AsyncSession, channel: Channel, user_id: uuid.UUID) -> bool:
     """Mirrors the `can_access_channel` RLS helper used by Supabase policies (see
     `public.can_access_channel` in docs/db/migrations/004_refactor_chat_to_conversations.sql
-    § 8): private channels grant access to an explicit `channel_members` row OR group-manager
-    authority (owner/moderator), not membership alone. The manager branch matters because
-    channel creation never inserts the creator into `channel_members` -- without it, a
-    manager who just created a private channel would be locked out of their own channel."""
+    § 8, updated by 009_soft_delete_channels.sql): private channels grant access to an
+    explicit `channel_members` row OR group-manager authority (owner/moderator), not
+    membership alone. The manager branch matters because channel creation never inserts the
+    creator into `channel_members` -- without it, a manager who just created a private
+    channel would be locked out of their own channel.
+
+    A soft-deleted channel (deleted_at set) is denied outright, before any other check --
+    this must hold for every caller, including an active group owner/moderator, so a deleted
+    channel behaves as if it no longer exists for everyone (see
+    docs/db/STUDY_PLATFORM_DATABASE_SPEC.md § 9)."""
+    if channel.deleted_at is not None:
+        return False
     if not await is_active_group_member(session, channel.group_id, user_id):
         return False
     if channel.is_private:

@@ -36,6 +36,8 @@ class ChannelResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     conversation_id: uuid.UUID | None
+    deleted_at: datetime | None
+    deleted_by: uuid.UUID | None
 
 
 class ChannelMemberCreate(BaseModel):
