@@ -6,6 +6,7 @@ import type { TrackReference } from '@livekit/components-react';
 import { AlertTriangle, Loader2, Mic, MicOff, VideoOff } from 'lucide-react';
 import type { StudyRoomMember } from '../../../lib/studyRoom.types';
 import { getAvatarColor, getAvatarInitials } from '../../../utils/avatarUtils';
+import { getDisplayName } from '../../../utils/userDisplay';
 import { useMeetingContext } from './MeetingContext';
 
 interface MeetingStatusMessageProps {
@@ -102,9 +103,19 @@ function ConnectedGrid({ members, currentUserId, currentUserName }: Omit<Meeting
       {participants.map((p) => {
         const isSelf = p.identity === currentUserId;
         const member = memberByUserId.get(p.identity);
-        const name = isSelf ? `${currentUserName} (Bạn)` : p.name || `Người dùng #${p.identity.slice(0, 4).toUpperCase()}`;
+        // Prefer the real Study Room member's profile (fresh, from the members API) over
+        // the LiveKit-embedded `p.name` (only set once, at token creation -- see
+        // study_room_router.create_meeting_token); `p.name` is a fallback for the rare case
+        // where this participant isn't in our current members list (e.g. a race between
+        // joining the call and the member roster refreshing), never a raw UUID fragment.
+        const name = isSelf
+          ? `${currentUserName} (Bạn)`
+          : member
+            ? getDisplayName(member.user)
+            : p.name || 'Người dùng';
         const initial = getAvatarInitials(name);
-        const color = getAvatarColor(p.identity);
+        const color = getAvatarColor(name);
+        const avatarUrl = isSelf ? null : member?.user.avatar_url ?? null;
         const cameraTrackRef = cameraTrackByIdentity.get(p.identity);
         const isCameraOn = !!cameraTrackRef && !cameraTrackRef.publication.isMuted;
         const isMicOn = p.isMicrophoneEnabled;
@@ -133,6 +144,8 @@ function ConnectedGrid({ members, currentUserId, currentUserName }: Omit<Meeting
                 trackRef={cameraTrackRef}
                 style={{ width: '100%', height: '100%', objectFit: 'cover', transform: isSelf ? 'scaleX(-1)' : undefined }}
               />
+            ) : avatarUrl ? (
+              <img src={avatarUrl} alt={name} style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover' }} />
             ) : (
               <div style={{ width: 80, height: 80, borderRadius: '50%', background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 28, fontWeight: 'bold' }}>
                 {initial}

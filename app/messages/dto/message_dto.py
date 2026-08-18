@@ -3,6 +3,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from app.profiles.dto.profile_dto import UserSummary
+
 
 class MessageCreate(BaseModel):
     content: str | None = None
@@ -42,6 +44,10 @@ class MessageResponse(BaseModel):
     attachment_path: str | None
     created_at: datetime
     updated_at: datetime
+    # See GroupMemberResponse.user -- same canonical-identity convention. This is what fixes
+    # chat sender display (previously a "Người dùng #XXXX" placeholder on the frontend, since
+    # sender_id alone gave it nothing else to render).
+    sender: UserSummary
 
 
 class MessageListResponse(BaseModel):

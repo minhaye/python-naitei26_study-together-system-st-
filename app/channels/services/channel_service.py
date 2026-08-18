@@ -7,8 +7,10 @@ from sqlalchemy.orm import selectinload
 from app.channels.entities.channel_entity import Channel, ChannelMember
 from app.channels.dto.channel_dto import ChannelCreate, ChannelUpdate
 from app.conversations.services.conversation_service import ConversationsService
+from app.profiles.services.profile_service import ProfilesService
 
 conversations_service = ConversationsService()
+profiles_service = ProfilesService()
 
 
 class ChannelsService:
@@ -63,18 +65,26 @@ class ChannelsService:
     # --- channel_members ---
 
     async def add_member(self, session: AsyncSession, channel_id: uuid.UUID, user_id: uuid.UUID) -> ChannelMember:
+        """See GroupsService.add_member -- same reason for the in-memory `.user` assignment
+        after flush (ChannelMemberResponse.user needs it, a freshly-flushed row has nothing
+        loaded yet)."""
         member = ChannelMember(channel_id=channel_id, user_id=user_id)
         session.add(member)
         await session.flush()
+        member.user = await profiles_service.get_by_id(session, user_id)
         return member
 
     async def list_members(self, session: AsyncSession, channel_id: uuid.UUID) -> list[ChannelMember]:
-        result = await session.execute(select(ChannelMember).where(ChannelMember.channel_id == channel_id))
+        result = await session.execute(
+            select(ChannelMember).options(selectinload(ChannelMember.user)).where(ChannelMember.channel_id == channel_id)
+        )
         return list(result.scalars().all())
 
     async def get_member(self, session: AsyncSession, channel_id: uuid.UUID, user_id: uuid.UUID) -> ChannelMember | None:
         result = await session.execute(
-            select(ChannelMember).where(ChannelMember.channel_id == channel_id, ChannelMember.user_id == user_id)
+            select(ChannelMember)
+            .options(selectinload(ChannelMember.user))
+            .where(ChannelMember.channel_id == channel_id, ChannelMember.user_id == user_id)
         )
         return result.scalar_one_or_none()
 

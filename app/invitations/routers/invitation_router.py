@@ -159,7 +159,10 @@ async def create_invitation(
         if data.method == InvitationMethod.EMAIL:
             target_dto = await _build_target_dto(session, target_type, target_entity, group_id)
             inviter = await profiles_service.get_by_id(session, current_user.id)
-            inviter_name = inviter.display_name if inviter and inviter.display_name else "Someone"
+            # Canonical display-name fallback hierarchy: display_name -> username -> generic
+            # label (never an id/email) -- matches UserSummary-based rendering everywhere else.
+            inviter_name = (inviter.display_name or inviter.username) if inviter else None
+            inviter_name = inviter_name or "Người dùng"
             link = f"{settings.frontend_base_url.rstrip('/')}/invitations/{secret}"
             ttl_minutes = max(1, settings.invitation_email_ttl_seconds // 60)
             send_invitation_email(data.recipient_email, inviter_name, target_dto.name, link, ttl_minutes)
@@ -243,7 +246,10 @@ async def resolve_invitation(secret: str, session: AsyncSession = Depends(get_db
 
     target_dto = await _build_target_dto(session, target_type, target_entity, group_id)
     inviter = await profiles_service.get_by_id(session, invitation.created_by)
-    inviter_name = inviter.display_name if inviter and inviter.display_name else "Someone"
+    # Canonical display-name fallback hierarchy: display_name -> username -> generic label
+    # (never an id/email) -- matches UserSummary-based rendering everywhere else.
+    inviter_name = (inviter.display_name or inviter.username) if inviter else None
+    inviter_name = inviter_name or "Người dùng"
     return InvitationPreview(
         id=invitation.id,
         target=target_dto,

@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { Bell, Check, X } from 'lucide-react';
 import { ApiError } from '../../lib/apiClient';
 import { declineInvitation, listIncomingInvitations, redeemInvitationById } from '../../lib/invitation.api';
+import { targetRoute } from '../../lib/invitationNavigation';
 import type { Invitation } from '../../lib/invitation.types';
 
 function targetLabel(invitation: Invitation): string {
@@ -68,9 +69,7 @@ export function PendingInvitationsBell() {
         return;
       }
       setIsOpen(false);
-      if (result.target.type === 'group') navigate(`/groups/${result.target.id}`);
-      else if (result.target.type === 'study_room') navigate(`/room/${result.target.id}`);
-      else navigate(`/groups/${result.target.group_id}`);
+      navigate(targetRoute(result.target));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Không thể tham gia.');
     } finally {

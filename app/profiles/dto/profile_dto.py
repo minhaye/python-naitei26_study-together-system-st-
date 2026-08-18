@@ -29,3 +29,18 @@ class ProfileResponse(BaseModel):
     bio: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class UserSummary(BaseModel):
+    """Minimal identity fields for embedding in membership/message responses (e.g.
+    GroupMemberResponse.user, MessageResponse.sender) -- the canonical way another user's
+    identity reaches the frontend, avoiding one-profile-per-member/sender API calls. Reuse
+    this instead of embedding a full ProfileResponse (bio/timestamps aren't needed here) or
+    inventing another shape per feature."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    username: str | None
+    display_name: str | None
+    avatar_url: str | None

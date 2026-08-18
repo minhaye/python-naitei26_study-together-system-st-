@@ -6,10 +6,12 @@ from sqlalchemy.orm import selectinload
 
 from app.conversations.services.conversation_service import ConversationsService
 from app.db.enums import ModerationAction, StudyRoomMemberRole, StudyRoomStatus
+from app.profiles.services.profile_service import ProfilesService
 from app.study_rooms.entities.study_room_entity import StudyRoom, StudyRoomMember, RoomModerationAction
 from app.study_rooms.dto.study_room_dto import RoomModerationActionCreate, StudyRoomCreate, StudyRoomUpdate
 
 conversations_service = ConversationsService()
+profiles_service = ProfilesService()
 
 
 class StudyRoomsService:
@@ -92,16 +94,22 @@ class StudyRoomsService:
 
     async def get_member(self, session: AsyncSession, room_id: uuid.UUID, user_id: uuid.UUID) -> StudyRoomMember | None:
         result = await session.execute(
-            select(StudyRoomMember).where(StudyRoomMember.room_id == room_id, StudyRoomMember.user_id == user_id)
+            select(StudyRoomMember)
+            .options(selectinload(StudyRoomMember.user))
+            .where(StudyRoomMember.room_id == room_id, StudyRoomMember.user_id == user_id)
         )
         return result.scalar_one_or_none()
 
     async def join(
         self, session: AsyncSession, room_id: uuid.UUID, user_id: uuid.UUID, role: StudyRoomMemberRole = StudyRoomMemberRole.PARTICIPANT
     ) -> StudyRoomMember:
+        """See GroupsService.add_member -- same reason for the in-memory `.user` assignment
+        after flush (StudyRoomMemberResponse.user needs it, a freshly-flushed row has
+        nothing loaded yet)."""
         member = StudyRoomMember(room_id=room_id, user_id=user_id, role=role)
         session.add(member)
         await session.flush()
+        member.user = await profiles_service.get_by_id(session, user_id)
         return member
 
     async def rejoin(self, session: AsyncSession, member: StudyRoomMember) -> StudyRoomMember:
@@ -116,12 +124,18 @@ class StudyRoomsService:
         return member
 
     async def list_members(self, session: AsyncSession, room_id: uuid.UUID) -> list[StudyRoomMember]:
-        result = await session.execute(select(StudyRoomMember).where(StudyRoomMember.room_id == room_id))
+        result = await session.execute(
+            select(StudyRoomMember)
+            .options(selectinload(StudyRoomMember.user))
+            .where(StudyRoomMember.room_id == room_id)
+        )
         return list(result.scalars().all())
 
     async def list_active_members(self, session: AsyncSession, room_id: uuid.UUID) -> list[StudyRoomMember]:
         result = await session.execute(
-            select(StudyRoomMember).where(StudyRoomMember.room_id == room_id, StudyRoomMember.left_at.is_(None))
+            select(StudyRoomMember)
+            .options(selectinload(StudyRoomMember.user))
+            .where(StudyRoomMember.room_id == room_id, StudyRoomMember.left_at.is_(None))
         )
         return list(result.scalars().all())
 

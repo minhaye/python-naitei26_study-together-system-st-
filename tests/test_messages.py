@@ -16,6 +16,7 @@ from app.main import app
 from app.messages.entities.message_entity import Message
 from app.messages.routers import message_router
 from app.messages.services.message_service import MessagesService, _decode_cursor, _encode_cursor
+from app.profiles.entities.profile_entity import Profile
 from app.study_rooms.entities.study_room_entity import StudyRoom, StudyRoomMember
 
 AUTH_HEADERS = {"Authorization": "Bearer testtoken"}
@@ -63,7 +64,7 @@ def _make_conversation(channel: Channel) -> Conversation:
 
 def _make_message(sender_id, conversation_id, content="Hello", attachment_path=None):
     now = datetime.now(timezone.utc)
-    return Message(
+    message = Message(
         id=uuid.uuid4(),
         conversation_id=conversation_id,
         sender_id=sender_id,
@@ -72,6 +73,10 @@ def _make_message(sender_id, conversation_id, content="Hello", attachment_path=N
         created_at=now,
         updated_at=now,
     )
+    # MessageResponse.sender is required (see app/messages/dto/message_dto.py) -- mirrors
+    # how MessagesService.create/get_by_id/list_by_conversation eager-loads/assigns it.
+    message.sender = Profile(id=sender_id, username=None, display_name="Test User", avatar_url=None)
+    return message
 
 
 def _active_member(group_id, user_id, role=GroupMemberRole.MEMBER):

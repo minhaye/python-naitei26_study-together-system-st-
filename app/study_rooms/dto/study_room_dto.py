@@ -4,6 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.db.enums import ModerationAction, StudyRoomMemberRole, StudyRoomStatus
+from app.profiles.dto.profile_dto import UserSummary
 
 
 class StudyRoomCreate(BaseModel):
@@ -55,6 +56,8 @@ class StudyRoomMemberResponse(BaseModel):
     role: StudyRoomMemberRole
     joined_at: datetime
     left_at: datetime | None
+    # See GroupMemberResponse.user -- same canonical-identity convention.
+    user: UserSummary
 
 
 class RoomModerationActionCreate(BaseModel):

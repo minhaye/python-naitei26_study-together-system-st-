@@ -4,9 +4,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { getGroups, listGroupMembers, createGroup, joinGroup } from '../../lib/group.api';
 import { ApiError } from '../../lib/apiClient';
-import { resolveInvitation, redeemInvitation } from '../../lib/invitation.api';
+import { JoinByCodeModal } from '../../components/invitations/JoinByCodeModal';
 import type { Group, GroupMember, GroupMemberRole } from '../../lib/group.types';
-import type { InvitationPreview } from '../../lib/invitation.types';
 import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
 
 interface GroupWithMembership {
@@ -46,19 +45,12 @@ export function StudyRooms() {
 
     // Dropdown & Modal State
     const [isMenuOpen, setIsMenuOpen] = useState(false);
+    // Join-by-code (real invitation redemption -- see app/invitations/ and
+    // JoinByCodeModal, which handles resolve -> preview/mismatch -> redeem -> navigate).
     const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
-    const [joinCode, setJoinCode] = useState('');
     const [groupToJoin, setGroupToJoin] = useState<Group | null>(null);
     const [isJoining, setIsJoining] = useState(false);
     const [joinActionError, setJoinActionError] = useState<string | null>(null);
-
-    // Join-by-code (real invitation redemption -- see app/invitations/). Two steps:
-    // resolve the code to a safe preview, then redeem it, exactly like the email-link flow
-    // on InvitationPreviewPage.
-    const [isResolvingCode, setIsResolvingCode] = useState(false);
-    const [codeError, setCodeError] = useState<string | null>(null);
-    const [codePreview, setCodePreview] = useState<InvitationPreview | null>(null);
-    const [isRedeemingCode, setIsRedeemingCode] = useState(false);
 
     // Create Group modal state
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -131,55 +123,6 @@ export function StudyRooms() {
             cancelled = true;
         };
     }, [loadGroups]);
-
-    function closeJoinModal() {
-        setIsJoinModalOpen(false);
-        setJoinCode('');
-        setCodePreview(null);
-        setCodeError(null);
-    }
-
-    async function handleResolveCode() {
-        if (!joinCode.trim() || isResolvingCode) return;
-        setIsResolvingCode(true);
-        setCodeError(null);
-        try {
-            const preview = await resolveInvitation(joinCode.trim());
-            setCodePreview(preview);
-        } catch (err) {
-            setCodeError(err instanceof ApiError ? err.message : 'Mã mời không hợp lệ hoặc đã hết hạn.');
-        } finally {
-            setIsResolvingCode(false);
-        }
-    }
-
-    async function handleRedeemCode() {
-        if (isRedeemingCode) return;
-        setIsRedeemingCode(true);
-        setCodeError(null);
-        try {
-            const result = await redeemInvitation(joinCode.trim());
-            if (result.outcome === 'group_membership_required') {
-                setCodeError(
-                    `Bạn cần tham gia nhóm "${result.target.group_name}" trước khi có thể vào đây.`
-                );
-                return;
-            }
-            closeJoinModal();
-            if (result.target.type === 'group') {
-                await loadGroups();
-                navigate(`/groups/${result.target.id}`);
-            } else if (result.target.type === 'study_room') {
-                navigate(`/room/${result.target.id}`);
-            } else {
-                navigate(`/groups/${result.target.group_id}`);
-            }
-        } catch (err) {
-            setCodeError(err instanceof ApiError ? err.message : 'Không thể sử dụng mã mời này.');
-        } finally {
-            setIsRedeemingCode(false);
-        }
-    }
 
     async function handleConfirmJoin() {
         if (!groupToJoin || isJoining) return;
@@ -438,89 +381,11 @@ export function StudyRooms() {
 
             </div>
 
-            {/* Modal: Tham gia bằng mã mời (real invitation redemption -- app/invitations/) */}
-            {isJoinModalOpen && (
-                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.4)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
-                    <div style={{ background: 'white', borderRadius: 12, width: 400, padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', boxShadow: '0px 10px 25px rgba(0, 0, 0, 0.1)' }}>
-                        <button
-                            onClick={closeJoinModal}
-                            disabled={isResolvingCode || isRedeemingCode}
-                            style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', cursor: 'pointer', color: '#64748B', fontSize: 18 }}
-                        >
-                            ✕
-                        </button>
-
-                        <div style={{ width: 80, height: 80, backgroundColor: '#E2E8F0', borderRadius: 12, display: 'flex', justifyContent: 'center', alignItems: 'center', marginBottom: 24 }}>
-                            <span style={{ fontSize: 40, color: '#475569', fontWeight: 300, fontFamily: 'Inter' }}>#</span>
-                        </div>
-
-                        {!codePreview ? (
-                            <>
-                                <h2 style={{ fontSize: 18, fontWeight: 600, color: '#0F172A', marginBottom: 24, fontFamily: 'Inter' }}>Nhập mã mời</h2>
-                                <input
-                                    type="text"
-                                    placeholder="K9XR-7P2M"
-                                    value={joinCode}
-                                    onChange={(e) => { setJoinCode(e.target.value); setCodeError(null); }}
-                                    style={{ width: '100%', padding: '12px 16px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 14, outline: 'none', marginBottom: 16, boxSizing: 'border-box', fontFamily: 'Inter' }}
-                                    autoFocus
-                                />
-                                {codeError && (
-                                    <div style={{ width: '100%', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: 12, color: '#B91C1C', fontSize: 13, marginBottom: 16, boxSizing: 'border-box' }}>
-                                        {codeError}
-                                    </div>
-                                )}
-                                <button
-                                    onClick={handleResolveCode}
-                                    disabled={!joinCode.trim() || isResolvingCode}
-                                    style={{
-                                        width: '100%', padding: '12px', borderRadius: 6,
-                                        backgroundColor: !joinCode.trim() || isResolvingCode ? '#F1F5F9' : '#00236F',
-                                        color: !joinCode.trim() || isResolvingCode ? '#94A3B8' : 'white',
-                                        border: 'none', fontSize: 14, fontWeight: 600,
-                                        cursor: !joinCode.trim() || isResolvingCode ? 'not-allowed' : 'pointer',
-                                        fontFamily: 'Inter',
-                                    }}
-                                >
-                                    {isResolvingCode ? 'Đang kiểm tra...' : 'Tiếp tục'}
-                                </button>
-                            </>
-                        ) : (
-                            <>
-                                <h2 style={{ fontSize: 18, fontWeight: 600, color: '#0F172A', marginBottom: 8, fontFamily: 'Inter' }}>Bạn được mời vào</h2>
-                                <p style={{ color: '#475569', fontSize: 14, marginBottom: 4, fontFamily: 'Inter', textAlign: 'center' }}>
-                                    <strong>{codePreview.target.name}</strong>
-                                </p>
-                                {codePreview.target.type !== 'group' && (
-                                    <p style={{ color: '#94A3B8', fontSize: 12, marginBottom: 8, fontFamily: 'Inter' }}>
-                                        Thuộc nhóm: {codePreview.target.group_name}
-                                    </p>
-                                )}
-                                <p style={{ color: '#94A3B8', fontSize: 12, marginBottom: 16, fontFamily: 'Inter' }}>
-                                    Được mời bởi {codePreview.inviter_name}
-                                </p>
-                                {codeError && (
-                                    <div style={{ width: '100%', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: 12, color: '#B91C1C', fontSize: 13, marginBottom: 16, boxSizing: 'border-box' }}>
-                                        {codeError}
-                                    </div>
-                                )}
-                                <button
-                                    onClick={handleRedeemCode}
-                                    disabled={isRedeemingCode}
-                                    style={{
-                                        width: '100%', padding: '12px', borderRadius: 6,
-                                        backgroundColor: isRedeemingCode ? '#94A3B8' : '#00236F',
-                                        color: 'white', border: 'none', fontSize: 14, fontWeight: 600,
-                                        cursor: isRedeemingCode ? 'not-allowed' : 'pointer', fontFamily: 'Inter',
-                                    }}
-                                >
-                                    {isRedeemingCode ? 'Đang tham gia...' : 'Tham gia'}
-                                </button>
-                            </>
-                        )}
-                    </div>
-                </div>
-            )}
+            {/* Join Group by code -- real invitation redemption (see app/invitations/ and
+                JoinByCodeModal, shared with the Study Room/Private Channel entry points on
+                StudyGroupDetail.tsx). A room/channel code entered here is rejected with a
+                clear mismatch message, not silently treated as a Group join. */}
+            <JoinByCodeModal isOpen={isJoinModalOpen} onClose={() => setIsJoinModalOpen(false)} expectedTarget="group" />
 
             {/* Modal: Xác nhận tham gia nhóm */}
             {groupToJoin && (

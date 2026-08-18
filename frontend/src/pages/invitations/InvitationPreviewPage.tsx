@@ -11,13 +11,8 @@ import { Loader2, Mail, Ticket } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { ApiError } from '../../lib/apiClient';
 import { resolveInvitation, redeemInvitation, declineInvitation } from '../../lib/invitation.api';
+import { targetRoute, TARGET_TYPE_LABEL } from '../../lib/invitationNavigation';
 import type { InvitationPreview } from '../../lib/invitation.types';
-
-const TARGET_LABEL: Record<InvitationPreview['target']['type'], string> = {
-  group: 'Nhóm học',
-  study_room: 'Phòng học',
-  private_channel: 'Kênh riêng tư',
-};
 
 export function InvitationPreviewPage() {
   const { secret } = useParams<{ secret: string }>();
@@ -53,13 +48,7 @@ export function InvitationPreviewPage() {
         );
         return;
       }
-      if (result.target.type === 'group') {
-        navigate(`/groups/${result.target.id}`);
-      } else if (result.target.type === 'study_room') {
-        navigate(`/room/${result.target.id}`);
-      } else {
-        navigate(`/groups/${result.target.group_id}`);
-      }
+      navigate(targetRoute(result.target));
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'Không thể chấp nhận lời mời này.');
     } finally {
@@ -113,7 +102,7 @@ export function InvitationPreviewPage() {
         {preview.method === 'email' ? <Mail size={32} color="#00236F" /> : <Ticket size={32} color="#00236F" />}
         <div style={{ color: '#64748B', fontSize: 13 }}>{preview.inviter_name} đã mời bạn tham gia</div>
         <div style={{ color: '#0F172A', fontSize: 20, fontWeight: 700 }}>{preview.target.name}</div>
-        <div style={{ color: '#94A3B8', fontSize: 13 }}>{TARGET_LABEL[preview.target.type]}</div>
+        <div style={{ color: '#94A3B8', fontSize: 13 }}>{TARGET_TYPE_LABEL[preview.target.type]}</div>
         {preview.target.type !== 'group' && (
           <div style={{ color: '#94A3B8', fontSize: 12 }}>Thuộc nhóm: {preview.target.group_name}</div>
         )}

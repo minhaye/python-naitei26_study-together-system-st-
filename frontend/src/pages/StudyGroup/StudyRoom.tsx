@@ -31,6 +31,7 @@ import type { ReactNode } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { useStudyRoom } from '../../hooks/useStudyRoom';
 import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
+import { getDisplayName } from '../../utils/userDisplay';
 import { InviteModal } from '../../components/invitations/InviteModal';
 import { MeetingProvider } from './meeting/MeetingProvider';
 import { MeetingVideoGrid } from './meeting/MeetingVideoGrid';
@@ -235,14 +236,15 @@ export function StudyRoom() {
       .filter((m) => !m.left_at)
       .map((m) => {
         const isSelf = m.user_id === currentUserId;
-        const name = isSelf ? `${currentUser.name} (Bạn)` : `Người dùng #${m.user_id.slice(0, 4).toUpperCase()}`;
+        const name = isSelf ? `${currentUser.name} (Bạn)` : getDisplayName(m.user);
         return {
           id: m.user_id,
           userId: m.user_id,
           role: m.role,
           name,
-          initial: isSelf ? currentUser.initials : getAvatarInitials(m.user_id),
-          color: isSelf ? currentUser.color : getAvatarColor(m.user_id),
+          initial: isSelf ? currentUser.initials : getAvatarInitials(name),
+          color: isSelf ? currentUser.color : getAvatarColor(name),
+          avatarUrl: isSelf ? null : m.user.avatar_url,
           isHost: m.role === 'host',
           isModerator: m.role === 'moderator',
           isSelf,
@@ -824,9 +826,13 @@ export function StudyRoom() {
                   return (
                   <div key={p.id} style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: '#0F172A', borderRadius: 10, border: '1px solid #334155', gap: 8}}>
                     <div style={{display: 'flex', alignItems: 'center', gap: 10, minWidth: 0}}>
-                      <div style={{width: 36, height: 36, borderRadius: '50%', background: p.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 13, flexShrink: 0}}>
-                        {p.initial}
-                      </div>
+                      {p.avatarUrl ? (
+                        <img src={p.avatarUrl} alt={p.name} style={{width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0}} />
+                      ) : (
+                        <div style={{width: 36, height: 36, borderRadius: '50%', background: p.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 13, flexShrink: 0}}>
+                          {p.initial}
+                        </div>
+                      )}
                       <div style={{minWidth: 0}}>
                         <div style={{color: 'white', fontSize: 13, fontWeight: '600', display: 'flex', alignItems: 'center', gap: 6}}>
                           {p.name}
