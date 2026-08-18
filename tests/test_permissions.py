@@ -284,6 +284,24 @@ async def test_can_access_conversation_direct_type_denied_even_with_room_id_set(
 # --- can_access_room / can_access_conversation (room) ---
 
 
+def _mock_active_group_member(monkeypatch, role: GroupMemberRole = GroupMemberRole.MEMBER):
+    monkeypatch.setattr(
+        permissions.groups_service, "get_member", AsyncMock(return_value=_group_member(role, MemberStatus.ACTIVE))
+    )
+
+
+def _mock_inactive_group_member(monkeypatch, status: MemberStatus):
+    monkeypatch.setattr(
+        permissions.groups_service,
+        "get_member",
+        AsyncMock(return_value=_group_member(GroupMemberRole.MEMBER, status)),
+    )
+
+
+def _mock_no_group_membership(monkeypatch):
+    monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock(return_value=None))
+
+
 async def test_can_access_room_false_for_host_without_active_room_membership(monkeypatch):
     """2026-08-18 policy: `host_id` is creator metadata, not an independent access grant -- a
     host needs the same active study_room_members row as anyone else. A host with no
@@ -292,6 +310,7 @@ async def test_can_access_room_false_for_host_without_active_room_membership(mon
     must not special-case host_id to paper over it."""
     host_id = uuid.uuid4()
     room = _room(host_id=host_id)
+    _mock_active_group_member(monkeypatch)
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
 
     assert not await permissions.can_access_room(session=None, room=room, user_id=host_id)
@@ -303,6 +322,7 @@ async def test_can_access_room_true_for_host_with_active_room_membership(monkeyp
     still-participating host passes the exact same check as any other active member."""
     host_id = uuid.uuid4()
     room = _room(host_id=host_id)
+    _mock_active_group_member(monkeypatch)
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
@@ -320,6 +340,7 @@ async def test_can_access_room_false_for_host_who_left_the_room(monkeypatch):
     left_membership = _room_member(
         room.id, host_id, role=StudyRoomMemberRole.HOST, left_at=datetime.now(timezone.utc)
     )
+    _mock_active_group_member(monkeypatch)
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=left_membership))
 
     assert not await permissions.can_access_room(session=None, room=room, user_id=host_id)
@@ -328,6 +349,7 @@ async def test_can_access_room_false_for_host_who_left_the_room(monkeypatch):
 async def test_can_access_room_true_for_active_member(monkeypatch):
     room = _room()
     user_id = uuid.uuid4()
+    _mock_active_group_member(monkeypatch)
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, user_id))
     )
@@ -337,6 +359,7 @@ async def test_can_access_room_true_for_active_member(monkeypatch):
 
 async def test_can_access_room_false_for_non_member(monkeypatch):
     room = _room()
+    _mock_active_group_member(monkeypatch)
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
 
     assert not await permissions.can_access_room(session=None, room=room, user_id=uuid.uuid4())
@@ -346,6 +369,7 @@ async def test_can_access_room_false_for_left_member(monkeypatch):
     room = _room()
     user_id = uuid.uuid4()
     left_member = _room_member(room.id, user_id, left_at=datetime.now(timezone.utc))
+    _mock_active_group_member(monkeypatch)
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=left_member))
 
     assert not await permissions.can_access_room(session=None, room=room, user_id=user_id)
@@ -358,6 +382,7 @@ async def test_can_access_room_false_for_kicked_member(monkeypatch):
     room = _room()
     user_id = uuid.uuid4()
     kicked_member = _room_member(room.id, user_id, left_at=datetime.now(timezone.utc))
+    _mock_active_group_member(monkeypatch)
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=kicked_member))
 
     assert not await permissions.can_access_room(session=None, room=room, user_id=user_id)
@@ -368,10 +393,13 @@ async def test_can_access_room_false_for_deleted_room_even_for_host(monkeypatch)
     can_access_channel's deleted_at guard."""
     host_id = uuid.uuid4()
     room = _room(host_id=host_id, deleted_at=datetime.now(timezone.utc))
+    get_group_member_mock = AsyncMock()
+    monkeypatch.setattr(permissions.groups_service, "get_member", get_group_member_mock)
     get_member_mock = AsyncMock()
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", get_member_mock)
 
     assert not await permissions.can_access_room(session=None, room=room, user_id=host_id)
+    get_group_member_mock.assert_not_awaited()
     get_member_mock.assert_not_awaited()
 
 
@@ -380,6 +408,7 @@ async def test_can_access_room_true_when_deleted_at_is_none(monkeypatch):
     itself deny access -- only an actually-set deleted_at does."""
     host_id = uuid.uuid4()
     room = _room(host_id=host_id, deleted_at=None)
+    _mock_active_group_member(monkeypatch)
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
@@ -387,6 +416,83 @@ async def test_can_access_room_true_when_deleted_at_is_none(monkeypatch):
     )
 
     assert await permissions.can_access_room(session=None, room=room, user_id=host_id)
+
+
+# --- can_access_room: Python/SQL parity fix (2026-08-18) -- active Group membership is now
+# required, not just an active study_room_members row. Before this fix, can_access_room only
+# checked is_active_room_member, so a user who left/was banned from the Group could keep
+# reading/writing a room's chat via FastAPI forever on a stale active study_room_members row,
+# even though can_access_room_conversation() (SQL/RLS, migration 011, live) already denied the
+# exact same request via Realtime/PostgREST. These tests exercise the real can_access_room()
+# logic (not a mock of it) to close that gap. ---
+
+
+async def test_can_access_room_false_for_left_group_member_with_stale_active_room_membership(monkeypatch):
+    """The core parity-bug regression: an active (non-left) study_room_members row must not
+    grant access once the user has left the Group -- study_room_members has no cascade from
+    Group membership changes, so this stale-row scenario is realistic, not hypothetical."""
+    room = _room()
+    user_id = uuid.uuid4()
+    _mock_inactive_group_member(monkeypatch, MemberStatus.LEFT)
+    get_room_member_mock = AsyncMock(return_value=_room_member(room.id, user_id))
+    monkeypatch.setattr(permissions.study_rooms_service, "get_member", get_room_member_mock)
+
+    assert not await permissions.can_access_room(session=None, room=room, user_id=user_id)
+    # The Group check short-circuits before the (now irrelevant) room-membership lookup --
+    # denied-by-Group is denied regardless of what study_room_members says.
+    get_room_member_mock.assert_not_awaited()
+
+
+async def test_can_access_room_false_for_banned_group_member_with_stale_active_room_membership(monkeypatch):
+    room = _room()
+    user_id = uuid.uuid4()
+    _mock_inactive_group_member(monkeypatch, MemberStatus.BANNED)
+    monkeypatch.setattr(
+        permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, user_id))
+    )
+
+    assert not await permissions.can_access_room(session=None, room=room, user_id=user_id)
+
+
+async def test_can_access_room_false_for_non_group_member_with_stale_active_room_membership(monkeypatch):
+    """A user with an active study_room_members row but no group_members row at all (e.g. fully
+    removed from the Group) must also be denied."""
+    room = _room()
+    user_id = uuid.uuid4()
+    _mock_no_group_membership(monkeypatch)
+    monkeypatch.setattr(
+        permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, user_id))
+    )
+
+    assert not await permissions.can_access_room(session=None, room=room, user_id=user_id)
+
+
+async def test_can_access_room_false_for_left_group_host_with_stale_active_room_membership(monkeypatch):
+    """Same as the plain-member case, but for the room's own host -- host_id must not bypass
+    the Group-membership requirement either."""
+    host_id = uuid.uuid4()
+    room = _room(host_id=host_id)
+    _mock_inactive_group_member(monkeypatch, MemberStatus.LEFT)
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, host_id, role=StudyRoomMemberRole.HOST)),
+    )
+
+    assert not await permissions.can_access_room(session=None, room=room, user_id=host_id)
+
+
+async def test_can_access_room_group_check_runs_before_room_membership_check(monkeypatch):
+    """Group membership is checked before the (possibly more expensive/irrelevant) room
+    membership lookup -- a denied Group check short-circuits without needing to consult
+    study_room_members at all."""
+    room = _room()
+    _mock_no_group_membership(monkeypatch)
+    get_room_member_mock = AsyncMock()
+    monkeypatch.setattr(permissions.study_rooms_service, "get_member", get_room_member_mock)
+
+    assert not await permissions.can_access_room(session=None, room=room, user_id=uuid.uuid4())
+    get_room_member_mock.assert_not_awaited()
 
 
 async def test_can_access_conversation_room_type_false_when_room_deleted(monkeypatch):
@@ -552,6 +658,7 @@ def test_can_join_room_false_for_ended_room():
 async def test_can_join_room_meeting_true_for_waiting_room_host_with_active_membership(monkeypatch):
     host_id = uuid.uuid4()
     room = _room(status=StudyRoomStatus.WAITING, host_id=host_id)
+    _mock_active_group_member(monkeypatch)
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
@@ -567,6 +674,7 @@ async def test_can_join_room_meeting_false_for_host_without_active_membership(mo
     normal participation check."""
     host_id = uuid.uuid4()
     room = _room(status=StudyRoomStatus.WAITING, host_id=host_id)
+    _mock_active_group_member(monkeypatch)
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
 
     assert not await permissions.can_join_room_meeting(session=None, room=room, user_id=host_id)
@@ -575,6 +683,7 @@ async def test_can_join_room_meeting_false_for_host_without_active_membership(mo
 async def test_can_join_room_meeting_true_for_active_room_member(monkeypatch):
     room = _room(status=StudyRoomStatus.ACTIVE)
     user_id = uuid.uuid4()
+    _mock_active_group_member(monkeypatch)
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, user_id))
     )
@@ -585,6 +694,7 @@ async def test_can_join_room_meeting_true_for_active_room_member(monkeypatch):
 async def test_can_join_room_meeting_false_when_room_ended_even_for_member(monkeypatch):
     room = _room(status=StudyRoomStatus.ENDED)
     user_id = uuid.uuid4()
+    _mock_active_group_member(monkeypatch)
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, user_id))
     )
@@ -598,6 +708,7 @@ async def test_can_join_room_meeting_false_when_room_ended_even_for_host(monkeyp
     membership check."""
     host_id = uuid.uuid4()
     room = _room(status=StudyRoomStatus.ENDED, host_id=host_id)
+    _mock_active_group_member(monkeypatch)
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
@@ -609,6 +720,7 @@ async def test_can_join_room_meeting_false_when_room_ended_even_for_host(monkeyp
 
 async def test_can_join_room_meeting_false_for_non_member(monkeypatch):
     room = _room(status=StudyRoomStatus.ACTIVE)
+    _mock_active_group_member(monkeypatch)
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
 
     assert not await permissions.can_join_room_meeting(session=None, room=room, user_id=uuid.uuid4())
@@ -618,7 +730,21 @@ async def test_can_join_room_meeting_false_for_left_member(monkeypatch):
     room = _room(status=StudyRoomStatus.ACTIVE)
     user_id = uuid.uuid4()
     left_member = _room_member(room.id, user_id, left_at=datetime.now(timezone.utc))
+    _mock_active_group_member(monkeypatch)
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=left_member))
+
+    assert not await permissions.can_join_room_meeting(session=None, room=room, user_id=user_id)
+
+
+async def test_can_join_room_meeting_false_for_left_group_member_with_stale_active_room_membership(monkeypatch):
+    """Meeting token issuance must also respect the Python/SQL parity fix: an active
+    study_room_members row does not bypass a lapsed Group membership."""
+    room = _room(status=StudyRoomStatus.ACTIVE)
+    user_id = uuid.uuid4()
+    _mock_inactive_group_member(monkeypatch, MemberStatus.LEFT)
+    monkeypatch.setattr(
+        permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, user_id))
+    )
 
     assert not await permissions.can_join_room_meeting(session=None, room=room, user_id=user_id)
 
@@ -628,6 +754,7 @@ async def test_can_access_conversation_room_type_true_for_host(monkeypatch):
     room = _room(host_id=host_id)
     conversation = Conversation(id=uuid.uuid4(), type=ConversationType.ROOM, room_id=room.id, created_by=host_id)
     monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
+    _mock_active_group_member(monkeypatch)
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
@@ -642,6 +769,7 @@ async def test_can_access_conversation_room_type_true_for_active_member(monkeypa
     user_id = uuid.uuid4()
     conversation = Conversation(id=uuid.uuid4(), type=ConversationType.ROOM, room_id=room.id, created_by=room.host_id)
     monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
+    _mock_active_group_member(monkeypatch)
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, user_id))
     )
@@ -649,10 +777,29 @@ async def test_can_access_conversation_room_type_true_for_active_member(monkeypa
     assert await permissions.can_access_conversation(session=None, conversation=conversation, user_id=user_id)
 
 
+async def test_can_access_conversation_room_type_false_for_left_group_member_with_stale_active_room_membership(
+    monkeypatch,
+):
+    """End-to-end through the dispatch entry point for the Python/SQL parity fix (2026-08-18):
+    an active study_room_members row must not grant conversation access once the user has left
+    the Group."""
+    room = _room()
+    user_id = uuid.uuid4()
+    conversation = Conversation(id=uuid.uuid4(), type=ConversationType.ROOM, room_id=room.id, created_by=room.host_id)
+    monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
+    _mock_inactive_group_member(monkeypatch, MemberStatus.LEFT)
+    monkeypatch.setattr(
+        permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, user_id))
+    )
+
+    assert not await permissions.can_access_conversation(session=None, conversation=conversation, user_id=user_id)
+
+
 async def test_can_access_conversation_room_type_false_for_non_member(monkeypatch):
     room = _room()
     conversation = Conversation(id=uuid.uuid4(), type=ConversationType.ROOM, room_id=room.id, created_by=room.host_id)
     monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
+    _mock_active_group_member(monkeypatch)
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
 
     assert not await permissions.can_access_conversation(session=None, conversation=conversation, user_id=uuid.uuid4())
@@ -663,6 +810,7 @@ async def test_can_access_conversation_room_type_false_for_left_member(monkeypat
     user_id = uuid.uuid4()
     conversation = Conversation(id=uuid.uuid4(), type=ConversationType.ROOM, room_id=room.id, created_by=room.host_id)
     monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
+    _mock_active_group_member(monkeypatch)
     left_member = _room_member(room.id, user_id, left_at=datetime.now(timezone.utc))
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=left_member))
 
@@ -703,6 +851,7 @@ async def test_can_send_to_conversation_room_active_allows_send(monkeypatch):
     user_id = uuid.uuid4()
     conversation = Conversation(id=uuid.uuid4(), type=ConversationType.ROOM, room_id=room.id, created_by=room.host_id)
     monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
+    _mock_active_group_member(monkeypatch)
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, user_id))
     )
@@ -715,6 +864,7 @@ async def test_can_send_to_conversation_room_ended_denies_send_but_allows_read(m
     user_id = uuid.uuid4()
     conversation = Conversation(id=uuid.uuid4(), type=ConversationType.ROOM, room_id=room.id, created_by=room.host_id)
     monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
+    _mock_active_group_member(monkeypatch)
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, user_id))
     )
@@ -727,9 +877,24 @@ async def test_can_send_to_conversation_room_non_member_still_denied(monkeypatch
     room = _room(status=StudyRoomStatus.ACTIVE)
     conversation = Conversation(id=uuid.uuid4(), type=ConversationType.ROOM, room_id=room.id, created_by=room.host_id)
     monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
+    _mock_active_group_member(monkeypatch)
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
 
     assert not await permissions.can_send_to_conversation(session=None, conversation=conversation, user_id=uuid.uuid4())
+
+
+async def test_can_send_to_conversation_room_left_group_member_with_stale_active_room_membership_denied(monkeypatch):
+    """Write-time authorization must also respect the Python/SQL parity fix."""
+    room = _room(status=StudyRoomStatus.ACTIVE)
+    user_id = uuid.uuid4()
+    conversation = Conversation(id=uuid.uuid4(), type=ConversationType.ROOM, room_id=room.id, created_by=room.host_id)
+    monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
+    _mock_inactive_group_member(monkeypatch, MemberStatus.LEFT)
+    monkeypatch.setattr(
+        permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, user_id))
+    )
+
+    assert not await permissions.can_send_to_conversation(session=None, conversation=conversation, user_id=user_id)
 
 
 async def test_can_send_to_conversation_channel_type_unaffected_by_room_logic(monkeypatch):

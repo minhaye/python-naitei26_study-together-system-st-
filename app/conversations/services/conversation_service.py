@@ -24,6 +24,22 @@ class ConversationsService:
         await session.flush()
         return conversation
 
+    # --- room conversations ---
+
+    async def get_by_room_id(self, session: AsyncSession, room_id: uuid.UUID) -> Conversation | None:
+        result = await session.execute(select(Conversation).where(Conversation.room_id == room_id))
+        return result.scalar_one_or_none()
+
+    async def create_for_room(self, session: AsyncSession, room_id: uuid.UUID, created_by: uuid.UUID) -> Conversation:
+        """Mirrors create_for_channel. `conversations_room_id_key` (partial unique index,
+        migration 004) guarantees at most one ROOM conversation per room at the DB level --
+        a second call for the same room_id raises IntegrityError on flush rather than
+        silently creating a duplicate."""
+        conversation = Conversation(type=ConversationType.ROOM, room_id=room_id, created_by=created_by)
+        session.add(conversation)
+        await session.flush()
+        return conversation
+
     # --- direct (1-1) conversations ---
 
     async def get_direct_by_pair(

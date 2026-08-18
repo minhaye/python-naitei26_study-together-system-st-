@@ -10,6 +10,7 @@ from app.db.base import Base
 from app.db.enums import ModerationAction, StudyRoomMemberRole, StudyRoomStatus, pg_enum
 
 if TYPE_CHECKING:
+    from app.conversations.entities.conversation_entity import Conversation
     from app.groups.entities.group_entity import Group
     from app.profiles.entities.profile_entity import Profile
 
@@ -46,6 +47,14 @@ class StudyRoom(Base):
     host: Mapped["Profile"] = relationship(back_populates="hosted_study_rooms", foreign_keys=[host_id])
     members: Mapped[list["StudyRoomMember"]] = relationship(back_populates="room")
     moderation_actions: Mapped[list["RoomModerationAction"]] = relationship(back_populates="room")
+    conversation: Mapped["Conversation | None"] = relationship(back_populates="room", uselist=False)
+
+    @property
+    def conversation_id(self) -> uuid.UUID | None:
+        """Convenience accessor for API responses. Requires `conversation` to already be
+        loaded (see StudyRoomsService.get_by_id/list_by_group, which eager-load it, and
+        StudyRoomsService.create, which sets it in-memory on the freshly created room)."""
+        return self.conversation.id if self.conversation else None
 
 
 class StudyRoomMember(Base):

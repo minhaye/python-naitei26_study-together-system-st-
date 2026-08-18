@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from app.auth.dependencies import get_current_user
 from app.auth.dto.auth_dto import CurrentUser
@@ -20,7 +21,7 @@ from app.db.session import get_db_session
 from app.groups.entities.group_entity import Group, GroupMember
 from app.main import app
 from app.messages.routers import message_router
-from app.study_rooms.dto.study_room_dto import RoomModerationActionCreate
+from app.study_rooms.dto.study_room_dto import RoomModerationActionCreate, StudyRoomCreate
 from app.study_rooms.entities.study_room_entity import RoomModerationAction, StudyRoom, StudyRoomMember
 from app.study_rooms.routers import study_room_router
 from app.study_rooms.services.study_room_service import StudyRoomsService
@@ -387,6 +388,181 @@ async def test_create_room_allowed_for_active_moderator_and_host_id_spoofing_ign
     assert captured["host_id"] != spoofed_host_id
 
 
+# --- Create: Room + host StudyRoomMember + ROOM Conversation, created atomically ---
+#
+# A real database/SQLite test harness does not exist in this repo (see test_conversations.py's
+# _FakeSession docstring for the same rationale) -- an ordinary AsyncMock() session is not
+# safe here either: chaining through select(...).scalar_one_or_none() on a plain AsyncMock
+# auto-creates further AsyncMocks at every attribute access, so an un-awaited coroutine can
+# silently leak out as if it were a real value. StudyRoomsService.create()'s actual
+# transactional logic -- three inserts in one session, atomicity owned entirely by the
+# caller's commit/rollback -- is exactly the kind of new logic worth exercising directly
+# rather than mocking away, so it gets a small purpose-built fake session (same pattern as
+# test_conversations.py's _FakeSession for ConversationsService.get_or_create_direct).
+
+
+class _FakeCreateRoomSession:
+    """Assigns an id to each newly added object on flush (standing in for a real DB
+    server_default becoming available post-flush), unless `fail_on_flush_call` matches the
+    current 1-indexed flush call count, in which case it raises IntegrityError instead --
+    simulating a DB constraint violation (e.g. conversations_room_id_key, migration 004)
+    surfacing at flush time. StudyRoomsService.create() flushes exactly 3 times: after the
+    Room insert, after the host StudyRoomMember insert, and after the Conversation insert
+    (inside ConversationsService.create_for_room) -- so fail_on_flush_call=3 targets the
+    Conversation insert specifically."""
+
+    def __init__(self, fail_on_flush_call: int | None = None):
+        self.added: list = []
+        self.flush_call_count = 0
+        self.commit_called = False
+        self.rollback_called = False
+        self._fail_on_flush_call = fail_on_flush_call
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    async def flush(self):
+        self.flush_call_count += 1
+        if self._fail_on_flush_call is not None and self.flush_call_count == self._fail_on_flush_call:
+            raise IntegrityError(
+                "INSERT INTO conversations ...",
+                {},
+                Exception('duplicate key value violates unique constraint "conversations_room_id_key"'),
+            )
+        for obj in self.added:
+            if getattr(obj, "id", None) is None:
+                obj.id = uuid.uuid4()
+
+    async def commit(self):
+        self.commit_called = True
+
+    async def rollback(self):
+        self.rollback_called = True
+
+
+async def test_service_create_room_creates_room_membership_and_conversation_atomically():
+    """Exercises the real StudyRoomsService.create() -- not a mock of it, and not a mock of
+    ConversationsService.create_for_room -- proving all three inserts (Room, host
+    StudyRoomMember, ROOM Conversation) happen in this one call, in the same session, and
+    that the returned room has its Conversation wired in-memory so the API response can read
+    room.conversation_id without a lazy-load round trip."""
+    service = StudyRoomsService()
+    session = _FakeCreateRoomSession()
+    host_id = uuid.uuid4()
+    data = StudyRoomCreate(group_id=uuid.uuid4(), name="Room", max_participants=50)
+
+    room = await service.create(session, data, host_id=host_id)
+
+    assert len(session.added) == 3
+    added_room, added_membership, added_conversation = session.added
+    assert added_room is room
+    assert isinstance(added_membership, StudyRoomMember)
+    assert added_membership.room_id == room.id
+    assert added_membership.user_id == host_id
+    assert added_membership.role == StudyRoomMemberRole.HOST
+    assert isinstance(added_conversation, Conversation)
+    assert added_conversation.type == ConversationType.ROOM
+    assert added_conversation.room_id == room.id
+    assert added_conversation.created_by == host_id
+    assert room.conversation is added_conversation
+    assert room.conversation_id == added_conversation.id
+    # Atomicity (commit-or-rollback-everything) is owned entirely by the caller
+    # (study_room_router.create_room) -- the service itself must never commit.
+    assert not session.commit_called
+
+
+async def test_service_create_room_conversation_failure_propagates_without_internal_commit():
+    """If the Conversation insert fails (simulated here the same way a real DB IntegrityError
+    would surface -- an exception raised from session.flush()), the exception must propagate
+    out of StudyRoomsService.create() uncaught, and the service must not have committed
+    anything itself. This is exactly what lets a caller's rollback (see the router-level test
+    below) undo the already-flushed-but-uncommitted Room and host membership too -- there must
+    be no partial commit that could leave either of them behind as an orphan."""
+    service = StudyRoomsService()
+    session = _FakeCreateRoomSession(fail_on_flush_call=3)
+    data = StudyRoomCreate(group_id=uuid.uuid4(), name="Room", max_participants=50)
+
+    with pytest.raises(IntegrityError):
+        await service.create(session, data, host_id=uuid.uuid4())
+
+    # Room and host membership were successfully flushed (pending, with DB-assigned ids);
+    # the Conversation was added to the session but its flush failed, so it never got an id.
+    # None of the three was ever committed -- exactly the state a caller's rollback must be
+    # able to undo cleanly, with no orphan left behind.
+    assert len(session.added) == 3
+    added_room, added_membership, added_conversation = session.added
+    assert added_room.id is not None
+    assert added_membership.id is not None
+    assert added_conversation.id is None
+    assert not session.commit_called
+
+
+async def test_create_room_conversation_failure_rolls_back_via_router(async_client, monkeypatch, as_fake_user):
+    """End-to-end: POST /study-rooms/ must roll back the whole operation -- not commit a
+    partial result -- when Conversation creation fails deep inside
+    StudyRoomsService.create(). Exercises the real router -> real StudyRoomsService.create()
+    -> real ConversationsService.create_for_room chain; only the session's flush is
+    fault-injected, and only on the specific call that corresponds to the Conversation
+    insert."""
+    group_id = uuid.uuid4()
+    group = Group(id=group_id, name="G", owner_id=as_fake_user.id, is_public=True)
+    monkeypatch.setattr(study_room_router.groups_service, "get_by_id", AsyncMock(return_value=group))
+    _mock_group_membership(monkeypatch, _group_member(group_id, as_fake_user.id, role=GroupMemberRole.OWNER))
+
+    session = _FakeCreateRoomSession(fail_on_flush_call=3)
+
+    async def _fake_failing_session():
+        yield session
+
+    app.dependency_overrides[get_db_session] = _fake_failing_session
+    try:
+        response = await async_client.post(
+            "/study-rooms/", json={"group_id": str(group_id), "name": "Room"}, headers=AUTH_HEADERS
+        )
+    finally:
+        app.dependency_overrides.pop(get_db_session, None)
+
+    assert response.status_code == 400
+    # Room + host membership were successfully flushed (pending, with DB-assigned ids); the
+    # Conversation was added but its flush failed, so it never got an id. Nothing was
+    # committed, and the router's except/rollback ran -- the exact mechanism that leaves no
+    # orphan Room or host membership behind in a real database.
+    assert len(session.added) == 3
+    added_room, added_membership, added_conversation = session.added
+    assert added_room.id is not None
+    assert added_membership.id is not None
+    assert added_conversation.id is None
+    assert not session.commit_called
+    assert session.rollback_called
+
+
+async def test_newly_created_room_conversation_is_resolvable_for_message_access(monkeypatch):
+    """End-to-end proof that a freshly created Room's Conversation is not just structurally
+    present, but actually usable by the production message-authorization path: exercises the
+    real StudyRoomsService.create() and the real can_access_conversation()/can_access_room()
+    dispatch -- only the Group/Room-member lookups are faked."""
+    service = StudyRoomsService()
+    session = _FakeCreateRoomSession()
+    host_id = uuid.uuid4()
+    data = StudyRoomCreate(group_id=uuid.uuid4(), name="Room", max_participants=50)
+
+    room = await service.create(session, data, host_id=host_id)
+    conversation = room.conversation
+
+    assert conversation.type == ConversationType.ROOM
+    assert conversation.room_id == room.id
+
+    monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, host_id, role=GroupMemberRole.OWNER))
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, host_id, role=StudyRoomMemberRole.HOST)),
+    )
+
+    assert await permissions.can_access_conversation(session=None, conversation=conversation, user_id=host_id)
+
+
 # --- Update: active Group owner/moderator only (2026-08-18 -- host_id alone is not enough) ---
 
 
@@ -549,6 +725,7 @@ async def test_join_room_uses_authenticated_identity_not_request_supplied_user_i
     other_user_id = uuid.uuid4()
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
     monkeypatch.setattr(study_room_router.service, "get_member", AsyncMock(return_value=None))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
 
     captured = {}
 
@@ -581,6 +758,7 @@ async def test_join_room_rejoin_resets_left_at_without_duplicate_membership(asyn
     member = _room_member(room.id, as_fake_user.id, left_at=datetime.now(timezone.utc))
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
     monkeypatch.setattr(study_room_router.service, "get_member", AsyncMock(return_value=member))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
 
     async def fake_rejoin(session, member):
         member.left_at = None
@@ -595,6 +773,74 @@ async def test_join_room_rejoin_resets_left_at_without_duplicate_membership(asyn
     assert response.status_code == 200
     assert response.json()["left_at"] is None
     join_mock.assert_not_awaited()
+
+
+async def test_join_room_denied_for_left_group_member(async_client, monkeypatch, as_fake_user):
+    """2026-08-18: join's own prerequisite is current active Group membership (mirrors
+    can_access_room's requirement for ongoing participation) -- a user who left the Group must
+    not be able to join a room under it, even though can_join_room() itself only checks room
+    lifecycle. Regression guard: the join endpoint previously had NO Group-membership check at
+    all -- any authenticated user, member or not, could join any room."""
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    monkeypatch.setattr(study_room_router.service, "get_member", AsyncMock(return_value=None))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id, status=MemberStatus.LEFT))
+    join_mock = AsyncMock()
+    monkeypatch.setattr(study_room_router.service, "join", join_mock)
+
+    response = await async_client.post(f"/study-rooms/{room.id}/join", headers=AUTH_HEADERS)
+
+    assert response.status_code == 403
+    join_mock.assert_not_awaited()
+
+
+async def test_join_room_denied_for_banned_group_member(async_client, monkeypatch, as_fake_user):
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    monkeypatch.setattr(study_room_router.service, "get_member", AsyncMock(return_value=None))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id, status=MemberStatus.BANNED))
+    join_mock = AsyncMock()
+    monkeypatch.setattr(study_room_router.service, "join", join_mock)
+
+    response = await async_client.post(f"/study-rooms/{room.id}/join", headers=AUTH_HEADERS)
+
+    assert response.status_code == 403
+    join_mock.assert_not_awaited()
+
+
+async def test_join_room_denied_for_non_group_member(async_client, monkeypatch, as_fake_user):
+    """A user with no group_members row at all (never joined, or fully removed) must also be
+    denied -- not just a user with an explicit non-active status."""
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    monkeypatch.setattr(study_room_router.service, "get_member", AsyncMock(return_value=None))
+    _mock_group_membership(monkeypatch, None)
+    join_mock = AsyncMock()
+    monkeypatch.setattr(study_room_router.service, "join", join_mock)
+
+    response = await async_client.post(f"/study-rooms/{room.id}/join", headers=AUTH_HEADERS)
+
+    assert response.status_code == 403
+    join_mock.assert_not_awaited()
+
+
+async def test_rejoin_room_denied_for_left_group_member_with_stale_room_membership(
+    async_client, monkeypatch, as_fake_user
+):
+    """Same Group-membership prerequisite applies to rejoin (an existing, previously-left
+    study_room_members row) -- not just first-time join."""
+    room = _make_room()
+    member = _room_member(room.id, as_fake_user.id, left_at=datetime.now(timezone.utc))
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    monkeypatch.setattr(study_room_router.service, "get_member", AsyncMock(return_value=member))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id, status=MemberStatus.LEFT))
+    rejoin_mock = AsyncMock()
+    monkeypatch.setattr(study_room_router.service, "rejoin", rejoin_mock)
+
+    response = await async_client.post(f"/study-rooms/{room.id}/join", headers=AUTH_HEADERS)
+
+    assert response.status_code == 403
+    rejoin_mock.assert_not_awaited()
 
 
 # --- Leave: self-leave only, no user_id spoofing possible ---
@@ -680,7 +926,24 @@ async def test_list_members_requires_auth(async_client):
 async def test_list_members_forbidden_for_non_member(async_client, monkeypatch, as_fake_user):
     room = _make_room()
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
+
+    response = await async_client.get(f"/study-rooms/{room.id}/members", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_list_members_forbidden_for_left_group_member_with_stale_active_room_membership(
+    async_client, monkeypatch, as_fake_user
+):
+    """Python/SQL parity fix (2026-08-18): an active study_room_members row must not grant
+    access once the caller has left the Group."""
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, None)
+    monkeypatch.setattr(
+        permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
+    )
 
     response = await async_client.get(f"/study-rooms/{room.id}/members", headers=AUTH_HEADERS)
     assert response.status_code == 403
@@ -689,6 +952,7 @@ async def test_list_members_forbidden_for_non_member(async_client, monkeypatch, 
 async def test_list_members_allowed_for_active_member(async_client, monkeypatch, as_fake_user):
     room = _make_room()
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
     )
@@ -704,6 +968,7 @@ async def test_list_members_allowed_for_host(async_client, monkeypatch, as_fake_
     StudyRoomsService.create()."""
     room = _make_room(host_id=as_fake_user.id)
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
@@ -1038,6 +1303,7 @@ async def test_log_moderation_active_group_manager_can_target_room_host(async_cl
 async def test_log_moderation_raise_hand_self_service_allowed(async_client, monkeypatch, as_fake_user):
     room = _make_room()
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
     )
@@ -1087,7 +1353,24 @@ async def test_list_moderation_requires_auth(async_client):
 async def test_list_moderation_forbidden_for_non_member(async_client, monkeypatch, as_fake_user):
     room = _make_room()
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
+
+    response = await async_client.get(f"/study-rooms/{room.id}/moderation", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_list_moderation_forbidden_for_left_group_member_with_stale_active_room_membership(
+    async_client, monkeypatch, as_fake_user
+):
+    """Python/SQL parity fix (2026-08-18): an active study_room_members row must not grant
+    access to moderation history once the caller has left the Group."""
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, None)
+    monkeypatch.setattr(
+        permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
+    )
 
     response = await async_client.get(f"/study-rooms/{room.id}/moderation", headers=AUTH_HEADERS)
     assert response.status_code == 403
@@ -1096,6 +1379,7 @@ async def test_list_moderation_forbidden_for_non_member(async_client, monkeypatc
 async def test_list_moderation_allowed_for_member(async_client, monkeypatch, as_fake_user):
     room = _make_room()
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
     )

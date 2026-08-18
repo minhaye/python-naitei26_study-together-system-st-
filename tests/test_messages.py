@@ -97,9 +97,17 @@ def _room_member(room_id, user_id, role=StudyRoomMemberRole.PARTICIPANT, left_at
     return StudyRoomMember(room_id=room_id, user_id=user_id, role=role, left_at=left_at)
 
 
-def _wire_room_conversation(monkeypatch, room: StudyRoom, conversation: Conversation):
+def _wire_room_conversation(monkeypatch, room: StudyRoom, conversation: Conversation, user_id=None):
+    """Also wires an active Group membership for `user_id` (2026-08-18 parity fix --
+    can_access_room now requires current active Group membership, not just an active
+    study_room_members row). Tests exercising the Group-membership axis itself (left/banned/
+    inactive) override this afterwards with their own monkeypatch.setattr call."""
     monkeypatch.setattr(message_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
     monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
+    if user_id is not None:
+        monkeypatch.setattr(
+            permissions.groups_service, "get_member", AsyncMock(return_value=_active_member(room.group_id, user_id))
+        )
 
 
 def _make_direct_conversation(user_a_id, user_b_id) -> Conversation:
@@ -568,7 +576,7 @@ async def test_room_host_can_list_messages(async_client, monkeypatch, as_fake_us
     StudyRoomsService.create()."""
     room = _make_room(host_id=as_fake_user.id)
     conversation = _make_room_conversation(room)
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
@@ -583,7 +591,7 @@ async def test_room_host_can_list_messages(async_client, monkeypatch, as_fake_us
 async def test_room_host_can_send_message(async_client, monkeypatch, as_fake_user):
     room = _make_room(host_id=as_fake_user.id)
     conversation = _make_room_conversation(room)
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
@@ -603,7 +611,7 @@ async def test_room_host_without_active_membership_denied(async_client, monkeypa
     the normal participation check for room conversation access."""
     room = _make_room(host_id=as_fake_user.id)
     conversation = _make_room_conversation(room)
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
 
     response = await async_client.get(f"/conversations/{conversation.id}/messages", headers=AUTH_HEADERS)
@@ -613,7 +621,7 @@ async def test_room_host_without_active_membership_denied(async_client, monkeypa
 async def test_room_active_member_can_list_messages(async_client, monkeypatch, as_fake_user):
     room = _make_room()
     conversation = _make_room_conversation(room)
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
@@ -628,7 +636,7 @@ async def test_room_active_member_can_list_messages(async_client, monkeypatch, a
 async def test_room_active_member_can_send_message(async_client, monkeypatch, as_fake_user):
     room = _make_room()
     conversation = _make_room_conversation(room)
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
@@ -646,7 +654,7 @@ async def test_room_active_member_can_send_message(async_client, monkeypatch, as
 async def test_room_non_member_denied(async_client, monkeypatch, as_fake_user):
     room = _make_room()
     conversation = _make_room_conversation(room)
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
 
     response = await async_client.get(f"/conversations/{conversation.id}/messages", headers=AUTH_HEADERS)
@@ -659,7 +667,7 @@ async def test_room_banned_member_denied(async_client, monkeypatch, as_fake_user
     set, same as a voluntary leave or a kick."""
     room = _make_room()
     conversation = _make_room_conversation(room)
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
     removed_member = _room_member(room.id, as_fake_user.id, left_at=datetime.now(timezone.utc))
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=removed_member))
 
@@ -672,7 +680,7 @@ async def test_room_kicked_member_denied(async_client, monkeypatch, as_fake_user
     membership. A kicked member is represented identically to a left member (left_at set)."""
     room = _make_room()
     conversation = _make_room_conversation(room)
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
     kicked_member = _room_member(room.id, as_fake_user.id, left_at=datetime.now(timezone.utc))
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=kicked_member))
 
@@ -685,12 +693,40 @@ async def test_room_kicked_member_denied(async_client, monkeypatch, as_fake_user
 async def test_room_left_member_denied(async_client, monkeypatch, as_fake_user):
     room = _make_room()
     conversation = _make_room_conversation(room)
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
     left_member = _room_member(room.id, as_fake_user.id, left_at=datetime.now(timezone.utc))
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=left_member))
 
     response = await async_client.get(f"/conversations/{conversation.id}/messages", headers=AUTH_HEADERS)
     assert response.status_code == 403
+
+
+async def test_room_left_group_member_with_stale_active_room_membership_denied(async_client, monkeypatch, as_fake_user):
+    """Python/SQL parity fix (2026-08-18): before this fix, can_access_room only checked
+    is_active_room_member, so a user who left the Group but still had an active
+    study_room_members row (no cascade exists from Group membership changes to Room
+    memberships) could keep reading/sending room messages via FastAPI forever, even though
+    can_access_room_conversation() (SQL/RLS, migration 011, live) already denied the identical
+    request via Realtime/direct PostgREST. Exercises the real router -> can_access_conversation
+    -> can_access_room chain end to end, not a mock of can_access_room itself."""
+    room = _make_room()
+    conversation = _make_room_conversation(room)
+    monkeypatch.setattr(message_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
+    monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
+    monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, as_fake_user.id)),
+    )
+
+    list_response = await async_client.get(f"/conversations/{conversation.id}/messages", headers=AUTH_HEADERS)
+    send_response = await async_client.post(
+        f"/conversations/{conversation.id}/messages", json={"content": "hi"}, headers=AUTH_HEADERS
+    )
+
+    assert list_response.status_code == 403
+    assert send_response.status_code == 403
 
 
 async def test_room_missing_room_id_denied_safely(async_client, monkeypatch, as_fake_user):
@@ -730,7 +766,7 @@ async def test_direct_conversation_type_cannot_bypass_via_room_id(async_client, 
 async def test_room_ended_denies_new_message_but_allows_reading_history(async_client, monkeypatch, as_fake_user):
     room = _make_room(status=StudyRoomStatus.ENDED)
     conversation = _make_room_conversation(room)
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
@@ -755,7 +791,7 @@ async def test_room_member_can_get_room_message(async_client, monkeypatch, as_fa
     conversation = _make_room_conversation(room)
     message = _make_message(sender_id=uuid.uuid4(), conversation_id=conversation.id, content="hi")
     monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
@@ -771,7 +807,7 @@ async def test_room_member_can_patch_own_message(async_client, monkeypatch, as_f
     conversation = _make_room_conversation(room)
     message = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="hi")
     monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
     )
@@ -788,7 +824,7 @@ async def test_room_member_can_delete_own_message(async_client, monkeypatch, as_
     conversation = _make_room_conversation(room)
     message = _make_message(sender_id=as_fake_user.id, conversation_id=conversation.id, content="hi")
     monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
     )
@@ -803,7 +839,7 @@ async def test_room_unauthorized_user_cannot_get_room_message(async_client, monk
     conversation = _make_room_conversation(room)
     message = _make_message(sender_id=uuid.uuid4(), conversation_id=conversation.id, content="hi")
     monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
 
     response = await async_client.get(f"/messages/{message.id}", headers=AUTH_HEADERS)
@@ -837,7 +873,7 @@ async def test_room_ended_member_can_get_message(async_client, monkeypatch, as_f
     conversation = _make_room_conversation(room)
     message = _make_message(sender_id=uuid.uuid4(), conversation_id=conversation.id, content="old message")
     monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
@@ -859,6 +895,9 @@ async def test_room_ended_member_cannot_patch_own_message(async_client, monkeypa
     monkeypatch.setattr(message_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
     monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
     monkeypatch.setattr(
+        permissions.groups_service, "get_member", AsyncMock(return_value=_active_member(room.group_id, as_fake_user.id))
+    )
+    monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
         AsyncMock(return_value=_room_member(room.id, as_fake_user.id, role=StudyRoomMemberRole.HOST)),
@@ -875,6 +914,9 @@ async def test_room_ended_member_cannot_delete_own_message(async_client, monkeyp
     monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
     monkeypatch.setattr(message_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
     monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
+    monkeypatch.setattr(
+        permissions.groups_service, "get_member", AsyncMock(return_value=_active_member(room.group_id, as_fake_user.id))
+    )
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
@@ -893,6 +935,9 @@ async def test_room_active_member_can_still_patch_own_message(async_client, monk
     monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
     monkeypatch.setattr(message_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
     monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
+    monkeypatch.setattr(
+        permissions.groups_service, "get_member", AsyncMock(return_value=_active_member(room.group_id, as_fake_user.id))
+    )
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
@@ -914,7 +959,7 @@ async def test_room_deleted_denies_listing_messages_even_for_host(async_client, 
     room = _make_room(host_id=as_fake_user.id)
     room.deleted_at = datetime.now(timezone.utc)
     conversation = _make_room_conversation(room)
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
 
     response = await async_client.get(f"/conversations/{conversation.id}/messages", headers=AUTH_HEADERS)
     assert response.status_code == 403
@@ -924,7 +969,7 @@ async def test_room_deleted_denies_sending_message(async_client, monkeypatch, as
     room = _make_room()
     room.deleted_at = datetime.now(timezone.utc)
     conversation = _make_room_conversation(room)
-    _wire_room_conversation(monkeypatch, room, conversation)
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
     )

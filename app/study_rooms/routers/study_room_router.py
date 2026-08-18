@@ -10,6 +10,7 @@ from app.core.permissions import (
     can_join_room,
     can_join_room_meeting,
     can_manage_room,
+    is_active_group_member,
     is_group_manager,
 )
 from app.db.session import get_db_session
@@ -203,6 +204,13 @@ async def join_room(
     room = await _get_active_room_or_404(session, room_id)
     if not can_join_room(room):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "This study room has ended")
+    # Deliberately NOT can_access_room() here -- that also requires an active Room membership,
+    # which a first-time joiner doesn't have yet (chicken-and-egg). Join's own prerequisite is
+    # just current active Group membership (2026-08-18 parity fix, mirrors the same check
+    # can_access_room applies for ongoing participation) -- a left/banned/inactive Group member
+    # must not be able to join or rejoin a room under that group.
+    if not await is_active_group_member(session, room.group_id, current_user.id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only an active group member can join this study room")
 
     # Check existing membership. The joining identity is always the caller --
     # never a client-supplied user_id -- and the role is always PARTICIPANT;

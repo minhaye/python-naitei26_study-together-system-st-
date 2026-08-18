@@ -9,8 +9,9 @@ from app.auth.dependencies import get_current_user
 from app.auth.dto.auth_dto import CurrentUser
 from app.core import permissions
 from app.core.config import settings
-from app.db.enums import StudyRoomStatus
+from app.db.enums import GroupMemberRole, MemberStatus, StudyRoomStatus
 from app.db.session import get_db_session
+from app.groups.entities.group_entity import GroupMember
 from app.main import app
 from app.meetings.services.livekit_service import study_room_livekit_name
 from app.profiles.entities.profile_entity import Profile
@@ -58,6 +59,22 @@ def _room_member(room_id: uuid.UUID, user_id: uuid.UUID) -> StudyRoomMember:
     return StudyRoomMember(room_id=room_id, user_id=user_id)
 
 
+def _mock_active_group_membership(monkeypatch):
+    """can_join_room_meeting -> can_access_room now also requires current active Group
+    membership (2026-08-18 parity fix) -- mock it active by default so these tests keep
+    isolating the Room-membership/lifecycle axis they were written for. Ignores args, so it
+    applies uniformly regardless of which room/group is being checked."""
+    monkeypatch.setattr(
+        permissions.groups_service,
+        "get_member",
+        AsyncMock(return_value=GroupMember(role=GroupMemberRole.MEMBER, status=MemberStatus.ACTIVE)),
+    )
+
+
+def _mock_no_group_membership(monkeypatch):
+    monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock(return_value=None))
+
+
 def _verify(token: str):
     """Decode the token via LiveKit's own verifier rather than re-implementing JWT parsing."""
     return TokenVerifier(settings.livekit_api_key, settings.livekit_api_secret).verify(token)
@@ -81,6 +98,7 @@ async def test_meeting_token_not_found_for_missing_room(async_client, monkeypatc
 async def test_meeting_token_forbidden_for_non_member(async_client, monkeypatch, as_fake_user):
     room = _make_room()
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_active_group_membership(monkeypatch)
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
 
     response = await async_client.post(f"/study-rooms/{room.id}/meeting/token", headers=AUTH_HEADERS)
@@ -91,7 +109,24 @@ async def test_meeting_token_forbidden_for_left_member(async_client, monkeypatch
     room = _make_room()
     left_member = StudyRoomMember(room_id=room.id, user_id=as_fake_user.id, left_at=datetime.now(timezone.utc))
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_active_group_membership(monkeypatch)
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=left_member))
+
+    response = await async_client.post(f"/study-rooms/{room.id}/meeting/token", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_meeting_token_forbidden_for_left_group_member_with_stale_active_room_membership(
+    async_client, monkeypatch, as_fake_user
+):
+    """Python/SQL parity fix (2026-08-18): an active study_room_members row must not grant a
+    meeting token once the caller has left the Group."""
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_no_group_membership(monkeypatch)
+    monkeypatch.setattr(
+        permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
+    )
 
     response = await async_client.post(f"/study-rooms/{room.id}/meeting/token", headers=AUTH_HEADERS)
     assert response.status_code == 403
@@ -106,6 +141,7 @@ async def test_meeting_token_success_for_host(async_client, monkeypatch, as_fake
     StudyRoomsService.create()."""
     room = _make_room(host_id=as_fake_user.id)
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_active_group_membership(monkeypatch)
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
@@ -129,6 +165,7 @@ async def test_meeting_token_forbidden_for_host_without_active_room_membership(
     participation check."""
     room = _make_room(host_id=as_fake_user.id)
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_active_group_membership(monkeypatch)
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
 
     response = await async_client.post(f"/study-rooms/{room.id}/meeting/token", headers=AUTH_HEADERS)
@@ -138,6 +175,7 @@ async def test_meeting_token_forbidden_for_host_without_active_room_membership(
 async def test_meeting_token_success_for_active_member(async_client, monkeypatch, as_fake_user):
     room = _make_room()
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_active_group_membership(monkeypatch)
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
     )
@@ -155,6 +193,7 @@ async def test_meeting_token_waiting_room_authorized_member_allowed(async_client
     a token to join once it does (e.g. the host starting the call)."""
     room = _make_room(status=StudyRoomStatus.WAITING)
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_active_group_membership(monkeypatch)
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
     )
@@ -167,6 +206,7 @@ async def test_meeting_token_waiting_room_authorized_member_allowed(async_client
 async def test_meeting_token_active_room_authorized_member_allowed(async_client, monkeypatch, as_fake_user):
     room = _make_room(status=StudyRoomStatus.ACTIVE)
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_active_group_membership(monkeypatch)
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
     )
@@ -181,6 +221,7 @@ async def test_meeting_token_ended_room_authorized_member_denied(async_client, m
     session is over -- no new join tokens, even for a member who was active throughout."""
     room = _make_room(status=StudyRoomStatus.ENDED)
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_active_group_membership(monkeypatch)
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
     )
@@ -195,6 +236,7 @@ async def test_meeting_token_ended_room_host_denied(async_client, monkeypatch, a
     ended -- the lifecycle gate applies on top of (not instead of) the membership check."""
     room = _make_room(status=StudyRoomStatus.ENDED, host_id=as_fake_user.id)
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_active_group_membership(monkeypatch)
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
@@ -243,6 +285,7 @@ async def test_meeting_token_deleted_room_denied_via_can_access_room_directly(mo
 async def test_meeting_token_response_never_leaks_livekit_secret(async_client, monkeypatch, as_fake_user):
     room = _make_room(host_id=as_fake_user.id)
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_active_group_membership(monkeypatch)
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
@@ -264,6 +307,7 @@ async def test_meeting_token_response_never_leaks_livekit_secret(async_client, m
 async def test_meeting_token_identity_matches_authenticated_user(async_client, monkeypatch, as_fake_user):
     room = _make_room(host_id=as_fake_user.id)
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_active_group_membership(monkeypatch)
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
@@ -280,6 +324,7 @@ async def test_meeting_token_identity_matches_authenticated_user(async_client, m
 async def test_meeting_token_room_restricted_to_study_room(async_client, monkeypatch, as_fake_user):
     room = _make_room(host_id=as_fake_user.id)
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_active_group_membership(monkeypatch)
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
@@ -297,6 +342,7 @@ async def test_meeting_token_room_restricted_to_study_room(async_client, monkeyp
 async def test_meeting_token_grants_are_minimal(async_client, monkeypatch, as_fake_user):
     room = _make_room(host_id=as_fake_user.id)
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_active_group_membership(monkeypatch)
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
@@ -323,6 +369,7 @@ async def test_meeting_token_uses_display_name_when_available(async_client, monk
     room = _make_room(host_id=as_fake_user.id)
     profile = Profile(id=as_fake_user.id, display_name="Study Buddy")
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_active_group_membership(monkeypatch)
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
@@ -354,6 +401,7 @@ async def test_meeting_token_isolation_across_rooms(async_client, monkeypatch, a
         return StudyRoomMember(room_id=room_a.id, user_id=as_fake_user.id) if room_id == room_a.id else None
 
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(side_effect=get_by_id))
+    _mock_active_group_membership(monkeypatch)
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", get_member)
     monkeypatch.setattr(study_room_router.profiles_service, "get_by_id", AsyncMock(return_value=None))
 

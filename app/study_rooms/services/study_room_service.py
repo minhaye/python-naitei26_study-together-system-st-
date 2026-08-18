@@ -2,17 +2,31 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from app.conversations.services.conversation_service import ConversationsService
 from app.db.enums import ModerationAction, StudyRoomMemberRole, StudyRoomStatus
 from app.study_rooms.entities.study_room_entity import StudyRoom, StudyRoomMember, RoomModerationAction
 from app.study_rooms.dto.study_room_dto import RoomModerationActionCreate, StudyRoomCreate, StudyRoomUpdate
+
+conversations_service = ConversationsService()
 
 
 class StudyRoomsService:
     async def create(self, session: AsyncSession, data: StudyRoomCreate, host_id: uuid.UUID) -> StudyRoom:
         """`host_id` is the authenticated caller, passed explicitly by the router --
         `StudyRoomCreate` has no host_id field at all, so there is no client-supplied
-        value to trust or ignore."""
+        value to trust or ignore.
+
+        Creates the room, the creator's HOST-role membership, and its ROOM Conversation as
+        one logical operation -- all three inserts are flushed into this same session but
+        never committed here (mirrors ChannelsService.create). The router wraps this call in
+        a single try/commit/except-rollback: if any flush fails (including the Conversation
+        insert), the exception propagates out of this method uncaught, the router rolls back,
+        and nothing -- not the room, not the membership, not the Conversation -- is persisted.
+        A Study Room must never exist without its Conversation (see
+        STUDY_PLATFORM_DATABASE_SPEC.md § 16); this is the only creation path, so that
+        invariant holds by construction rather than by a later backfill."""
         room = StudyRoom(**data.model_dump(), host_id=host_id)
         session.add(room)
         await session.flush()
@@ -20,19 +34,29 @@ class StudyRoomsService:
         host_membership = StudyRoomMember(room_id=room.id, user_id=host_id, role=StudyRoomMemberRole.HOST)
         session.add(host_membership)
         await session.flush()
+
+        conversation = await conversations_service.create_for_room(session, room.id, host_id)
+        # Sync in-memory relationship so the response (built in this same session, no
+        # refetch) can read room.conversation_id without a lazy-load round trip.
+        room.conversation = conversation
         return room
 
     async def get_by_id(self, session: AsyncSession, room_id: uuid.UUID) -> StudyRoom | None:
         """Returns the room regardless of deleted_at -- callers (study_room_router) decide
         whether a soft-deleted room should be treated as not-found, mirroring
         ChannelsService.get_by_id."""
-        return await session.get(StudyRoom, room_id)
+        result = await session.execute(
+            select(StudyRoom).options(selectinload(StudyRoom.conversation)).where(StudyRoom.id == room_id)
+        )
+        return result.scalar_one_or_none()
 
     async def list_by_group(self, session: AsyncSession, group_id: uuid.UUID) -> list[StudyRoom]:
         """Soft-deleted rooms are excluded unconditionally -- a deleted room must not appear
         in Study Room lists (mirrors ChannelsService.list_by_group)."""
         result = await session.execute(
-            select(StudyRoom).where(StudyRoom.group_id == group_id, StudyRoom.deleted_at.is_(None))
+            select(StudyRoom)
+            .options(selectinload(StudyRoom.conversation))
+            .where(StudyRoom.group_id == group_id, StudyRoom.deleted_at.is_(None))
         )
         return list(result.scalars().all())
 
