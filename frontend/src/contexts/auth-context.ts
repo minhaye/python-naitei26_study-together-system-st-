@@ -2,8 +2,11 @@ import { createContext, useContext } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 
 export interface AuthProfile {
+  id: string;
+  username: string | null;
   displayName: string;
-  avatarUrl?: string;
+  avatarUrl: string | null;
+  bio: string | null;
 }
 
 export interface AuthContextValue {
@@ -12,6 +15,7 @@ export interface AuthContextValue {
   profile: AuthProfile | null;
   loading: boolean;
   setDevSession: (session: Session | null) => void;
+  refreshProfile: () => Promise<AuthProfile | null>;
 }
 
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined);

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, User, ArrowRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { createProfile } from '../lib/profile.api';
 
 export function RegisterPage() {
   const navigate = useNavigate();
@@ -32,6 +33,15 @@ export function RegisterPage() {
     }
 
     if (data.session) {
+      try {
+        await createProfile(
+          { id: data.session.user.id, display_name: fullName.trim() || null },
+          data.session.access_token,
+        );
+      } catch (profileError) {
+        setError(profileError instanceof Error ? profileError.message : 'Could not create your profile.');
+        return;
+      }
       // Email confirmation is disabled for this project — a session is issued immediately.
       navigate('/');
       return;
