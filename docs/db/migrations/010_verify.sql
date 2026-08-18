@@ -101,7 +101,7 @@ with
     where schemaname = 'public' and tablename = 'study_room_members'
       and policyname = 'study_room_members_block_when_room_deleted'
       and cmd = 'ALL' and permissive = 'RESTRICTIVE'
-      and qual like '%deleted_at is null%' and with_check like '%deleted_at is null%'
+      and qual like '%deleted_at IS NULL%' and with_check like '%deleted_at IS NULL%'
   ),
   room_moderation_actions_restrictive_present as (
     select
@@ -112,7 +112,7 @@ with
     where schemaname = 'public' and tablename = 'room_moderation_actions'
       and policyname = 'room_moderation_actions_block_when_room_deleted'
       and cmd = 'ALL' and permissive = 'RESTRICTIVE'
-      and qual like '%deleted_at is null%' and with_check like '%deleted_at is null%'
+      and qual like '%deleted_at IS NULL%' and with_check like '%deleted_at IS NULL%'
   ),
   rls_still_enabled_study_rooms as (
     select
