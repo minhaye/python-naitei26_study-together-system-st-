@@ -581,6 +581,25 @@ async def test_room_upload_url_denied_for_ended_room(async_client, monkeypatch, 
     assert response.status_code == 403
 
 
+async def test_room_upload_url_denied_for_deleted_room_even_for_host(async_client, monkeypatch, as_fake_user):
+    """A soft-deleted room must reject uploads for every caller, including its own host --
+    mirrors the ended-room lifecycle gate above but is stricter (host bypasses membership
+    checks but not the deleted_at guard, see can_access_room)."""
+    from datetime import datetime, timezone
+
+    room = _make_room(host_id=as_fake_user.id)
+    room.deleted_at = datetime.now(timezone.utc)
+    conversation = _make_room_conversation(room)
+    _wire_room_conversation(monkeypatch, room, conversation)
+
+    response = await async_client.post(
+        f"/conversations/{conversation.id}/attachments/upload-url",
+        json={"file_name": "lesson.pdf", "content_type": "application/pdf", "file_size": 1024},
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 403
+
+
 # --- Download-url endpoint: room conversations ---
 
 
@@ -636,6 +655,37 @@ async def test_room_ended_member_can_still_download_existing_attachment(async_cl
 
     response = await async_client.get(f"/messages/{message.id}/attachment-url", headers=AUTH_HEADERS)
     assert response.status_code == 200
+
+
+async def test_room_attachment_url_denied_for_deleted_room_even_for_previously_valid_member(
+    async_client, monkeypatch, as_fake_user
+):
+    """Historical attachment metadata/messages stay in the database (see
+    docs/db/migrations/010_soft_delete_study_rooms.sql), but normal access through a deleted
+    room's Conversation must stop -- even for a member who was active before the room was
+    deleted. Contrast with test_room_ended_member_can_still_download_existing_attachment:
+    ended != deleted."""
+    from datetime import datetime, timezone
+
+    from app.messages.entities.message_entity import Message
+
+    room = _make_room()
+    room.deleted_at = datetime.now(timezone.utc)
+    conversation = _make_room_conversation(room)
+    message = Message(
+        id=uuid.uuid4(),
+        conversation_id=conversation.id,
+        sender_id=uuid.uuid4(),
+        attachment_path=f"study-rooms/{room.id}/{uuid.uuid4()}/uuid/f.pdf",
+    )
+    monkeypatch.setattr(attachment_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_room_conversation(monkeypatch, room, conversation)
+    monkeypatch.setattr(
+        permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
+    )
+
+    response = await async_client.get(f"/messages/{message.id}/attachment-url", headers=AUTH_HEADERS)
+    assert response.status_code == 403
 
 
 async def test_room_attachment_url_unauthorized_user_denied(async_client, monkeypatch, as_fake_user):

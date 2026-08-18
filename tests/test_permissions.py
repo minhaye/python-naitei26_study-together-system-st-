@@ -22,7 +22,11 @@ def _channel(is_private: bool, deleted_at: datetime | None = None) -> Channel:
     return Channel(id=uuid.uuid4(), group_id=uuid.uuid4(), name="general", is_private=is_private, deleted_at=deleted_at)
 
 
-def _room(status: StudyRoomStatus = StudyRoomStatus.ACTIVE, host_id: uuid.UUID | None = None) -> StudyRoom:
+def _room(
+    status: StudyRoomStatus = StudyRoomStatus.ACTIVE,
+    host_id: uuid.UUID | None = None,
+    deleted_at: datetime | None = None,
+) -> StudyRoom:
     return StudyRoom(
         id=uuid.uuid4(),
         group_id=uuid.uuid4(),
@@ -30,6 +34,7 @@ def _room(status: StudyRoomStatus = StudyRoomStatus.ACTIVE, host_id: uuid.UUID |
         host_id=host_id or uuid.uuid4(),
         status=status,
         max_participants=50,
+        deleted_at=deleted_at,
     )
 
 
@@ -325,6 +330,83 @@ async def test_can_access_room_false_for_kicked_member(monkeypatch):
     monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=kicked_member))
 
     assert not await permissions.can_access_room(session=None, room=room, user_id=user_id)
+
+
+async def test_can_access_room_false_for_deleted_room_even_for_host(monkeypatch):
+    """A soft-deleted room denies access outright, before the host branch -- mirrors
+    can_access_channel's deleted_at guard."""
+    host_id = uuid.uuid4()
+    room = _room(host_id=host_id, deleted_at=datetime.now(timezone.utc))
+    get_member_mock = AsyncMock()
+    monkeypatch.setattr(permissions.study_rooms_service, "get_member", get_member_mock)
+
+    assert not await permissions.can_access_room(session=None, room=room, user_id=host_id)
+    get_member_mock.assert_not_awaited()
+
+
+async def test_can_access_room_true_when_deleted_at_is_none(monkeypatch):
+    """Contrast case: an explicit deleted_at=None (the default/not-deleted state) must not
+    itself deny access -- only an actually-set deleted_at does."""
+    host_id = uuid.uuid4()
+    room = _room(host_id=host_id, deleted_at=None)
+    monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
+
+    assert await permissions.can_access_room(session=None, room=room, user_id=host_id)
+
+
+async def test_can_access_conversation_room_type_false_when_room_deleted(monkeypatch):
+    """End-to-end through the dispatch entry point, mirroring
+    test_can_access_conversation_channel_type_false_when_channel_deleted."""
+    host_id = uuid.uuid4()
+    room = _room(host_id=host_id, deleted_at=datetime.now(timezone.utc))
+    conversation = Conversation(id=uuid.uuid4(), type=ConversationType.ROOM, room_id=room.id, created_by=host_id)
+    monkeypatch.setattr(permissions.study_rooms_service, "get_by_id", AsyncMock(return_value=room))
+
+    assert not await permissions.can_access_conversation(session=None, conversation=conversation, user_id=host_id)
+
+
+# --- can_manage_room ---
+
+
+async def test_can_manage_room_false_for_deleted_room_even_for_host(monkeypatch):
+    """can_manage_room does not go through can_access_room -- it needs its own guard."""
+    host_id = uuid.uuid4()
+    room = _room(host_id=host_id, deleted_at=datetime.now(timezone.utc))
+    is_moderator_mock = AsyncMock()
+    monkeypatch.setattr(permissions.study_rooms_service, "get_member", is_moderator_mock)
+
+    assert not await permissions.can_manage_room(session=None, room=room, user_id=host_id)
+    is_moderator_mock.assert_not_awaited()
+
+
+async def test_can_manage_room_true_for_host_when_not_deleted(monkeypatch):
+    host_id = uuid.uuid4()
+    room = _room(host_id=host_id)
+
+    assert await permissions.can_manage_room(session=None, room=room, user_id=host_id)
+
+
+# --- can_join_room ---
+
+
+def test_can_join_room_false_for_deleted_room():
+    room = _room(status=StudyRoomStatus.ACTIVE, deleted_at=datetime.now(timezone.utc))
+
+    assert not permissions.can_join_room(room)
+
+
+def test_can_join_room_true_for_active_non_deleted_room():
+    room = _room(status=StudyRoomStatus.ACTIVE)
+
+    assert permissions.can_join_room(room)
+
+
+def test_can_join_room_false_for_ended_room():
+    """Regression guard: the deleted_at addition must not affect the pre-existing ended-room
+    lifecycle gate."""
+    room = _room(status=StudyRoomStatus.ENDED)
+
+    assert not permissions.can_join_room(room)
 
 
 # --- can_join_room_meeting ---

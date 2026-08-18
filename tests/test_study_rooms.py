@@ -51,7 +51,11 @@ def as_fake_user(fake_user):
     app.dependency_overrides.pop(get_current_user, None)
 
 
-def _make_room(status: StudyRoomStatus = StudyRoomStatus.ACTIVE, host_id: uuid.UUID | None = None) -> StudyRoom:
+def _make_room(
+    status: StudyRoomStatus = StudyRoomStatus.ACTIVE,
+    host_id: uuid.UUID | None = None,
+    deleted_at: datetime | None = None,
+) -> StudyRoom:
     return StudyRoom(
         id=uuid.uuid4(),
         group_id=uuid.uuid4(),
@@ -60,6 +64,7 @@ def _make_room(status: StudyRoomStatus = StudyRoomStatus.ACTIVE, host_id: uuid.U
         status=status,
         max_participants=50,
         created_at=datetime.now(timezone.utc),
+        deleted_at=deleted_at,
     )
 
 
@@ -444,21 +449,65 @@ async def test_leave_room_requires_auth(async_client):
 async def test_leave_room_only_affects_own_membership(async_client, monkeypatch, as_fake_user):
     """The endpoint has no user_id parameter at all -- a caller can never force another
     user's membership to leave, even by appending a stray query string."""
-    room_id = uuid.uuid4()
-    own_member = _room_member(room_id, as_fake_user.id)
+    room = _make_room()
+    own_member = _room_member(room.id, as_fake_user.id)
 
     async def fake_get_member(session, rid, uid):
         return own_member if uid == as_fake_user.id else None
 
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
     monkeypatch.setattr(study_room_router.service, "get_member", fake_get_member)
     monkeypatch.setattr(study_room_router.service, "leave", AsyncMock(side_effect=lambda s, m: m))
 
     response = await async_client.post(
-        f"/study-rooms/{room_id}/leave?user_id={uuid.uuid4()}", headers=AUTH_HEADERS
+        f"/study-rooms/{room.id}/leave?user_id={uuid.uuid4()}", headers=AUTH_HEADERS
     )
 
     assert response.status_code == 200
-    assert response.json()["user_id"] == str(as_fake_user.id)
+
+
+async def test_leave_room_still_works_for_active_room(async_client, monkeypatch, as_fake_user):
+    """Regression guard: the new deleted-room gate must not affect ordinary leave on a normal,
+    non-deleted room."""
+    room = _make_room(status=StudyRoomStatus.ACTIVE)
+    own_member = _room_member(room.id, as_fake_user.id)
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    monkeypatch.setattr(study_room_router.service, "get_member", AsyncMock(return_value=own_member))
+    monkeypatch.setattr(study_room_router.service, "leave", AsyncMock(side_effect=lambda s, m: m))
+
+    response = await async_client.post(f"/study-rooms/{room.id}/leave", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+
+
+async def test_leave_room_still_works_for_ended_but_not_deleted_room(async_client, monkeypatch, as_fake_user):
+    """Ended != deleted (STUDY_PLATFORM_DATABASE_SPEC.md §17): no lifecycle gate has ever
+    applied to leave, only to join/messages -- an ended room's leave behavior must stay
+    unchanged by the new deleted-room gate."""
+    room = _make_room(status=StudyRoomStatus.ENDED)
+    own_member = _room_member(room.id, as_fake_user.id)
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    monkeypatch.setattr(study_room_router.service, "get_member", AsyncMock(return_value=own_member))
+    monkeypatch.setattr(study_room_router.service, "leave", AsyncMock(side_effect=lambda s, m: m))
+
+    response = await async_client.post(f"/study-rooms/{room.id}/leave", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+
+
+async def test_leave_deleted_room_denied(async_client, monkeypatch, as_fake_user):
+    """A soft-deleted room must behave as unavailable for leave too -- the caller's
+    StudyRoomMember row must not be mutated after the room is gone."""
+    room = _make_room(deleted_at=datetime.now(timezone.utc))
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    get_member_mock = AsyncMock()
+    leave_mock = AsyncMock()
+    monkeypatch.setattr(study_room_router.service, "get_member", get_member_mock)
+    monkeypatch.setattr(study_room_router.service, "leave", leave_mock)
+
+    response = await async_client.post(f"/study-rooms/{room.id}/leave", headers=AUTH_HEADERS)
+
+    assert response.status_code == 404
+    get_member_mock.assert_not_awaited()
+    leave_mock.assert_not_awaited()
 
 
 # --- Members: auth + room access required (member roster is not public) ---
@@ -779,4 +828,286 @@ async def test_list_moderation_allowed_for_member(async_client, monkeypatch, as_
     monkeypatch.setattr(study_room_router.service, "list_moderation_actions", AsyncMock(return_value=[]))
 
     response = await async_client.get(f"/study-rooms/{room.id}/moderation", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+
+
+# --- Delete: soft delete, authorization (host OR active group owner/moderator) ---
+
+
+async def test_delete_room_requires_auth(async_client):
+    response = await async_client.delete(f"/study-rooms/{uuid.uuid4()}")
+    assert response.status_code == 401
+
+
+async def test_delete_room_not_found_for_missing_room(async_client, monkeypatch, as_fake_user):
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=None))
+
+    response = await async_client.delete(f"/study-rooms/{uuid.uuid4()}", headers=AUTH_HEADERS)
+    assert response.status_code == 404
+
+
+async def test_delete_room_allowed_for_host(async_client, monkeypatch, as_fake_user):
+    room = _make_room(host_id=as_fake_user.id)
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    soft_delete_mock = AsyncMock(return_value=room)
+    monkeypatch.setattr(study_room_router.service, "soft_delete", soft_delete_mock)
+
+    response = await async_client.delete(f"/study-rooms/{room.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 204
+    soft_delete_mock.assert_awaited_once()
+    assert soft_delete_mock.await_args.kwargs["deleted_by"] == as_fake_user.id
+
+
+async def test_delete_room_allowed_for_active_group_owner(async_client, monkeypatch, as_fake_user):
+    room = _make_room(host_id=uuid.uuid4())
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id, role=GroupMemberRole.OWNER))
+    monkeypatch.setattr(study_room_router.service, "soft_delete", AsyncMock(return_value=room))
+
+    response = await async_client.delete(f"/study-rooms/{room.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 204
+
+
+async def test_delete_room_allowed_for_active_group_moderator(async_client, monkeypatch, as_fake_user):
+    room = _make_room(host_id=uuid.uuid4())
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(
+        monkeypatch, _group_member(room.group_id, as_fake_user.id, role=GroupMemberRole.MODERATOR)
+    )
+    monkeypatch.setattr(study_room_router.service, "soft_delete", AsyncMock(return_value=room))
+
+    response = await async_client.delete(f"/study-rooms/{room.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 204
+
+
+async def test_delete_room_forbidden_for_ordinary_member(async_client, monkeypatch, as_fake_user):
+    room = _make_room(host_id=uuid.uuid4())
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id, role=GroupMemberRole.MEMBER))
+    soft_delete_mock = AsyncMock()
+    monkeypatch.setattr(study_room_router.service, "soft_delete", soft_delete_mock)
+
+    response = await async_client.delete(f"/study-rooms/{room.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+    soft_delete_mock.assert_not_awaited()
+
+
+async def test_delete_room_forbidden_for_non_member(async_client, monkeypatch, as_fake_user):
+    room = _make_room(host_id=uuid.uuid4())
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, None)
+
+    response = await async_client.delete(f"/study-rooms/{room.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_delete_room_forbidden_for_banned_group_owner(async_client, monkeypatch, as_fake_user):
+    """A banned/left group owner must not retain delete authority via a stale role -- mirrors
+    is_group_manager's existing MemberStatus.ACTIVE requirement."""
+    room = _make_room(host_id=uuid.uuid4())
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(
+        monkeypatch,
+        _group_member(room.group_id, as_fake_user.id, role=GroupMemberRole.OWNER, status=MemberStatus.BANNED),
+    )
+
+    response = await async_client.delete(f"/study-rooms/{room.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_delete_room_forbidden_for_left_host_membership_but_room_host_field_unchanged(
+    async_client, monkeypatch, as_fake_user
+):
+    """Regression guard, not a security hole: is_room_host reads the room's own host_id field
+    (never the caller's study_room_members row), same as update/start/end already do -- a host
+    whose own membership row shows left_at set is still authorized to delete, consistent with
+    can_access_room's documented host-always-has-access behavior. This test pins that existing
+    convention rather than silently relying on it."""
+    room = _make_room(host_id=as_fake_user.id)
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    monkeypatch.setattr(study_room_router.service, "soft_delete", AsyncMock(return_value=room))
+
+    response = await async_client.delete(f"/study-rooms/{room.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 204
+
+
+async def test_delete_room_deleted_by_is_never_client_supplied(async_client, monkeypatch, as_fake_user):
+    """The DELETE endpoint has no request body at all -- a stray deleted_by in a JSON body
+    must be silently ignored (never parsed), acting identity always comes from the bearer
+    token via current_user.id."""
+    room = _make_room(host_id=as_fake_user.id)
+    spoofed_deleted_by = uuid.uuid4()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    soft_delete_mock = AsyncMock(return_value=room)
+    monkeypatch.setattr(study_room_router.service, "soft_delete", soft_delete_mock)
+
+    response = await async_client.request(
+        "DELETE", f"/study-rooms/{room.id}", json={"deleted_by": str(spoofed_deleted_by)}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 204
+    assert soft_delete_mock.await_args.kwargs["deleted_by"] == as_fake_user.id
+    assert soft_delete_mock.await_args.kwargs["deleted_by"] != spoofed_deleted_by
+
+
+async def test_delete_room_already_deleted_is_not_redeletable(async_client, monkeypatch, as_fake_user):
+    """An already-deleted room 404s just like a missing one -- there is no distinct
+    'already deleted' status, mirroring channel_router's delete_channel."""
+    room = _make_room(host_id=as_fake_user.id, deleted_at=datetime.now(timezone.utc))
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    soft_delete_mock = AsyncMock()
+    monkeypatch.setattr(study_room_router.service, "soft_delete", soft_delete_mock)
+
+    response = await async_client.delete(f"/study-rooms/{room.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 404
+    soft_delete_mock.assert_not_awaited()
+
+
+# --- Deleted room: excluded from reads ---
+
+
+async def test_get_room_404_for_deleted_room(async_client, monkeypatch):
+    room = _make_room(deleted_at=datetime.now(timezone.utc))
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+
+    response = await async_client.get(f"/study-rooms/{room.id}")
+    assert response.status_code == 404
+
+
+async def test_list_rooms_excludes_deleted_rooms():
+    """Unit test on the service method itself -- StudyRoomsService.list_by_group must filter
+    deleted_at IS NULL at the query level, mirroring ChannelsService.list_by_group."""
+    import inspect
+
+    source = inspect.getsource(StudyRoomsService.list_by_group)
+    assert "deleted_at" in source
+
+
+# --- Deleted room: cannot continue functioning as a live room ---
+
+
+async def test_join_deleted_room_denied(async_client, monkeypatch, as_fake_user):
+    room = _make_room(deleted_at=datetime.now(timezone.utc))
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+
+    response = await async_client.post(f"/study-rooms/{room.id}/join", headers=AUTH_HEADERS)
+    assert response.status_code == 404
+
+
+async def test_rejoin_deleted_room_denied(async_client, monkeypatch, as_fake_user):
+    room = _make_room(deleted_at=datetime.now(timezone.utc))
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    monkeypatch.setattr(
+        study_room_router.service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, as_fake_user.id, left_at=datetime.now(timezone.utc))),
+    )
+
+    response = await async_client.post(f"/study-rooms/{room.id}/join", headers=AUTH_HEADERS)
+    assert response.status_code == 404
+
+
+async def test_start_deleted_room_denied_even_for_host(async_client, monkeypatch, as_fake_user):
+    room = _make_room(host_id=as_fake_user.id, deleted_at=datetime.now(timezone.utc))
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+
+    response = await async_client.post(f"/study-rooms/{room.id}/start", headers=AUTH_HEADERS)
+    assert response.status_code == 404
+
+
+async def test_end_deleted_room_denied_even_for_host(async_client, monkeypatch, as_fake_user):
+    room = _make_room(host_id=as_fake_user.id, deleted_at=datetime.now(timezone.utc))
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+
+    response = await async_client.post(f"/study-rooms/{room.id}/end", headers=AUTH_HEADERS)
+    assert response.status_code == 404
+
+
+async def test_update_deleted_room_denied_even_for_host(async_client, monkeypatch, as_fake_user):
+    room = _make_room(host_id=as_fake_user.id, deleted_at=datetime.now(timezone.utc))
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+
+    response = await async_client.put(f"/study-rooms/{room.id}", json={"name": "New"}, headers=AUTH_HEADERS)
+    assert response.status_code == 404
+
+
+async def test_update_member_role_deleted_room_denied_even_for_host(async_client, monkeypatch, as_fake_user):
+    room = _make_room(host_id=as_fake_user.id, deleted_at=datetime.now(timezone.utc))
+    target_id = uuid.uuid4()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+
+    response = await async_client.put(
+        f"/study-rooms/{room.id}/members/{target_id}/role", params={"role": "moderator"}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 404
+
+
+async def test_list_members_deleted_room_denied(async_client, monkeypatch, as_fake_user):
+    room = _make_room(deleted_at=datetime.now(timezone.utc))
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+
+    response = await async_client.get(f"/study-rooms/{room.id}/members", headers=AUTH_HEADERS)
+    assert response.status_code == 404
+
+
+async def test_log_moderation_deleted_room_denied_even_for_host(async_client, monkeypatch, as_fake_user):
+    room = _make_room(host_id=as_fake_user.id, deleted_at=datetime.now(timezone.utc))
+    target_id = uuid.uuid4()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+
+    response = await async_client.post(
+        f"/study-rooms/{room.id}/moderation",
+        json={
+            "room_id": str(room.id),
+            "moderator_id": str(as_fake_user.id),
+            "target_user_id": str(target_id),
+            "action": "kick",
+        },
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 404
+
+
+async def test_log_moderation_raise_hand_deleted_room_denied(async_client, monkeypatch, as_fake_user):
+    room = _make_room(deleted_at=datetime.now(timezone.utc))
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+
+    response = await async_client.post(
+        f"/study-rooms/{room.id}/moderation",
+        json={
+            "room_id": str(room.id),
+            "moderator_id": str(as_fake_user.id),
+            "target_user_id": str(as_fake_user.id),
+            "action": "raise_hand",
+        },
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 404
+
+
+async def test_list_moderation_deleted_room_denied(async_client, monkeypatch, as_fake_user):
+    room = _make_room(deleted_at=datetime.now(timezone.utc))
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+
+    response = await async_client.get(f"/study-rooms/{room.id}/moderation", headers=AUTH_HEADERS)
+    assert response.status_code == 404
+
+
+# --- Regression: active (non-deleted) room behavior is unchanged ---
+
+
+async def test_get_room_still_200_for_active_room(async_client, monkeypatch):
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+
+    response = await async_client.get(f"/study-rooms/{room.id}")
+    assert response.status_code == 200
+
+
+async def test_get_room_still_200_for_ended_but_not_deleted_room(async_client, monkeypatch):
+    """Ended != deleted (STUDY_PLATFORM_DATABASE_SPEC.md §17): an ended room stays a normal
+    200, only a soft-deleted one 404s."""
+    room = _make_room(status=StudyRoomStatus.ENDED)
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+
+    response = await async_client.get(f"/study-rooms/{room.id}")
     assert response.status_code == 200

@@ -776,7 +776,9 @@ study_rooms
 ├── max_participants
 ├── created_at
 ├── started_at
-└── ended_at
+├── ended_at
+├── deleted_at
+└── deleted_by
 ```
 
 | Field | Ý nghĩa |
@@ -791,12 +793,103 @@ study_rooms
 | `created_at` | Thời điểm tạo |
 | `started_at` | Thời điểm bắt đầu |
 | `ended_at` | Thời điểm kết thúc |
+| `deleted_at` | Thời điểm soft-delete, `NULL` nếu room chưa bị xóa |
+| `deleted_by` | Người thực hiện soft-delete (FK -> `profiles.id`, `ON DELETE RESTRICT`), `NULL` nếu room chưa bị xóa |
 
 Mặc định:
 
 ```text
 max_participants = 50
 ```
+
+## Soft Delete (migration 010, xác nhận thiết kế 2026-08-18)
+
+`deleted_at`/`deleted_by` dùng để soft-delete Study Room — cùng quy ước với
+`channels` (§ 9). Backend luôn tự lấy `deleted_by` từ người gọi đã xác thực
+(bearer token), không bao giờ tin một giá trị `deleted_by` do client gửi lên.
+
+Đây là một trục **độc lập** với lifecycle (`status`/`ended_at`, § 17): một
+room `ended` vẫn là lịch sử đọc được bình thường; một room bị xóa thì không,
+bất kể `status` của nó là gì lúc bị xóa. Không dùng `ended_at`/`status` để
+biểu diễn việc xóa.
+
+```text
+deleted_at IS NULL
+```
+
+→ room đang hoạt động bình thường.
+
+```text
+deleted_at IS NOT NULL
+```
+
+→ room đã bị xóa về mặt logic. Row `study_rooms`, `conversations`, toàn bộ
+`messages` lịch sử, `study_room_members`, và `room_moderation_actions` của nó
+**vẫn còn nguyên trong database** — không có gì bị xóa vật lý. Chỉ có quyền
+truy cập bình thường bị thu hồi:
+
+```text
+Study Room deleted
+→ Room row vẫn còn
+→ Conversation vẫn còn
+→ Messages vẫn còn
+→ Members/moderation history vẫn còn
+→ truy cập/thao tác bình thường qua room đó đều bị từ chối
+```
+
+`can_access_room()`/`can_manage_room()`/`can_join_room()` (Python,
+`app/core/permissions.py`) kiểm tra `deleted_at IS NULL` trước tiên, trước
+mọi nhánh host/member/moderator khác — một room đã xóa bị từ chối cho MỌI
+người gọi, kể cả chính host. Vì `can_access_room` là điểm vào chung cho
+message/attachment/meeting-token (qua `can_access_conversation` /
+`can_send_to_conversation` / `can_join_room_meeting`), sửa một hàm áp dụng
+cho tất cả các đường đó. Ở tầng router, `study_room_router._get_active_room_or_404`
+coi room đã xóa giống hệt room không tồn tại (404) cho **mọi** entry point,
+kể cả `leave_room` (get/update/start/end/join/leave/members/role/moderation/
+meeting-token/delete) — rời một room đã bị xóa cũng bị từ chối, đúng theo bất
+biến "một khi `deleted_at != NULL`, mọi thao tác thông thường trên room đó
+phải dừng lại", kể cả thao tác chỉ động tới `study_room_members` của chính
+người gọi. Room `ended` (nhưng chưa xóa) không bị ảnh hưởng — `leave` chưa
+từng có lifecycle gate riêng, chỉ `join`/`send message` mới có.
+
+Ở tầng SQL/RLS, `can_access_room_conversation()` (định nghĩa gốc ở § 12,
+migration 004) được sửa hai chỗ:
+
+1. Thêm điều kiện `sr.deleted_at is null`, kiểm tra trước tiên — đây là điểm
+   vào chung cho `messages_select`/`conversations_select`/Realtime của
+   conversation type=room.
+2. Thêm nhánh `sr.host_id = auth.uid()` (OR, không điều kiện kèm theo) —
+   đóng một parity gap Python/SQL đã tồn tại từ trước: `can_access_room()`
+   phía Python luôn cho host quyền truy cập vô điều kiện, kể cả khi
+   `study_room_members` của chính host bị thiếu hoặc có `left_at`, nhưng
+   `can_access_room_conversation()` trước đây chưa từng có nhánh tương đương
+   — một host bị `left_at` set trên hàng ghi của chính mình có thể đọc được
+   tin nhắn room qua FastAPI nhưng lại bị RLS/Realtime từ chối cho đúng room
+   đó. Vì migration 010 đã đụng tới hàm này để thêm guard `deleted_at`, nhánh
+   host được thêm luôn trong cùng lần sửa thay vì giữ nguyên gap. Nhánh
+   `study_room_members`/`is_group_member` sẵn có cho member thường **không
+   đổi** — chỉ thêm nhánh host, không nới lỏng hay viết lại nhánh non-host.
+
+Khác với channels (§ 9): các RLS policy gốc trên `study_rooms`/
+`study_room_members`/`room_moderation_actions` **không được lưu lại trong
+repo này** (ra đời trước mọi migration đang track), nên migration 010 không
+thể an toàn DROP+CREATE lại các policy permissive đó mà không biết trước nội
+dung. Thay vào đó, 010 thêm các policy **RESTRICTIVE** mới yêu cầu
+`deleted_at IS NULL` — loại policy này luôn được AND với mọi policy permissive
+đã có, nên chỉ có thể thu hẹp quyền truy cập, không bao giờ mở rộng, an toàn
+để thêm ngay cả khi không biết nội dung policy hiện tại.
+
+Chỉ room host **hoặc** group owner/moderator đang active (`is_group_manager`)
+mới được phép soft-delete (`DELETE /study-rooms/{id}`) — thành viên thường,
+người ngoài room, hoặc một group manager đã bị banned/left (`is_group_manager`
+đã yêu cầu `MemberStatus.ACTIVE`) đều bị từ chối. Migration 010 cũng khóa
+đường bypass vật lý qua Postgres/PostgREST: xóa (drop) mọi policy DELETE cho
+role `authenticated` trên `study_rooms`, dò tìm động qua `pg_policies` (không
+hardcode tên, vì tên policy gốc không được biết trước).
+
+Không có tính năng Restore (khôi phục) trong phạm vi hiện tại, nhưng thiết kế
+cho phép làm điều đó sau này chỉ bằng cách set lại
+`deleted_at = NULL, deleted_by = NULL`.
 
 ---
 

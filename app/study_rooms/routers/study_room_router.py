@@ -11,6 +11,7 @@ from app.core.permissions import (
     can_join_room_meeting,
     can_manage_room,
     is_active_group_member,
+    is_group_manager,
     is_room_host,
 )
 from app.db.session import get_db_session
@@ -27,6 +28,7 @@ from app.study_rooms.dto.study_room_dto import (
     StudyRoomResponse,
     StudyRoomUpdate,
 )
+from app.study_rooms.entities.study_room_entity import StudyRoom
 from app.study_rooms.services.study_room_service import StudyRoomsService
 
 router = APIRouter(prefix="/study-rooms", tags=["Study Rooms"])
@@ -36,6 +38,19 @@ profiles_service = ProfilesService()
 livekit_service = LiveKitService()
 
 _SELF_SERVICE_MODERATION_ACTIONS = {ModerationAction.RAISE_HAND, ModerationAction.LOWER_HAND}
+
+
+async def _get_active_room_or_404(session: AsyncSession, room_id: uuid.UUID) -> StudyRoom:
+    """Shared "not found or soft-deleted" gate: a deleted room must behave as if it no longer
+    exists for every normal read/write entry point (get, update, start, end, join, leave,
+    members, role changes, moderation, meeting token, and delete itself) -- see
+    STUDY_PLATFORM_DATABASE_SPEC.md §16. Deleting an already-deleted room therefore also 404s
+    here, same as deleting a missing one -- there is no distinct "already deleted" status, by
+    design (mirrors channel_router._get_active_channel_or_404)."""
+    room = await service.get_by_id(session, room_id)
+    if room is None or room.deleted_at is not None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Study room not found")
+    return room
 
 
 @router.post("/", response_model=StudyRoomResponse, status_code=status.HTTP_201_CREATED)
@@ -76,12 +91,7 @@ async def list_rooms(group_id: uuid.UUID, session: AsyncSession = Depends(get_db
 
 @router.get("/{room_id}", response_model=StudyRoomResponse)
 async def get_room(room_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)):
-    room = await service.get_by_id(session, room_id)
-    if not room:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Study room not found"
-        )
+    room = await _get_active_room_or_404(session, room_id)
     return room
 
 
@@ -92,12 +102,7 @@ async def update_room(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
-    room = await service.get_by_id(session, room_id)
-    if not room:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Study room not found"
-        )
+    room = await _get_active_room_or_404(session, room_id)
     if not is_room_host(room, current_user.id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the host can update this study room")
     try:
@@ -118,12 +123,7 @@ async def start_room(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
-    room = await service.get_by_id(session, room_id)
-    if not room:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Study room not found"
-        )
+    room = await _get_active_room_or_404(session, room_id)
     if not is_room_host(room, current_user.id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the host can start this study room")
     try:
@@ -144,12 +144,7 @@ async def end_room(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
-    room = await service.get_by_id(session, room_id)
-    if not room:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Study room not found"
-        )
+    room = await _get_active_room_or_404(session, room_id)
     if not is_room_host(room, current_user.id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the host can end this study room")
     try:
@@ -164,6 +159,38 @@ async def end_room(
         )
 
 
+@router.delete("/{room_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_room(
+    room_id: uuid.UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Soft delete: the StudyRoom row, its Conversation, all historical Messages,
+    StudyRoomMembers, and RoomModerationActions remain in the database (see
+    docs/db/migrations/010_soft_delete_study_rooms.sql). An already-deleted or missing room
+    both 404 via _get_active_room_or_404 -- a deleted room is not re-deletable/re-authorizable
+    through this endpoint. Authorized actors: the room host, or an active group owner/moderator
+    of the room's group (mirrors ChannelsService's group-manager delete authority) -- an
+    ordinary member, a non-member, or a banned/left group manager (is_group_manager already
+    requires MemberStatus.ACTIVE) may not delete."""
+    room = await _get_active_room_or_404(session, room_id)
+    if not (is_room_host(room, current_user.id) or await is_group_manager(session, room.group_id, current_user.id)):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Only the host or a group owner/moderator can delete this study room"
+        )
+    try:
+        # deleted_by always comes from the authenticated caller, never a client-supplied
+        # value -- there is no such field on this endpoint's request at all.
+        await service.soft_delete(session, room, deleted_by=current_user.id)
+        await session.commit()
+    except Exception as e:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Could not delete study room: {str(e)}"
+        )
+
+
 # --- Memberships ---
 
 
@@ -173,12 +200,7 @@ async def join_room(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
-    room = await service.get_by_id(session, room_id)
-    if not room:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Study room not found"
-        )
+    room = await _get_active_room_or_404(session, room_id)
     if not can_join_room(room):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "This study room has ended")
 
@@ -207,6 +229,13 @@ async def leave_room(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    # A deleted room must behave as if it no longer exists here too -- the soft-delete
+    # invariant (deleted_at set -> normal operations stop) applies to leave just like every
+    # other mutation, even though leaving only touches the caller's own membership row.
+    # Ended-but-not-deleted rooms are deliberately unaffected: no lifecycle gate has ever
+    # applied to leave, only to join (can_join_room) and to messages
+    # (is_room_conversation_open_for_writes).
+    await _get_active_room_or_404(session, room_id)
     member = await service.get_member(session, room_id, current_user.id)
     if not member:
         raise HTTPException(
@@ -232,12 +261,7 @@ async def list_members(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
-    room = await service.get_by_id(session, room_id)
-    if not room:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Study room not found"
-        )
+    room = await _get_active_room_or_404(session, room_id)
     if not await can_access_room(session, room, current_user.id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have access to this study room")
     if active_only:
@@ -253,12 +277,7 @@ async def update_member_role(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
-    room = await service.get_by_id(session, room_id)
-    if not room:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Study room not found"
-        )
+    room = await _get_active_room_or_404(session, room_id)
     if not is_room_host(room, current_user.id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the host can change member roles")
     member = await service.get_member(session, room_id, user_id)
@@ -289,12 +308,7 @@ async def log_moderation(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
-    room = await service.get_by_id(session, room_id)
-    if not room:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Study room not found"
-        )
+    room = await _get_active_room_or_404(session, room_id)
 
     # The acting moderator is always the authenticated caller -- data.moderator_id
     # is client-supplied and never trusted, even though it stays in the DTO for
@@ -337,12 +351,7 @@ async def list_moderation(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
-    room = await service.get_by_id(session, room_id)
-    if not room:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Study room not found"
-        )
+    room = await _get_active_room_or_404(session, room_id)
     if not await can_access_room(session, room, current_user.id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have access to this study room")
     return await service.list_moderation_actions(session, room_id)
@@ -357,12 +366,7 @@ async def create_meeting_token(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
-    room = await service.get_by_id(session, room_id)
-    if not room:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Study room not found"
-        )
+    room = await _get_active_room_or_404(session, room_id)
     if not await can_join_room_meeting(session, room, current_user.id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
