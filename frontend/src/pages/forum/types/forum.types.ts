@@ -7,6 +7,13 @@ export interface ForumCategoryResponse {
   created_at: string;               // ISO datetime string
 }
 
+export interface TagResponse {
+  id: string;
+  name: string;
+  post_count: number;
+  created_at: string;
+}
+
 export interface ForumPostResponse {
   id: string;                       // UUID
   author_id: string;                // UUID
@@ -17,6 +24,7 @@ export interface ForumPostResponse {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  tags?: string[];
 }
 
 export interface CommentResponse {
@@ -76,6 +84,7 @@ export interface Post {
   likesCount: number;        // Số lượt thích
   commentsCount: number;     // Số lượt bình luận
   isLiked: boolean;          // Client-side toggle
+  tags?: string[];           // Danh sách hashtag
 }
 
 export interface Comment {

@@ -30,6 +30,8 @@ export const ForumPage: React.FC = () => {
     setSelectedCategoryId,
     selectedCategoryName,
     setSelectedCategoryName,
+    selectedTag,
+    setSelectedTag,
     selectedFilter,
     setSelectedFilter,
     search,
@@ -117,6 +119,7 @@ export const ForumPage: React.FC = () => {
             onSelectCategory={(id, name) => {
               setSelectedCategoryId(id);
               setSelectedCategoryName(name ?? null);
+              setSelectedTag(null);
             }}
             onSearchChange={setSearch}
           />
@@ -140,6 +143,8 @@ export const ForumPage: React.FC = () => {
           {/* Header Filter Bar */}
           <ForumFilterBar
             categoryName={resolvedCategoryName}
+            selectedTag={selectedTag}
+            onClearTag={() => setSelectedTag(null)}
             selectedFilter={selectedFilter}
             onSelectFilter={setSelectedFilter}
             onOpenCreateModal={() => setShowCreateModal(true)}

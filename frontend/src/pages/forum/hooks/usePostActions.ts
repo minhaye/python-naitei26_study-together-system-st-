@@ -12,13 +12,17 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
   const { requireAuth, currentUser } = useAuth();
   const [showCreateModal, setShowCreateModal] = useState(false);
 
-  const handleCreatePost = (payload: Omit<ForumPostCreate, 'author_id'>) => {
+  const handleCreatePost = (payload: Omit<ForumPostCreate, 'author_id'>, categoryName?: string) => {
     return requireAuth(async () => {
       try {
-        const newPost = await forumApi.createPost({
-          ...payload,
-          author_id: currentUser.id,
-        }, currentUser.name);
+        const newPost = await forumApi.createPost(
+          {
+            ...payload,
+            author_id: currentUser.id,
+          },
+          currentUser.name,
+          categoryName
+        );
         setPosts((prev) => [newPost, ...prev]);
         setShowCreateModal(false);
       } catch (error) {

@@ -15,6 +15,7 @@ from app.forum.dto.forum_dto import (
     ForumPostUpdate,
     PostLikeResponse,
     CommentLikeResponse,
+    TagResponse,
 )
 from app.forum.services.forum_service import ForumService
 
@@ -161,11 +162,25 @@ async def get_post(post_id: uuid.UUID, session: AsyncSession = Depends(get_db_se
 @router.get("/posts", response_model=list[ForumPostResponse])
 async def list_posts(
     category_id: uuid.UUID | None = None,
+    tag: str | None = None,
     skip: int = 0,
     limit: int = 50,
     session: AsyncSession = Depends(get_db_session)
 ):
-    return await service.list_posts_by_category(session, category_id, skip=skip, limit=limit)
+    return await service.list_posts_by_category(session, category_id, tag=tag, skip=skip, limit=limit)
+
+
+# --- Tags ---
+
+
+@router.get("/tags/trending", response_model=list[TagResponse])
+async def get_trending_tags(limit: int = 10, session: AsyncSession = Depends(get_db_session)):
+    return await service.get_trending_tags(session, limit=limit)
+
+
+@router.get("/tags/search", response_model=list[TagResponse])
+async def search_tags(q: str = "", limit: int = 10, session: AsyncSession = Depends(get_db_session)):
+    return await service.search_tags(session, query=q, limit=limit)
 
 
 @router.put("/posts/{post_id}", response_model=ForumPostResponse)

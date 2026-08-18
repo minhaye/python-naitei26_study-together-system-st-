@@ -7,6 +7,7 @@ import type {
   Comment,
   ForumPostCreate,
   CommentCreate,
+  TagResponse,
 } from '../types/forum.types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -22,7 +23,7 @@ function timeAgo(isoString: string): string {
 }
 
 /** Map ForumPostResponse (BE DTO) → Post (UI Model) */
-function mapPost(dto: ForumPostResponse & { category_name?: string; author_name?: string; likes_count?: number; comments_count?: number; is_liked?: boolean }): Post {
+function mapPost(dto: ForumPostResponse & { category_name?: string; author_name?: string; likes_count?: number; comments_count?: number; is_liked?: boolean; tags?: string[] }): Post {
   return {
     id: dto.id,
     authorId: dto.author_id,
@@ -37,6 +38,7 @@ function mapPost(dto: ForumPostResponse & { category_name?: string; author_name?
     likesCount: dto.likes_count ?? 0,
     commentsCount: dto.comments_count ?? 0,
     isLiked: dto.is_liked ?? false,
+    tags: dto.tags ?? [],
   };
 }
 
@@ -110,18 +112,36 @@ export const forumApi = {
     return apiClient.get<ForumCategoryResponse[]>('/forum/categories');
   },
 
-  getPosts: async (categoryId: string | null, skip = 0, limit = 5): Promise<Post[]> => {
+  getPosts: async (categoryId: string | null, skip = 0, limit = 5, tag?: string | null): Promise<Post[]> => {
     let url = `/forum/posts?skip=${skip}&limit=${limit}`;
     if (categoryId) {
       url += `&category_id=${categoryId}`;
+    }
+    if (tag) {
+      url += `&tag=${encodeURIComponent(tag)}`;
     }
     const response = await apiClient.get<ForumPostResponse[]>(url);
     return response.map((p) => mapPost(p));
   },
 
-  createPost: async (payload: ForumPostCreate, authorName?: string): Promise<Post> => {
+  getTrendingTags: async (limit = 10): Promise<TagResponse[]> => {
+    return apiClient.get<TagResponse[]>(`/forum/tags/trending?limit=${limit}`);
+  },
+
+  searchTags: async (query: string, limit = 10): Promise<TagResponse[]> => {
+    return apiClient.get<TagResponse[]>(`/forum/tags/search?q=${encodeURIComponent(query)}&limit=${limit}`);
+  },
+
+  createPost: async (payload: ForumPostCreate, authorName?: string, categoryName?: string): Promise<Post> => {
     const response = await apiClient.post<ForumPostResponse>('/forum/posts', payload);
-    return mapPost({ ...response, category_name: 'Đang tải...', author_name: authorName ?? 'Bạn', likes_count: 0, comments_count: 0, is_liked: false });
+    return mapPost({
+      ...response,
+      category_name: categoryName ?? 'Chung',
+      author_name: authorName ?? 'Bạn',
+      likes_count: 0,
+      comments_count: 0,
+      is_liked: false,
+    });
   },
 
   likePost: async (postId: string, userId?: string): Promise<void> => {

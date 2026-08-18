@@ -14,6 +14,8 @@ import { Hashtag } from '../../../components/ui/Hashtag';
 import { RichContentView } from '../../../components/ui/RichContentView';
 import { extractHashtags } from '../lib/hashtagUtils';
 
+import { useForumState } from '../context/ForumStateContext';
+
 interface PostCardProps {
   post: Post;
   onToggleLike: (postId: string) => void;
@@ -28,6 +30,7 @@ export const PostCard: React.FC<PostCardProps> = ({
   isDetailPage = false,
 }) => {
   const navigate = useNavigate();
+  const { setSelectedTag } = useForumState();
   const [showComments, setShowComments] = useState(defaultShowComments);
   const [hoveredButton, setHoveredButton] = useState<'like' | 'comment' | 'share' | null>(null);
 
@@ -53,9 +56,10 @@ export const PostCard: React.FC<PostCardProps> = ({
     setLocalCommentsCount((prev) => prev + 1);
   };
 
-  // Tự động bóc tách Hashtags có trong nội dung bài viết
-  const extractedTags = extractHashtags(post.content);
-  const tags = extractedTags.length > 0 ? extractedTags : ['#Toán12', '#GiảiTích'];
+  // Ưu tiên hiển thị tags từ Backend DB (fallback sang Regex bóc tách client nếu cần)
+  const displayTags = (post.tags && post.tags.length > 0)
+    ? post.tags
+    : extractHashtags(post.content);
 
   // Bóc tách ảnh và văn bản riêng để tính độ dài chữ chuẩn kiểu Facebook (không tính chuỗi Base64 ảnh)
   const imgMatches = post.content.match(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi) || [];
@@ -126,7 +130,10 @@ export const PostCard: React.FC<PostCardProps> = ({
 
       {/* Post Content với RichContentView (Render KaTeX Math, Ảnh & định dạng HTML đẹp mắt) */}
       <div style={{ marginBottom: 16 }}>
-        <RichContentView content={displayContent} />
+        <RichContentView
+          content={displayContent}
+          onTagClick={(t) => setSelectedTag(t.replace(/^#/, ''))}
+        />
         {isContentLong && (
           <div style={{ marginTop: 6 }}>
             <span style={{ color: '#64748B' }}>... </span>
@@ -164,13 +171,6 @@ export const PostCard: React.FC<PostCardProps> = ({
           />
         </div>
       )}
-
-      {/* Tags (Render qua component <Hashtag />) */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        {tags.map((tag) => (
-          <Hashtag key={tag} tag={tag} onClick={(t) => alert(`Lọc bài viết theo thẻ ${t}`)} />
-        ))}
-      </div>
 
       {/* Actions (Thanh Facebook Action Bar tràn viền sát đáy card) */}
       <div

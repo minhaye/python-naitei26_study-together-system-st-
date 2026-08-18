@@ -50,7 +50,7 @@ export function useForumPosts(
   currentUserId?: string
 ) {
   const forumState = useForumState();
-  const { posts, setPosts, hasMore, setHasMore, skip, setSkip } = forumState;
+  const { posts, setPosts, hasMore, setHasMore, skip, setSkip, selectedTag } = forumState;
 
   const [isLoading, setIsLoading] = useState(false);
   const isInitialMountRef = useRef(true);
@@ -60,7 +60,7 @@ export function useForumPosts(
     if (isLoading || !hasMore) return;
     setIsLoading(true);
 
-    const newPosts = await forumApi.getPosts(categoryId, skip, PAGE_SIZE);
+    const newPosts = await forumApi.getPosts(categoryId, skip, PAGE_SIZE, selectedTag);
     const processed = applyFilterAndSearch(newPosts, filter, search, currentUserId);
 
     setPosts((prev) => [...prev, ...processed]);
@@ -68,9 +68,9 @@ export function useForumPosts(
 
     if (newPosts.length < PAGE_SIZE) setHasMore(false);
     setIsLoading(false);
-  }, [isLoading, hasMore, categoryId, search, filter, currentUserId, skip, setPosts, setSkip, setHasMore]);
+  }, [isLoading, hasMore, categoryId, search, filter, currentUserId, skip, selectedTag, setPosts, setSkip, setHasMore]);
 
-  /** Reset và tải lại từ đầu khi đổi danh mục, bộ lọc hoặc từ khóa */
+  /** Reset và tải lại từ đầu khi đổi danh mục, bộ lọc, từ khóa hoặc hashtag */
   useEffect(() => {
     // Nếu mount lần đầu và đã có bài viết lưu trong Context (do vừa Back về) -> Giữ nguyên, không fetch lại
     if (isInitialMountRef.current && posts.length > 0) {
@@ -86,14 +86,14 @@ export function useForumPosts(
 
     (async () => {
       setIsLoading(true);
-      const firstPage = await forumApi.getPosts(categoryId, 0, PAGE_SIZE);
+      const firstPage = await forumApi.getPosts(categoryId, 0, PAGE_SIZE, selectedTag);
       const processed = applyFilterAndSearch(firstPage, filter, search, currentUserId);
       setPosts(processed);
       setSkip(PAGE_SIZE);
       if (firstPage.length < PAGE_SIZE) setHasMore(false);
       setIsLoading(false);
     })();
-  }, [categoryId, search, filter, currentUserId]);
+  }, [categoryId, search, filter, currentUserId, selectedTag]);
 
   return { posts, setPosts, isLoading, hasMore, fetchNextPage };
 }

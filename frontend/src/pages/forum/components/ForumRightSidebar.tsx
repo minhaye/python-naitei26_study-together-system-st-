@@ -10,15 +10,26 @@ import { useAuth } from '../../../hooks/useAuth';
 import { LikedPostSkeleton, TrendingTopicSkeleton } from '../../../components/ui/Skeleton';
 import { Avatar } from '../../../components/ui/Avatar';
 import { forumApi } from '../lib/forum.api';
-import type { Post } from '../types/forum.types';
+import type { Post, TagResponse } from '../types/forum.types';
 import { LikedPostsModal } from './LikedPostsModal';
+import { useForumState } from '../context/ForumStateContext';
 
 export const ForumRightSidebar: React.FC = () => {
   const { isLoggedIn, currentUser } = useAuth();
+  const { setSelectedTag } = useForumState();
   const [isLoadingLiked, setIsLoadingLiked] = useState(false);
-  const [isLoadingTrending] = useState(false);
+  const [isLoadingTrending, setIsLoadingTrending] = useState(false);
+  const [trendingTags, setTrendingTags] = useState<TagResponse[]>([]);
   const [likedPosts, setLikedPosts] = useState<Post[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  useEffect(() => {
+    setIsLoadingTrending(true);
+    forumApi.getTrendingTags(10)
+      .then((tags) => setTrendingTags(tags))
+      .catch(console.error)
+      .finally(() => setIsLoadingTrending(false));
+  }, []);
 
   useEffect(() => {
     const fetchLikedPosts = () => {
@@ -117,19 +128,27 @@ export const ForumRightSidebar: React.FC = () => {
             </>
           )}
 
+          {!isLoadingTrending && trendingTags.length === 0 && (
+            <div style={{ fontSize: 13, color: '#94A3B8', textAlign: 'center', padding: '8px 0' }}>
+              Chưa có chủ đề nào
+            </div>
+          )}
+
           {!isLoadingTrending &&
-            ['#Toán12', '#GiảiTích', '#Java', '#IELTS', '#VậtLýĐạiCương'].map((tag, idx) => (
+            trendingTags.map((tag) => (
               <div
-                key={idx}
+                key={tag.id}
+                onClick={() => setSelectedTag(tag.name)}
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
                   cursor: 'pointer',
+                  padding: '4px 0',
                 }}
               >
-                <span style={{ color: '#3B82F6', fontSize: 14, fontWeight: '500' }}>{tag}</span>
-                <span style={{ color: '#94A3B8', fontSize: 12 }}>+120 bài</span>
+                <span style={{ color: '#3B82F6', fontSize: 14, fontWeight: '500' }}>#{tag.name}</span>
+                <span style={{ color: '#94A3B8', fontSize: 12 }}>+{tag.post_count} bài</span>
               </div>
             ))}
         </div>
