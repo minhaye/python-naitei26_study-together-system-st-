@@ -10,7 +10,6 @@ from app.core.permissions import (
     can_join_room,
     can_join_room_meeting,
     can_manage_room,
-    is_active_group_member,
     is_group_manager,
     is_room_host,
 )
@@ -62,13 +61,12 @@ async def create_room(
     group = await groups_service.get_by_id(session, data.group_id)
     if not group:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Group not found")
-    # STUDY_PLATFORM_DATABASE_SPEC.md §16: "a normal Member can still create a Study
-    # Room and become its Host" -- any active member (not just owner/moderator) may
-    # create a room, but non-members must not be able to create rooms under a group
-    # they don't belong to at all.
-    if not await is_active_group_member(session, data.group_id, current_user.id):
+    # Product rule (2026-08-18): only an active group owner or moderator may create a
+    # Study Room -- a plain Member must not (supersedes the old STUDY_PLATFORM_DATABASE_SPEC.md
+    # §16 behavior, which let any active member create a room).
+    if not await is_group_manager(session, data.group_id, current_user.id):
         raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "Only an active member of this group can create a study room here"
+            status.HTTP_403_FORBIDDEN, "Only an active group owner or moderator can create a study room here"
         )
     try:
         # The authenticated caller always becomes the host; there is no client-supplied

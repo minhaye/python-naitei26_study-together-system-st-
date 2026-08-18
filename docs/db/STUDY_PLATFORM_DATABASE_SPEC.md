@@ -257,7 +257,11 @@ Có thể:
 - Chat.
 - Tham gia Study Room.
 - Upload tài liệu.
-- Tạo Study Room.
+
+**Không** thể:
+
+- Tạo Study Room (đã đổi 2026-08-18 — xem § 16 "Vai trò"; trước đó Member được phép tạo).
+- Có quyền quản lý người dùng khác chỉ vì là Member.
 
 ---
 
@@ -759,9 +763,32 @@ Authorization (`app/core/permissions.py::can_access_conversation`, nhánh `DIREC
 
 Study Room là phiên học trực tuyến được tạo bên trong một Group.
 
-Host của Study Room **không nhất thiết là Owner hoặc Moderator của Group**.
+**Cập nhật 2026-08-18 (thay thế nội dung cũ bên dưới):** chỉ một Group `owner` hoặc
+`moderator` đang **active** (`is_group_manager`) mới được tạo Study Room
+(`POST /study-rooms/`) — một `member` bình thường bị từ chối với `403`, kể cả khi đang là
+thành viên active của group. Danh tính người tạo luôn lấy từ caller đã xác thực và trở
+thành `host_id`, không đổi so với trước.
 
-Một `Member` bình thường vẫn có thể tạo Study Room và trở thành Host của room đó.
+Sau khi được tạo, `host_id` là một trục thẩm quyền **độc lập** với `group_members.role` tại
+thời điểm tạo — xem ghi chú "Host vs. Group role" ngay dưới đây; hạn chế ở trên chỉ áp dụng
+tại thời điểm tạo, không tự động thu hồi quyền host nếu vai trò Group của host thay đổi sau đó.
+
+*(Nội dung dưới đây mô tả hành vi trước 2026-08-18, giữ lại để tham chiếu lịch sử: "Host của
+Study Room không nhất thiết là Owner hoặc Moderator của Group. Một Member bình thường vẫn có
+thể tạo Study Room và trở thành Host của room đó." — không còn đúng cho việc TẠO room kể từ
+bản cập nhật trên, nhưng vẫn đúng về việc host_id là một trường độc lập không tự phái sinh từ
+group role.)*
+
+## Host vs. Group role (chưa thống nhất — cần quyết định canonical)
+
+`is_room_host` (`app/core/permissions.py`) chỉ đọc `study_rooms.host_id == caller`, không
+kiểm tra `group_members.role`/`status` của host tại thời điểm gọi. Hệ quả: nếu một Moderator
+tạo room rồi bị Owner demote xuống Member (hoặc bị ban/rời group), họ **vẫn** giữ toàn bộ
+quyền host (update/start/end/delete room, đổi role thành viên room, KICK/MUTE/UNMUTE) vì các
+endpoint đó chỉ gọi `is_room_host`/`can_manage_room`, không re-check group role. Đây là xung
+đột chưa được giải quyết giữa mô hình role Group mới (§ 6) và thẩm quyền host tồn tại lâu dài
+trên Room; xem PR liên quan đến thay đổi authorization tạo Study Room (2026-08-18) để biết
+khuyến nghị và quyết định cần đưa ra.
 
 ## Fields
 

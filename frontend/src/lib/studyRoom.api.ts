@@ -20,7 +20,8 @@ export function listStudyRoomsByGroup(groupId: string): Promise<StudyRoom[]> {
 /**
  * Host is always the authenticated caller, derived server-side (see
  * study_room_router.create_room) -- StudyRoomCreate has no host_id field to send. The
- * backend also requires the caller to be an active member of `data.group_id` (any role).
+ * backend also requires the caller to be an active owner or moderator of `data.group_id`
+ * (is_group_manager) -- a plain member gets 403.
  */
 export function createStudyRoom(data: StudyRoomCreate): Promise<StudyRoom> {
   return apiClient.post<StudyRoom>('/study-rooms/', data);

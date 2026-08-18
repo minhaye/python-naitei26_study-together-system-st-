@@ -140,11 +140,10 @@ export function StudyGroupDetail() {
 
   const activeMembers = groupMembers.filter((m) => m.status === 'active');
   const isOwner = !!group && !!currentUserId && group.owner_id === currentUserId;
-  // Backend rule (POST /study-rooms/): any ACTIVE group member -- any role, not just
-  // owner/moderator -- may create a study room (STUDY_PLATFORM_DATABASE_SPEC.md §16).
-  const isActiveMember = isOwner || (!!currentUserId && activeMembers.some((m) => m.user_id === currentUserId));
-  // Backend rule (POST /channels/, is_group_manager): only the group owner or an active
-  // moderator may create a channel -- unlike Study Rooms, plain members cannot.
+  // Backend rule (POST /channels/ and POST /study-rooms/, both via is_group_manager): only
+  // the group owner or an active moderator may create a channel or a study room -- a plain
+  // member cannot (changed 2026-08-18: study room creation used to be open to any active
+  // member, see STUDY_PLATFORM_DATABASE_SPEC.md §16).
   const isGroupManager =
     isOwner || (!!currentUserId && activeMembers.some((m) => m.user_id === currentUserId && m.role === 'moderator'));
   // Backend rule (DELETE /study-rooms/{id}): the room's host, OR an active group owner/
@@ -697,7 +696,7 @@ export function StudyGroupDetail() {
                     <div style={{marginBottom: 24}}>
                         <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingLeft: 8, paddingRight: 4}}>
                             <div style={{color: '#64748B', fontSize: 12, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase'}}>Phòng học</div>
-                            {isActiveMember && (
+                            {isGroupManager && (
                                 <button
                                     onClick={() => { setCreateRoomError(null); setIsCreateRoomModalOpen(true); }}
                                     title="Tạo phòng học mới"

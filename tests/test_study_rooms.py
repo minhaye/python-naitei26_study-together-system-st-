@@ -266,16 +266,71 @@ async def test_create_room_forbidden_for_non_member(async_client, monkeypatch, a
     assert response.status_code == 403
 
 
-async def test_create_room_allowed_for_plain_member_and_host_id_spoofing_ignored(
-    async_client, monkeypatch, as_fake_user
-):
-    """A normal (non-owner, non-moderator) group member must still be allowed to create a
-    room and become its host -- STUDY_PLATFORM_DATABASE_SPEC.md §16 is explicit that room
-    creation is not restricted to group managers."""
+async def test_create_room_forbidden_for_plain_member(async_client, monkeypatch, as_fake_user):
+    """Product rule (2026-08-18): a plain (non-owner, non-moderator) active group member must
+    not be able to create a study room -- supersedes the old STUDY_PLATFORM_DATABASE_SPEC.md
+    §16 behavior where any active member could create one."""
     group_id = uuid.uuid4()
     group = Group(id=group_id, name="G", owner_id=uuid.uuid4(), is_public=True)
     monkeypatch.setattr(study_room_router.groups_service, "get_by_id", AsyncMock(return_value=group))
     _mock_group_membership(monkeypatch, _group_member(group_id, as_fake_user.id, role=GroupMemberRole.MEMBER))
+
+    response = await async_client.post(
+        "/study-rooms/",
+        json={"group_id": str(group_id), "name": "Room"},
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 403
+
+
+async def test_create_room_forbidden_for_left_member(async_client, monkeypatch, as_fake_user):
+    """A member who has left the group (status=left) must not be able to create a room, even
+    if they previously held a manager role there."""
+    group_id = uuid.uuid4()
+    group = Group(id=group_id, name="G", owner_id=uuid.uuid4(), is_public=True)
+    monkeypatch.setattr(study_room_router.groups_service, "get_by_id", AsyncMock(return_value=group))
+    _mock_group_membership(
+        monkeypatch,
+        _group_member(group_id, as_fake_user.id, role=GroupMemberRole.MODERATOR, status=MemberStatus.LEFT),
+    )
+
+    response = await async_client.post(
+        "/study-rooms/",
+        json={"group_id": str(group_id), "name": "Room"},
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 403
+
+
+async def test_create_room_forbidden_for_banned_member(async_client, monkeypatch, as_fake_user):
+    """A banned member must not be able to create a room, even if they previously held a
+    manager role there."""
+    group_id = uuid.uuid4()
+    group = Group(id=group_id, name="G", owner_id=uuid.uuid4(), is_public=True)
+    monkeypatch.setattr(study_room_router.groups_service, "get_by_id", AsyncMock(return_value=group))
+    _mock_group_membership(
+        monkeypatch,
+        _group_member(group_id, as_fake_user.id, role=GroupMemberRole.OWNER, status=MemberStatus.BANNED),
+    )
+
+    response = await async_client.post(
+        "/study-rooms/",
+        json={"group_id": str(group_id), "name": "Room"},
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 403
+
+
+async def test_create_room_allowed_for_active_owner_and_host_id_spoofing_ignored(
+    async_client, monkeypatch, as_fake_user
+):
+    """An active group owner may create a room and becomes its host -- a client-supplied
+    host_id in the request body must be silently ignored (Pydantic drops unknown fields on
+    StudyRoomCreate), never taken as identity."""
+    group_id = uuid.uuid4()
+    group = Group(id=group_id, name="G", owner_id=as_fake_user.id, is_public=True)
+    monkeypatch.setattr(study_room_router.groups_service, "get_by_id", AsyncMock(return_value=group))
+    _mock_group_membership(monkeypatch, _group_member(group_id, as_fake_user.id, role=GroupMemberRole.OWNER))
 
     spoofed_host_id = uuid.uuid4()
     captured = {}
@@ -286,8 +341,37 @@ async def test_create_room_allowed_for_plain_member_and_host_id_spoofing_ignored
 
     monkeypatch.setattr(study_room_router.service, "create", fake_create)
 
-    # StudyRoomCreate has no host_id field at all -- a stray one in the JSON body must be
-    # silently ignored (Pydantic drops unknown fields), never taken as identity.
+    response = await async_client.post(
+        "/study-rooms/",
+        json={"group_id": str(group_id), "name": "Room", "host_id": str(spoofed_host_id)},
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 201
+    assert response.json()["host_id"] == str(as_fake_user.id)
+    assert captured["host_id"] == as_fake_user.id
+    assert captured["host_id"] != spoofed_host_id
+
+
+async def test_create_room_allowed_for_active_moderator_and_host_id_spoofing_ignored(
+    async_client, monkeypatch, as_fake_user
+):
+    """An active group moderator may create a room and becomes its host -- same host_id
+    spoofing protection as the owner path."""
+    group_id = uuid.uuid4()
+    group = Group(id=group_id, name="G", owner_id=uuid.uuid4(), is_public=True)
+    monkeypatch.setattr(study_room_router.groups_service, "get_by_id", AsyncMock(return_value=group))
+    _mock_group_membership(monkeypatch, _group_member(group_id, as_fake_user.id, role=GroupMemberRole.MODERATOR))
+
+    spoofed_host_id = uuid.uuid4()
+    captured = {}
+
+    async def fake_create(session, data, host_id):
+        captured["host_id"] = host_id
+        return _make_room(host_id=host_id)
+
+    monkeypatch.setattr(study_room_router.service, "create", fake_create)
+
     response = await async_client.post(
         "/study-rooms/",
         json={"group_id": str(group_id), "name": "Room", "host_id": str(spoofed_host_id)},
