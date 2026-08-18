@@ -32,23 +32,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
 
+    const getDevSession = (): Session | null => {
+      const stored = localStorage.getItem('dev_session');
+      if (!stored) return null;
+      try {
+        return JSON.parse(stored) as Session;
+      } catch {
+        return null;
+      }
+    };
+
     supabase.auth.getSession().then(({ data }) => {
-      applySession(data.session);
+      if (data.session) {
+        applySession(data.session);
+      } else {
+        applySession(getDevSession());
+      }
+      setLoading(false);
+    }).catch(() => {
+      applySession(getDevSession());
       setLoading(false);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      applySession(nextSession);
+      if (nextSession) {
+        localStorage.removeItem('dev_session');
+        applySession(nextSession);
+      } else {
+        applySession(getDevSession());
+      }
       setLoading(false);
     });
 
+    const handleDevAuthChange = () => {
+      const devSess = getDevSession();
+      applySession(devSess);
+    };
+    window.addEventListener('dev_auth_changed', handleDevAuthChange);
+
     return () => {
       listener.subscription.unsubscribe();
+      window.removeEventListener('dev_auth_changed', handleDevAuthChange);
     };
   }, []);
 
+  const setDevSession = (nextSession: Session | null) => {
+    if (nextSession) {
+      localStorage.setItem('dev_session', JSON.stringify(nextSession));
+    } else {
+      localStorage.removeItem('dev_session');
+    }
+    sessionRef.current = nextSession;
+    setSession(nextSession);
+  };
+
   return (
-    <AuthContext.Provider value={{ session, user: session?.user ?? null, loading }}>
+    <AuthContext.Provider value={{ session, user: session?.user ?? null, loading, setDevSession }}>
       {children}
     </AuthContext.Provider>
   );

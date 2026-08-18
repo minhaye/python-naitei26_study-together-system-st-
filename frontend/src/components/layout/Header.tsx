@@ -1,14 +1,17 @@
 import { Search, Bell, Settings } from 'lucide-react';
 import { NavLink, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import { useAuthContext } from '../../contexts/auth-context';
 import { supabase } from '../../lib/supabase';
 
 export function Header() {
   const { isLoggedIn } = useAuth();
+  const { setDevSession } = useAuthContext();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    setDevSession(null);
+    await supabase.auth.signOut().catch(() => {});
     navigate('/');
   };
 
