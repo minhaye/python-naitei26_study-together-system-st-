@@ -32,6 +32,11 @@ class Channel(Base):
     created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="RESTRICT"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
+    # Soft delete (migration 009): NULL means the channel is active. Never set from a
+    # client-supplied value -- deleted_by always comes from the authenticated caller
+    # (see ChannelsService.soft_delete / channel_router.delete_channel).
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="RESTRICT"))
 
     group: Mapped["Group"] = relationship(back_populates="channels")
     creator: Mapped["Profile"] = relationship(back_populates="created_channels", foreign_keys=[created_by])

@@ -13,6 +13,12 @@ export interface Channel {
   created_at: string;
   updated_at: string;
   conversation_id: string | null;
+  /** Soft-delete marker (migration 009). A Channel returned by the list/detail endpoints
+   * is always non-deleted -- the backend excludes/404s deleted channels -- so these are
+   * present on the type for parity with the API response, not because the UI branches on
+   * them today. */
+  deleted_at: string | null;
+  deleted_by: string | null;
 }
 
 /** Mirrors ChannelCreate. No `created_by` field: attribution always comes from the

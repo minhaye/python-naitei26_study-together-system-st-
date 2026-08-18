@@ -11,3 +11,11 @@ export function listChannelsByGroup(groupId: string): Promise<Channel[]> {
 export function createChannel(data: ChannelCreate): Promise<Channel> {
   return apiClient.post<Channel>('/channels/', data);
 }
+
+/** Owner/moderator only -- enforced server-side via is_group_manager. Soft delete: the
+ * Channel row, its Conversation, and all historical Messages remain in the database (see
+ * docs/db/migrations/009_soft_delete_channels.sql); it only becomes inaccessible. Acting
+ * identity (deleted_by) is always derived from the bearer token, never sent by the client. */
+export function deleteChannel(channelId: string): Promise<void> {
+  return apiClient.delete<void>(`/channels/${channelId}`);
+}
