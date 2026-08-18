@@ -769,26 +769,45 @@ Study Room là phiên học trực tuyến được tạo bên trong một Group
 thành viên active của group. Danh tính người tạo luôn lấy từ caller đã xác thực và trở
 thành `host_id`, không đổi so với trước.
 
-Sau khi được tạo, `host_id` là một trục thẩm quyền **độc lập** với `group_members.role` tại
-thời điểm tạo — xem ghi chú "Host vs. Group role" ngay dưới đây; hạn chế ở trên chỉ áp dụng
-tại thời điểm tạo, không tự động thu hồi quyền host nếu vai trò Group của host thay đổi sau đó.
-
 *(Nội dung dưới đây mô tả hành vi trước 2026-08-18, giữ lại để tham chiếu lịch sử: "Host của
 Study Room không nhất thiết là Owner hoặc Moderator của Group. Một Member bình thường vẫn có
-thể tạo Study Room và trở thành Host của room đó." — không còn đúng cho việc TẠO room kể từ
-bản cập nhật trên, nhưng vẫn đúng về việc host_id là một trường độc lập không tự phái sinh từ
-group role.)*
+thể tạo Study Room và trở thành Host của room đó." — không còn đúng, kể cả cho quyền quản lý
+sau khi tạo, xem "Host vs. Group role" ngay dưới đây.)*
 
-## Host vs. Group role (chưa thống nhất — cần quyết định canonical)
+## Host vs. Group role (chốt chính sách 2026-08-18)
 
-`is_room_host` (`app/core/permissions.py`) chỉ đọc `study_rooms.host_id == caller`, không
-kiểm tra `group_members.role`/`status` của host tại thời điểm gọi. Hệ quả: nếu một Moderator
-tạo room rồi bị Owner demote xuống Member (hoặc bị ban/rời group), họ **vẫn** giữ toàn bộ
-quyền host (update/start/end/delete room, đổi role thành viên room, KICK/MUTE/UNMUTE) vì các
-endpoint đó chỉ gọi `is_room_host`/`can_manage_room`, không re-check group role. Đây là xung
-đột chưa được giải quyết giữa mô hình role Group mới (§ 6) và thẩm quyền host tồn tại lâu dài
-trên Room; xem PR liên quan đến thay đổi authorization tạo Study Room (2026-08-18) để biết
-khuyến nghị và quyết định cần đưa ra.
+`study_rooms.host_id` **chỉ là metadata xác định người tạo/host gốc của room** — nó **không**
+phải một quyền cấp phép độc lập hay vĩnh viễn. Toàn bộ thẩm quyền QUẢN LÝ room (update Room,
+start/end Room, xóa Room, đổi role thành viên room, KICK/MUTE/UNMUTE) được suy ra hoàn toàn từ
+vai trò Group **hiện tại** của người gọi:
+
+```text
+can_manage_room(room, user)
+  = room chưa bị soft-delete
+    AND is_group_manager(room.group_id, user)   -- active Group owner/moderator, hiện tại
+```
+
+`is_room_host`/`is_room_moderator` (kiểm tra `host_id` hoặc `study_room_members.role` không
+kèm điều kiện Group role hiện tại) đã bị loại bỏ khỏi mọi đường cấp quyền quản lý — xem
+`app/core/permissions.py::can_manage_room` và `app/study_rooms/routers/study_room_router.py`
+(2026-08-18). Hệ quả: một Moderator tạo room rồi bị Owner demote xuống Member (hoặc bị
+ban/rời group) **không còn** giữ quyền quản lý room đó — `room.host_id` của họ không đổi,
+nhưng update/start/end/delete/kick/mute/đổi-role đều trả về `403`. Vai trò
+`study_room_members.role = moderator` (room-scoped, xem § 22) cũng không còn tự nó cấp quyền
+quản lý — chỉ Group owner/moderator hiện tại mới có; § 22 mô tả hành vi trước bản cập nhật
+này, giữ lại để tham chiếu lịch sử.
+
+Quyền THAM GIA (participation — xem room, join/leave, chat, đính kèm file, lấy meeting token)
+vẫn tách biệt với quyền quản lý, và **cũng không** còn nhận `host_id` làm cơ sở cấp quyền độc
+lập: `can_access_room()` (Python, `app/core/permissions.py`) và `can_access_room_conversation()`
+(SQL/RLS, migration 011) đều yêu cầu một hàng `study_room_members` đang active (`left_at IS
+NULL`), giống hệt mọi participant khác. Điều này an toàn — không tạo ra "host không vào được
+room của chính mình" — vì `StudyRoomsService.create()` luôn insert một hàng
+`study_room_members` role=`host`, `left_at IS NULL` cho người tạo, trong cùng transaction với
+room; một host còn đang tham gia room luôn thỏa điều kiện này. Chỉ khi host đã rời room
+(`left_at` được set) hoặc — trường hợp dữ liệu bất thường không xảy ra qua đường tạo room bình
+thường — thiếu hẳn hàng membership, họ mới mất quyền truy cập vốn trước đây `host_id` một mình
+cấp.
 
 ## Fields
 
@@ -1115,7 +1134,17 @@ room_moderation_actions:
 
 # 22. Study Room Permission Model
 
-## Host
+**Thay thế 2026-08-18 — xem "Host vs. Group role" ở § 16.** Model Host/Room Moderator/
+Participant độc lập với Group role mô tả dưới đây là hành vi **trước** bản cập nhật đó, giữ
+lại để tham chiếu lịch sử. Kể từ 2026-08-18: mọi quyền quản lý room (kick/mute/unmute,
+update/start/end/delete room, đổi role thành viên room) chỉ do Group `owner`/`moderator`
+đang active nắm giữ (`can_manage_room` = `is_group_manager`) — không còn do `host_id` hay
+`study_room_members.role = moderator` tự thân cấp. `role` trên `study_room_members`
+(`host`/`moderator`/`participant`) vẫn tồn tại và vẫn được set (host khi tạo room; có thể đổi
+qua `PUT /study-rooms/{id}/members/{id}/role`, nay chỉ Group manager mới gọi được) nhưng chỉ
+mang tính hiển thị/lịch sử — không tự nó cấp quyền quản lý.
+
+## Host (hành vi trước 2026-08-18)
 
 Có thể:
 
@@ -1124,7 +1153,7 @@ Có thể:
 - Promote/Demote Room Moderator nếu được backend hỗ trợ.
 - Kết thúc Study Room.
 
-## Room Moderator
+## Room Moderator (hành vi trước 2026-08-18)
 
 Có thể:
 
@@ -1134,7 +1163,7 @@ Có thể:
 
 ## Participant
 
-Có thể:
+Có thể (không đổi):
 
 - Join/leave room.
 - Raise/lower hand.

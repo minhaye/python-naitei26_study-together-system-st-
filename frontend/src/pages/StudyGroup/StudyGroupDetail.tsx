@@ -146,10 +146,11 @@ export function StudyGroupDetail() {
   // member, see STUDY_PLATFORM_DATABASE_SPEC.md §16).
   const isGroupManager =
     isOwner || (!!currentUserId && activeMembers.some((m) => m.user_id === currentUserId && m.role === 'moderator'));
-  // Backend rule (DELETE /study-rooms/{id}): the room's host, OR an active group owner/
-  // moderator, may delete it -- an ordinary member or non-member cannot. This is UX-only;
-  // the backend independently re-checks the same rule (study_room_router.delete_room).
-  const canDeleteRoom = (room: StudyRoom) => (!!currentUserId && room.host_id === currentUserId) || isGroupManager;
+  // Backend rule (DELETE /study-rooms/{id}): only an active group owner/moderator may delete
+  // a room -- being its host is not sufficient on its own (2026-08-18 policy change: host_id
+  // is creator metadata, not an independent authorization grant). This is UX-only; the
+  // backend independently re-checks the same rule (study_room_router.delete_room).
+  const canDeleteRoom = isGroupManager;
 
   async function handleLeaveGroup() {
     if (!group || !currentUserId || isLeaving) return;
@@ -726,7 +727,7 @@ export function StudyGroupDetail() {
                                             <div style={{background: room.status === 'active' ? '#10B981' : '#F59E0B', color: 'white', fontSize: 10, fontWeight: '700', padding: '2px 6px', borderRadius: 4}}>
                                                 {room.status === 'active' ? 'LIVE' : 'CHỜ'}
                                             </div>
-                                            {canDeleteRoom(room) && (
+                                            {canDeleteRoom && (
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); setOpenRoomMenuId(isRoomMenuOpen ? null : room.id); }}
                                                     title="Tùy chọn phòng học"
@@ -929,7 +930,7 @@ export function StudyGroupDetail() {
                                 <div style={{padding: 20, flex: 1, display: 'flex', flexDirection: 'column'}}>
                                     <div style={{display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 6}}>
                                         <div style={{fontSize: 18, fontWeight: '700', color: '#0F172A'}}>{room.name}</div>
-                                        {canDeleteRoom(room) && (
+                                        {canDeleteRoom && (
                                             <button
                                                 onClick={() => { setOpenRoomMenuId(null); setDeleteRoomError(null); setRoomPendingDelete(room); }}
                                                 title="Xóa phòng học"

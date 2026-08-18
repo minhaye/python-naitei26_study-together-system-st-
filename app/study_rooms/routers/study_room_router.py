@@ -11,7 +11,6 @@ from app.core.permissions import (
     can_join_room_meeting,
     can_manage_room,
     is_group_manager,
-    is_room_host,
 )
 from app.db.session import get_db_session
 from app.db.enums import ModerationAction, StudyRoomMemberRole
@@ -101,8 +100,10 @@ async def update_room(
     session: AsyncSession = Depends(get_db_session)
 ):
     room = await _get_active_room_or_404(session, room_id)
-    if not is_room_host(room, current_user.id):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the host can update this study room")
+    # Management authority derives from the actor's CURRENT Group role, never from a stale
+    # room.host_id snapshot -- see can_manage_room's docstring.
+    if not await is_group_manager(session, room.group_id, current_user.id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only an active group owner or moderator can update this study room")
     try:
         updated = await service.update(session, room, data)
         await session.commit()
@@ -122,8 +123,8 @@ async def start_room(
     session: AsyncSession = Depends(get_db_session),
 ):
     room = await _get_active_room_or_404(session, room_id)
-    if not is_room_host(room, current_user.id):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the host can start this study room")
+    if not await is_group_manager(session, room.group_id, current_user.id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only an active group owner or moderator can start this study room")
     try:
         updated = await service.start(session, room)
         await session.commit()
@@ -143,8 +144,8 @@ async def end_room(
     session: AsyncSession = Depends(get_db_session),
 ):
     room = await _get_active_room_or_404(session, room_id)
-    if not is_room_host(room, current_user.id):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the host can end this study room")
+    if not await is_group_manager(session, room.group_id, current_user.id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only an active group owner or moderator can end this study room")
     try:
         updated = await service.end(session, room)
         await session.commit()
@@ -167,14 +168,15 @@ async def delete_room(
     StudyRoomMembers, and RoomModerationActions remain in the database (see
     docs/db/migrations/010_soft_delete_study_rooms.sql). An already-deleted or missing room
     both 404 via _get_active_room_or_404 -- a deleted room is not re-deletable/re-authorizable
-    through this endpoint. Authorized actors: the room host, or an active group owner/moderator
-    of the room's group (mirrors ChannelsService's group-manager delete authority) -- an
-    ordinary member, a non-member, or a banned/left group manager (is_group_manager already
-    requires MemberStatus.ACTIVE) may not delete."""
+    through this endpoint. Authorized actors: an active group owner/moderator of the room's
+    group (mirrors ChannelsService's group-manager delete authority) -- an ordinary member, a
+    non-member, or a banned/left group manager (is_group_manager already requires
+    MemberStatus.ACTIVE) may not delete. Being the room's host_id is NOT sufficient on its own
+    (2026-08-18 policy change) -- see can_manage_room's docstring."""
     room = await _get_active_room_or_404(session, room_id)
-    if not (is_room_host(room, current_user.id) or await is_group_manager(session, room.group_id, current_user.id)):
+    if not await is_group_manager(session, room.group_id, current_user.id):
         raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "Only the host or a group owner/moderator can delete this study room"
+            status.HTTP_403_FORBIDDEN, "Only an active group owner or moderator can delete this study room"
         )
     try:
         # deleted_by always comes from the authenticated caller, never a client-supplied
@@ -276,8 +278,10 @@ async def update_member_role(
     session: AsyncSession = Depends(get_db_session)
 ):
     room = await _get_active_room_or_404(session, room_id)
-    if not is_room_host(room, current_user.id):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the host can change member roles")
+    if not await is_group_manager(session, room.group_id, current_user.id):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Only an active group owner or moderator can change member roles"
+        )
     member = await service.get_member(session, room_id, user_id)
     if not member:
         raise HTTPException(
@@ -321,15 +325,17 @@ async def log_moderation(
         if not await can_access_room(session, room, current_user.id):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have access to this study room")
     else:
-        # KICK/MUTE/UNMUTE require host/moderator authority over this specific room.
+        # KICK/MUTE/UNMUTE require the actor to be an active group owner/moderator of this
+        # room's group (can_manage_room) -- no separate "host protection" carve-out for the
+        # target: once the actor is confirmed to be a current group manager, they have full
+        # authority over every member of the room, including whoever holds the HOST role
+        # (2026-08-18 policy change -- the old carve-out only made sense when room-scoped
+        # moderators, not just group managers, could reach this branch).
         if not await can_manage_room(session, room, current_user.id):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have permission to moderate this study room")
         target_member = await service.get_member(session, room_id, data.target_user_id)
         if target_member is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Target is not a member of this study room")
-        # Host protection: a moderator (non-host) must not be able to act on the host.
-        if target_member.role == StudyRoomMemberRole.HOST and not is_room_host(room, current_user.id):
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "Moderators cannot take this action against the host")
 
     try:
         action = await service.log_moderation_action(session, data)
