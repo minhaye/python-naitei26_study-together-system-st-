@@ -1,14 +1,15 @@
 /**
  * ForumPage — Trang Diễn đàn chính.
  *
- * Tích hợp bộ lọc 4 tùy chọn (Mới nhất, Chưa trả lời, Câu hỏi hay, Câu hỏi của tôi).
+ * Tích hợp ForumStateContext giữ nguyên trạng thái danh mục, bộ lọc, từ khóa, danh sách bài viết
+ * và khôi phục vị trí cuộn cuộn màn hình (scrollTop) khi người dùng bấm Quay lại (Back) từ trang Chi tiết.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { ForumSidebar } from './components/ForumSidebar';
-import { ForumFilterBar, type FilterOption } from './components/ForumFilterBar';
+import { ForumFilterBar } from './components/ForumFilterBar';
 import { PostCard } from './components/PostCard';
 import { ForumRightSidebar } from './components/ForumRightSidebar';
 import { CreatePostModal } from './components/CreatePostModal';
@@ -18,15 +19,28 @@ import { useAuth } from '../../hooks/useAuth';
 import { forumApi } from './lib/forum.api';
 import type { ForumCategoryResponse } from './types/forum.types';
 import { PostSkeleton } from '../../components/ui/Skeleton';
+import { useForumState } from './context/ForumStateContext';
 
 export const ForumPage: React.FC = () => {
   const { isLoggedIn, currentUser } = useAuth();
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
-  const [selectedFilter, setSelectedFilter] = useState<FilterOption>('latest');
-  const [search, setSearch] = useState('');
+  const forumState = useForumState();
+
+  const {
+    selectedCategoryId,
+    setSelectedCategoryId,
+    selectedCategoryName,
+    setSelectedCategoryName,
+    selectedFilter,
+    setSelectedFilter,
+    search,
+    setSearch,
+    scrollTop,
+    setScrollTop,
+  } = forumState;
+
   const [categories, setCategories] = useState<ForumCategoryResponse[]>([]);
 
-  // Hooks với bộ lọc selectedFilter
+  // Hooks với bộ lọc selectedFilter từ Context
   const { posts, setPosts, isLoading, hasMore, fetchNextPage } = useForumPosts(
     selectedCategoryId,
     search,
@@ -35,14 +49,24 @@ export const ForumPage: React.FC = () => {
   );
   const { showCreateModal, setShowCreateModal, handleCreatePost, handleToggleLike } = usePostActions(setPosts);
 
-  // Trigger div cho Infinite Scroll
+  // Ref cho cột giữa (Middle Feed) để lưu & khôi phục scrollTop
+  const feedRef = useRef<HTMLDivElement | null>(null);
   const observerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    forumApi.getCategories().then(setCategories);
+    forumApi.getCategories().then((cats) => {
+      setCategories(cats);
+    });
   }, []);
 
-  // IntersectionObserver trigger khi cuộn cột giữa
+  // 🔄 KHÔI PHỤC VỊ TRÍ CUỘN MÀN HÌNH (scrollTop) khi Back về ForumPage
+  useLayoutEffect(() => {
+    if (feedRef.current && scrollTop > 0) {
+      feedRef.current.scrollTop = scrollTop;
+    }
+  }, [scrollTop, posts]);
+
+  // IntersectionObserver trigger cho Infinite Scroll khi cuộn cột giữa
   useEffect(() => {
     if (!observerRef.current || !hasMore || isLoading) return;
 
@@ -59,7 +83,9 @@ export const ForumPage: React.FC = () => {
     return () => observer.disconnect();
   }, [hasMore, isLoading, fetchNextPage]);
 
-  const selectedCategoryName = categories.find((c) => c.id === selectedCategoryId)?.name ?? null;
+  // Cập nhật selectedCategoryName nếu tìm thấy từ danh sách categories
+  const resolvedCategoryName =
+    selectedCategoryName ?? categories.find((c) => c.id === selectedCategoryId)?.name ?? null;
 
   return (
     <div
@@ -88,13 +114,18 @@ export const ForumPage: React.FC = () => {
         <div style={{ width: 295, flexShrink: 0, height: '100%', overflowY: 'auto', paddingRight: 4 }}>
           <ForumSidebar
             selectedCategoryId={selectedCategoryId}
-            onSelectCategory={setSelectedCategoryId}
+            onSelectCategory={(id, name) => {
+              setSelectedCategoryId(id);
+              setSelectedCategoryName(name ?? null);
+            }}
             onSearchChange={setSearch}
           />
         </div>
 
         {/* CỘT 2: Feed Giữa (Flex 1 - Scroll độc lập + Infinite Scroll) */}
         <main
+          ref={feedRef}
+          onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
           style={{
             flex: 1,
             height: '100%',
@@ -108,7 +139,7 @@ export const ForumPage: React.FC = () => {
         >
           {/* Header Filter Bar */}
           <ForumFilterBar
-            categoryName={selectedCategoryName}
+            categoryName={resolvedCategoryName}
             selectedFilter={selectedFilter}
             onSelectFilter={setSelectedFilter}
             onOpenCreateModal={() => setShowCreateModal(true)}
@@ -120,80 +151,83 @@ export const ForumPage: React.FC = () => {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 12,
-                padding: '16px 20px',
-                background: '#FEF2F2',
-                border: '1px solid #FECACA',
+                justifyContent: 'space-between',
+                padding: '14px 20px',
+                background: '#EFF6FF',
+                border: '1px solid #BFDBFE',
                 borderRadius: 12,
+                color: '#1E40AF',
               }}
             >
-              <AlertCircle color="#DC2626" size={20} />
-              <div style={{ color: '#991B1B', fontSize: 14 }}>
-                Bạn chưa đăng nhập. Vui lòng{' '}
-                <Link to="/login" style={{ textDecoration: 'underline', fontWeight: '600', color: '#991B1B' }}>
-                  đăng nhập
-                </Link>{' '}
-                để hỏi bài và tham gia thảo luận.
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <AlertCircle size={20} color="#2563EB" />
+                <span style={{ fontSize: 14, fontWeight: '500' }}>
+                  Bạn đang ở chế độ khách. Đăng nhập để đăng bài viết, bình luận và thả tim!
+                </span>
               </div>
+              <Link
+                to="/login"
+                style={{
+                  fontSize: 13,
+                  fontWeight: '600',
+                  color: '#2563EB',
+                  textDecoration: 'none',
+                }}
+              >
+                Đăng nhập ngay →
+              </Link>
             </div>
           )}
 
-          {/* Posts List */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            {/* Lần đầu tải: Hiển thị 3 PostSkeleton */}
-            {isLoading && posts.length === 0 && (
-              <>
-                <PostSkeleton />
-                <PostSkeleton />
-                <PostSkeleton />
-              </>
-            )}
-
-            {/* Khi không có dữ liệu */}
-            {!isLoading && posts.length === 0 && (
-              <div
-                style={{
-                  width: '100%',
-                  boxSizing: 'border-box',
-                  background: 'white',
-                  borderRadius: 16,
-                  padding: 40,
-                  textAlign: 'center',
-                  color: '#64748B',
-                  border: '1px solid #E2E8F0',
-                }}
-              >
-                Chưa có câu hỏi nào trong danh mục này. Hãy là người đầu tiên đặt câu hỏi!
-              </div>
-            )}
-
-            {/* Dữ liệu thật */}
+          {/* Feed Bài Viết */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {posts.map((post) => (
               <PostCard key={post.id} post={post} onToggleLike={handleToggleLike} />
             ))}
-          </div>
 
-          {/* Infinite Scroll Trigger & Loader */}
-          <div ref={observerRef} style={{ textAlign: 'center', padding: '24px 0', minHeight: 40 }}>
-            {isLoading && posts.length > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, color: '#64748B' }}>
-                <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
-                <span style={{ fontSize: 14, fontWeight: '500' }}>Tải thêm câu hỏi...</span>
+            {/* Skeleton Loading State khi nạp bài viết lần đầu */}
+            {isLoading && posts.length === 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <PostSkeleton />
+                <PostSkeleton />
               </div>
             )}
-            {!hasMore && posts.length > 0 && (
-              <span style={{ fontSize: 14, color: '#64748B', fontWeight: '500' }}>Đã hiển thị tất cả câu hỏi</span>
+
+            {/* Empty State */}
+            {!isLoading && posts.length === 0 && (
+              <div
+                style={{
+                  textAlign: 'center',
+                  padding: '48px 0',
+                  color: '#64748B',
+                  background: 'white',
+                  borderRadius: 12,
+                  border: '1px solid #E2E8F0',
+                }}
+              >
+                Chưa có bài viết nào trong mục này. Hãy là người đầu tiên đặt câu hỏi!
+              </div>
             )}
+
+            {/* Loading spinner ở cuối Feed khi Infinite Scroll nạp trang tiếp */}
+            {isLoading && posts.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0' }}>
+                <Loader2 size={24} color="#2563EB" style={{ animation: 'spin 1s linear infinite' }} />
+              </div>
+            )}
+
+            {/* Observer Element trigger khi cuộn tới đáy */}
+            <div ref={observerRef} style={{ height: 20 }} />
           </div>
         </main>
 
-        {/* CỘT 3: Right Sidebar (300px - Scroll độc lập) */}
-        <div style={{ width: 319, flexShrink: 0, height: '100%', overflowY: 'auto', paddingRight: 4 }}>
+        {/* CỘT 3: Right Sidebar (Thống kê & Bài viết yêu thích) */}
+        <div style={{ width: 320, flexShrink: 0, height: '100%', overflowY: 'auto', paddingRight: 4 }}>
           <ForumRightSidebar />
         </div>
       </div>
 
-      {/* Modal Đặt câu hỏi */}
+      {/* Modal Đăng bài viết mới */}
       <CreatePostModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}

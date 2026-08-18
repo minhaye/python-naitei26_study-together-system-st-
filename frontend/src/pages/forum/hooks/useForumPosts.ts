@@ -1,17 +1,14 @@
 /**
  * useForumPosts — Quản lý danh sách bài viết Forum với Infinite Scroll và 4 Bộ lọc.
  *
- * Bộ lọc:
- *   - latest: Mới nhất (xếp theo thời gian)
- *   - unanswered: Chưa trả lời (commentsCount === 0)
- *   - popular: Câu hỏi hay (likesCount >= 5 hoặc tương tác cao)
- *   - my_questions: Câu hỏi của tôi (authorId === currentUserId)
+ * Tích hợp ForumStateContext lưu giữ bài viết và khôi phục tức thì khi Back từ trang Chi tiết.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Post } from '../types/forum.types';
 import { forumApi } from '../lib/forum.api';
 import type { FilterOption } from '../components/ForumFilterBar';
+import { useForumState } from '../context/ForumStateContext';
 
 const PAGE_SIZE = 5;
 
@@ -59,38 +56,47 @@ export function useForumPosts(
   filter: FilterOption = 'latest',
   currentUserId?: string
 ) {
-  const [posts, setPosts] = useState<Post[]>([]);
+  const forumState = useForumState();
+  const { posts, setPosts, hasMore, setHasMore, skip, setSkip } = forumState;
+
   const [isLoading, setIsLoading] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const skipRef = useRef(0);
+  const isInitialMountRef = useRef(true);
 
   /** Tải một trang bài viết và nối vào danh sách hiện tại */
   const fetchNextPage = useCallback(async () => {
     if (isLoading || !hasMore) return;
     setIsLoading(true);
 
-    const newPosts = await forumApi.getPosts(categoryId, skipRef.current, PAGE_SIZE);
+    const newPosts = await forumApi.getPosts(categoryId, skip, PAGE_SIZE);
     const processed = applyFilterAndSearch(newPosts, filter, search, currentUserId);
 
     setPosts((prev) => [...prev, ...processed]);
-    skipRef.current += PAGE_SIZE;
+    setSkip(skip + PAGE_SIZE);
 
     if (newPosts.length < PAGE_SIZE) setHasMore(false);
     setIsLoading(false);
-  }, [isLoading, hasMore, categoryId, search, filter, currentUserId]);
+  }, [isLoading, hasMore, categoryId, search, filter, currentUserId, skip, setPosts, setSkip, setHasMore]);
 
   /** Reset và tải lại từ đầu khi đổi danh mục, bộ lọc hoặc từ khóa */
   useEffect(() => {
+    // Nếu mount lần đầu và đã có bài viết lưu trong Context (do vừa Back về) -> Giữ nguyên, không fetch lại
+    if (isInitialMountRef.current && posts.length > 0) {
+      isInitialMountRef.current = false;
+      return;
+    }
+
+    isInitialMountRef.current = false;
+
     setPosts([]);
     setHasMore(true);
-    skipRef.current = 0;
+    setSkip(0);
 
     (async () => {
       setIsLoading(true);
       const firstPage = await forumApi.getPosts(categoryId, 0, PAGE_SIZE);
       const processed = applyFilterAndSearch(firstPage, filter, search, currentUserId);
       setPosts(processed);
-      skipRef.current = PAGE_SIZE;
+      setSkip(PAGE_SIZE);
       if (firstPage.length < PAGE_SIZE) setHasMore(false);
       setIsLoading(false);
     })();

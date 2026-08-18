@@ -70,36 +70,67 @@ function mapComment(
   };
 }
 
-/** Nhóm danh sách comment phẳng → cây 2 cấp (comment + replies) */
+/** Nhóm comment chuẩn Facebook Best Practice: 2 cấp DOM (Root Comment -> Flat Thread Replies) */
 function nestComments(flat: Comment[]): Comment[] {
   const roots: Comment[] = [];
-  const map = new Map<string, Comment>();
-  flat.forEach((c) => map.set(c.id, { ...c, replies: [] }));
-  map.forEach((c) => {
-    if (c.parentCommentId && map.has(c.parentCommentId)) {
-      map.get(c.parentCommentId)!.replies.push(c);
-    } else {
-      roots.push(c);
+  const rootMap = new Map<string, Comment>();
+  const parentToRootMap = new Map<string, string>();
+
+  // 1. Nhặt tất cả comment gốc (parentCommentId === null)
+  flat.forEach((c) => {
+    if (!c.parentCommentId) {
+      const rootItem = { ...c, replies: [] };
+      rootMap.set(c.id, rootItem);
+      parentToRootMap.set(c.id, c.id);
+      roots.push(rootItem);
     }
   });
+
+  // 2. Nhặt các reply cấp 1 (trực tiếp từ root)
+  flat.forEach((c) => {
+    if (c.parentCommentId && rootMap.has(c.parentCommentId)) {
+      const rootId = c.parentCommentId;
+      parentToRootMap.set(c.id, rootId);
+      rootMap.get(rootId)!.replies.push({ ...c, replies: [] });
+    }
+  });
+
+  // 3. Nhặt các reply cấp sâu hơn (reply của reply) -> Gom hết vào mảng replies của Root!
+  flat.forEach((c) => {
+    if (c.parentCommentId && !rootMap.has(c.parentCommentId)) {
+      const rootId = parentToRootMap.get(c.parentCommentId);
+      if (rootId && rootMap.has(rootId)) {
+        parentToRootMap.set(c.id, rootId);
+        rootMap.get(rootId)!.replies.push({ ...c, replies: [] });
+      } else {
+        roots.push({ ...c, replies: [] });
+      }
+    }
+  });
+
   return roots;
 }
 
 // ─── Mock Data Store ──────────────────────────────────────────────────────────
 
 const MOCK_CATEGORIES: ForumCategoryResponse[] = [
+  { id: 'thcs', name: 'THCS (Trung học Cơ sở)', description: null, created_at: '2026-01-01T00:00:00Z' },
+  { id: 'thpt', name: 'THPT (Trung học Phổ thông)', description: null, created_at: '2026-01-01T00:00:00Z' },
+  { id: 'ngoaingu', name: 'Ngoại ngữ & Chứng chỉ', description: null, created_at: '2026-01-01T00:00:00Z' },
+  { id: 'it', name: 'CNTT & Lập trình (IT)', description: null, created_at: '2026-01-01T00:00:00Z' },
+  { id: 'kinhte', name: 'Kinh tế & Quản trị', description: null, created_at: '2026-01-01T00:00:00Z' },
+  { id: 'toan-caocap', name: 'Toán cao cấp & Đại số', description: null, created_at: '2026-01-01T00:00:00Z' },
+  { id: 'triethoc', name: 'Triết học & Lý luận', description: null, created_at: '2026-01-01T00:00:00Z' },
+  { id: 'yduoc', name: 'Y Dược & Sức khỏe', description: null, created_at: '2026-01-01T00:00:00Z' },
   { id: 'cat-1', name: 'Toán học', description: null, created_at: '2026-01-01T00:00:00Z' },
   { id: 'cat-2', name: 'Lập trình OOP', description: null, created_at: '2026-01-01T00:00:00Z' },
-  { id: 'cat-3', name: 'Vật lý đại cương', description: null, created_at: '2026-01-01T00:00:00Z' },
-  { id: 'cat-4', name: 'Cơ sở dữ liệu', description: null, created_at: '2026-01-01T00:00:00Z' },
-  { id: 'cat-5', name: 'Hóa học đại cương', description: null, created_at: '2026-01-01T00:00:00Z' },
 ];
 
 let MOCK_POSTS: (ForumPostResponse & { likesCount: number; commentsCount: number })[] = [
   {
-    id: 'post-1', author_id: 'user-1', category_id: 'cat-1',
+    id: 'post-1', author_id: 'user-1', category_id: 'toan-caocap',
     title: 'Giúp mình hiểu về tích phân từng phần?',
-    content: 'Mình đang mắc ở bài 4 trong phần bài tập. Có ai có thể giải thích chi tiết cách chọn "u" và "dv" sao cho hiệu quả không? Quy tắc "Nhất lốc, nhì đa..." thỉnh thoảng làm mình bối rối khi có logarit tự nhiên.',
+    content: 'Mình đang mắc ở bài 4 trong phần bài tập. Có ai có thể giải thích chi tiết cách chọn "u" và "dv" sao cho hiệu quả không? Quy tắc "Nhất lốc, nhì đa..." thỉnh thoại làm mình bối rối khi có logarit tự nhiên.',
     image_path: null,
     created_at: new Date(Date.now() - 7200000).toISOString(),
     updated_at: new Date(Date.now() - 7200000).toISOString(),
@@ -108,7 +139,7 @@ let MOCK_POSTS: (ForumPostResponse & { likesCount: number; commentsCount: number
     commentsCount: 8,
   },
   {
-    id: 'post-2', author_id: 'user-2', category_id: 'cat-2',
+    id: 'post-2', author_id: 'user-2', category_id: 'it',
     title: 'Sự khác biệt giữa Abstract Class và Interface trong Java?',
     content: 'Mọi người cho mình hỏi trong thực tế dự án thì khi nào nên dùng Abstract Class và khi nào thì nên dùng Interface? Mình đọc lý thuyết thì hiểu nhưng áp dụng thực tế thấy khá hoang mang.',
     image_path: null,
@@ -119,7 +150,7 @@ let MOCK_POSTS: (ForumPostResponse & { likesCount: number; commentsCount: number
     commentsCount: 12,
   },
   {
-    id: 'post-3', author_id: 'user-3', category_id: 'cat-3',
+    id: 'post-3', author_id: 'user-3', category_id: 'thpt',
     title: 'Giải thích hiện tượng giao thoa ánh sáng đơn sắc?',
     content: 'Tại sao khi dùng ánh sáng trắng thì vân trung tâm lại là vân màu trắng, còn các vân bên cạnh lại có màu như cầu vồng?',
     image_path: null,
@@ -128,6 +159,28 @@ let MOCK_POSTS: (ForumPostResponse & { likesCount: number; commentsCount: number
     deleted_at: null,
     likesCount: 18,
     commentsCount: 5,
+  },
+  {
+    id: 'post-4', author_id: 'user-1', category_id: 'ngoaingu',
+    title: 'Kinh nghiệm luyện IELTS Listening Part 3 & 4 đạt 8.0+?',
+    content: 'Có ai bị bẫy ở các câu hỏi Multiple Choice trong phần Listening Part 3 không? Chia sẻ cho mình bí quyết bắt keyword hiệu quả với ạ!',
+    image_path: null,
+    created_at: new Date(Date.now() - 120000000).toISOString(),
+    updated_at: new Date(Date.now() - 120000000).toISOString(),
+    deleted_at: null,
+    likesCount: 32,
+    commentsCount: 14,
+  },
+  {
+    id: 'post-5', author_id: 'user-2', category_id: 'thcs',
+    title: 'Ôn thi vào lớp 10 môn Toán: Các dạng bài Hệ thức Vi-ét thường gặp',
+    content: 'Mọi người tổng hợp giúp mình các dạng bài hay ra trong đề thi tuyển sinh vào 10 môn Toán phần định lý Vi-ét với ạ!',
+    image_path: null,
+    created_at: new Date(Date.now() - 150000000).toISOString(),
+    updated_at: new Date(Date.now() - 150000000).toISOString(),
+    deleted_at: null,
+    likesCount: 29,
+    commentsCount: 9,
   },
 ];
 

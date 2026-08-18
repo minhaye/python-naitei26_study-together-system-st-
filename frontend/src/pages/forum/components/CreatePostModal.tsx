@@ -1,10 +1,11 @@
 /**
  * CreatePostModal — Popup tạo câu hỏi / bài viết mới trên Forum.
  *
- * Tích hợp EditTextTool (TipTap Editor) với đầy đủ công cụ soạn thảo, bảng, ảnh & công thức toán.
+ * Tích hợp Dropdown tùy chỉnh hiện đại cho Môn học/Danh mục và Trình soạn thảo TipTap (EditTextTool).
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ChevronDown, Check } from 'lucide-react';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { EditTextTool } from '../../../components/ui/EditTextTool';
@@ -27,7 +28,11 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
   const [categoryId, setCategoryId] = useState<string>('');
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Nạp danh sách môn học khi mở Modal
   useEffect(() => {
     if (isOpen) {
       forumApi.getCategories().then((cats) => {
@@ -38,6 +43,17 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
       });
     }
   }, [isOpen]);
+
+  // Đóng dropdown khi click ra ngoài
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const hasContent = (html: string) => {
     if (!html.trim()) return false;
@@ -56,35 +72,105 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
     });
     setTitle('');
     setContent('');
+    setIsDropdownOpen(false);
   };
+
+  const selectedCategory = categories.find((cat) => cat.id === categoryId);
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Đặt câu hỏi mới">
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {/* Chọn môn học */}
+        {/* Dropdown Chọn môn học Tùy chỉnh (Modern Custom Select Dropdown) */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <label style={{ fontSize: 13, fontWeight: '600', color: FORUM_COLORS.textSecondary }}>
             Môn học / Danh mục
           </label>
-          <select
-            value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value)}
-            style={{
-              padding: '10px 12px',
-              borderRadius: 8,
-              border: `1px solid ${FORUM_COLORS.border}`,
-              background: FORUM_COLORS.subtle,
-              fontSize: 14,
-              color: FORUM_COLORS.textPrimary,
-              outline: 'none',
-            }}
-          >
-            {categories.map((cat) => (
-              <option key={cat.id} value={cat.id}>
-                {cat.name}
-              </option>
-            ))}
-          </select>
+          <div ref={dropdownRef} style={{ position: 'relative' }}>
+            {/* Box chọn chính (Dropdown Trigger Box) */}
+            <div
+              onClick={() => setIsDropdownOpen((prev) => !prev)}
+              style={{
+                padding: '10px 14px',
+                borderRadius: 10,
+                border: isDropdownOpen ? '1px solid #3B82F6' : `1px solid ${FORUM_COLORS.border}`,
+                background: isDropdownOpen ? '#FFFFFF' : FORUM_COLORS.subtle,
+                fontSize: 14,
+                fontWeight: '500',
+                color: selectedCategory ? FORUM_COLORS.textPrimary : '#94A3B8',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                boxShadow: isDropdownOpen ? '0 0 0 3px rgba(59, 130, 246, 0.1)' : 'none',
+                transition: 'all 0.2s ease',
+                userSelect: 'none',
+              }}
+            >
+              <span>{selectedCategory ? selectedCategory.name : 'Chọn môn học...'}</span>
+              <ChevronDown
+                size={18}
+                color="#64748B"
+                style={{
+                  transition: 'transform 0.2s ease',
+                  transform: isDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                }}
+              />
+            </div>
+
+            {/* Popup Danh sách chọn (Custom Floating Menu) */}
+            {isDropdownOpen && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  left: 0,
+                  right: 0,
+                  background: 'white',
+                  border: '1px solid #CBD5E1',
+                  borderRadius: 12,
+                  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+                  zIndex: 999,
+                  maxHeight: 220,
+                  overflowY: 'auto',
+                  padding: '6px 0',
+                }}
+              >
+                {categories.map((cat) => {
+                  const isSelected = cat.id === categoryId;
+                  return (
+                    <div
+                      key={cat.id}
+                      onClick={() => {
+                        setCategoryId(cat.id);
+                        setIsDropdownOpen(false);
+                      }}
+                      style={{
+                        padding: '10px 14px',
+                        fontSize: 14,
+                        fontWeight: isSelected ? '600' : '400',
+                        color: isSelected ? '#1D4ED8' : FORUM_COLORS.textPrimary,
+                        background: isSelected ? '#EFF6FF' : 'transparent',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        transition: 'background 0.15s ease',
+                      }}
+                      onMouseOver={(e) => {
+                        if (!isSelected) e.currentTarget.style.background = '#F8FAFC';
+                      }}
+                      onMouseOut={(e) => {
+                        if (!isSelected) e.currentTarget.style.background = 'transparent';
+                      }}
+                    >
+                      <span>{cat.name}</span>
+                      {isSelected && <Check size={16} color="#1D4ED8" />}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Tiêu đề */}
@@ -98,14 +184,17 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             style={{
-              padding: '10px 12px',
-              borderRadius: 8,
+              padding: '10px 14px',
+              borderRadius: 10,
               border: `1px solid ${FORUM_COLORS.border}`,
               background: FORUM_COLORS.subtle,
               fontSize: 14,
               color: FORUM_COLORS.textPrimary,
               outline: 'none',
+              transition: 'border-color 0.2s',
             }}
+            onFocus={(e) => (e.target.style.borderColor = '#3B82F6')}
+            onBlur={(e) => (e.target.style.borderColor = FORUM_COLORS.border)}
           />
         </div>
 

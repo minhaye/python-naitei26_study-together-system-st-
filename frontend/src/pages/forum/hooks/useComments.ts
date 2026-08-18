@@ -24,11 +24,34 @@ function updateLikeInTree(comments: Comment[], commentId: string): Comment[] {
 }
 
 /** Thêm reply đệ quy vào đúng parent trong cây comment */
+/** Thêm reply vào mảng replies của Root comment chuẩn Facebook */
 function appendReplyInTree(comments: Comment[], parentId: string, reply: Comment): Comment[] {
   return comments.map((c) => {
-    if (c.id === parentId) return { ...c, replies: [...c.replies, reply] };
-    if (c.replies.length > 0)
-      return { ...c, replies: appendReplyInTree(c.replies, parentId, reply) };
+    // Nếu parentId chính là root comment HOẶC parentId nằm trong mảng replies của root comment này
+    if (c.id === parentId || c.replies.some((r) => r.id === parentId)) {
+      return { ...c, replies: [...c.replies, reply] };
+    }
+    return c;
+  });
+}
+
+/** Thay thế tempId trong mảng replies của Root comment */
+function replaceTempIdInTree(
+  comments: Comment[],
+  parentId: string,
+  tempId: string,
+  realReply: Comment,
+  authorName: string
+): Comment[] {
+  return comments.map((c) => {
+    if (c.id === parentId || c.replies.some((r) => r.id === parentId)) {
+      return {
+        ...c,
+        replies: c.replies.map((r) =>
+          r.id === tempId ? { ...realReply, authorName } : r
+        ),
+      };
+    }
     return c;
   });
 }
@@ -98,7 +121,7 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
   };
 
   /**
-   * Reply một bình luận (cấp 2) — Optimistic UI (0ms).
+   * Reply một bình luận — Optimistic UI (0ms đệ quy).
    */
   const handleReply = (parentId: string, content: string) => {
     requireAuth(async () => {
@@ -130,19 +153,9 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
       };
       const realReply = await forumApi.createComment(payload, currentUser.name);
 
-      // Replace tempId bằng real ID
+      // Replace tempId bằng real ID đệ quy
       setComments((prev) =>
-        prev.map((c) => {
-          if (c.id === parentId) {
-            return {
-              ...c,
-              replies: c.replies.map((r) =>
-                r.id === tempId ? { ...realReply, authorName: currentUser.name } : r
-              ),
-            };
-          }
-          return c;
-        })
+        replaceTempIdInTree(prev, parentId, tempId, realReply, currentUser.name)
       );
     });
   };

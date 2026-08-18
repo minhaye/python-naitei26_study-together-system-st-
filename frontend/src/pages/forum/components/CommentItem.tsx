@@ -1,10 +1,11 @@
 /**
- * CommentItem — Hiển thị 1 bình luận (hoặc 1 reply trong cây comment).
+ * CommentItem — Hiển thị 1 bình luận (hoặc 1 reply trong mảng replies phẳng chuẩn Facebook).
  *
- * Tích hợp nút "Xem X phản hồi" / "Ẩn X phản hồi" kiểu Facebook:
- *   - Mặc định KHÔNG tự động mở tràn các câu trả lời con.
- *   - Hiển thị nút "Xem X phản hồi". Bấm vào mới mở bung danh sách trả lời con.
- *   - Tự động mở bung khi người dùng vừa viết câu trả lời mới.
+ * Chuẩn Facebook Best Practice (2-Tier Layout):
+ *   - DOM phẳng 2 cấp: Root Comment (Cấp 1) -> Thread Replies (Cấp 2).
+ *   - Tất cả câu trả lời (dù reply cho gốc hay reply cho reply khác) đều gióng thẳng hàng 100% ở Cấp 2 (lề 32px).
+ *   - Tự động gắn tag `@TênTácGiả` màu xanh đậm nổi bật khi trả lời các câu reply trong luồng.
+ *   - Nút "Xem X phản hồi" / "Ẩn X phản hồi" bung danh sách trả lời.
  */
 
 import React, { useState } from 'react';
@@ -19,7 +20,7 @@ interface CommentItemProps {
   onReply: (parentId: string, content: string) => void;
   onLike: (commentId: string, isLiked: boolean) => void;
   isReply?: boolean;
-  nestingLevel?: number; // 0 = gốc, 1 = trả lời trực tiếp gốc, 2+ = trả lời của trả lời
+  nestingLevel?: number; // 0 = Gốc (Root), 1 = Reply trong luồng
   isLastChild?: boolean; // Đánh dấu comment con cuối cùng trong nhánh
 }
 
@@ -37,17 +38,54 @@ export const CommentItem: React.FC<CommentItemProps> = ({
   const [likeHovered, setLikeHovered] = useState(false);
   const [replyHovered, setReplyHovered] = useState(false);
 
+  const handleOpenReplyBox = () => {
+    const nextState = !showReplyBox;
+    setShowReplyBox(nextState);
+    if (nextState && isReply && !replyText) {
+      // Tự động chèn @Tag tên tác giả khi trả lời bất kỳ reply nào trong luồng
+      setReplyText(`@${comment.authorName} `);
+    }
+  };
+
   const handleSendReply = () => {
     if (!replyText.trim()) return;
     onReply(comment.id, replyText.trim());
     setReplyText('');
     setShowReplyBox(false);
-    setShowReplies(true); // Tự động bung danh sách reply khi người dùng vừa trả lời
+    setShowReplies(true); // Tự động mở danh sách reply khi vừa trả lời
   };
 
   const isRoot = nestingLevel === 0;
-  // Chỉ vẽ đường nối khi là comment trả lời cấp 2 trở lên
-  const showConnectorLine = isReply && nestingLevel >= 2;
+  // Đường kẻ nối L mượt mà từ Root sang các Reply
+  const showConnectorLine = isReply;
+
+  // Render nội dung comment có nhận diện thẻ @Tag tác giả màu xanh nổi bật kiểu Facebook
+  const renderFormattedContent = (text: string) => {
+    const mentionRegex = /^(@[^\s<]+(?:\s+[^\s<]+)?)/;
+    const match = text.match(mentionRegex);
+
+    if (match) {
+      const mentionTag = match[1];
+      const restText = text.slice(mentionTag.length);
+      return (
+        <div>
+          <span
+            style={{
+              color: '#1D4ED8',
+              fontWeight: '600',
+              marginRight: 4,
+              cursor: 'pointer',
+            }}
+          >
+            {mentionTag}
+          </span>
+          <RichContentView content={restText} />
+        </div>
+      );
+    }
+
+    return <RichContentView content={text} />;
+  };
 
   return (
     <div
@@ -57,10 +95,9 @@ export const CommentItem: React.FC<CommentItemProps> = ({
         position: 'relative',
       }}
     >
-      {/* 🟢 ĐƯỜNG KẺ NỐI CHUẨN FACEBOOK */}
+      {/* 🟢 ĐƯỜNG KẺ NỐI CHUẨN FACEBOOK CHO CÁC REPLIES */}
       {showConnectorLine && (
         <>
-          {/* Comment con CUỐI CÙNG: Bắt đầu từ top: 0, uốn cong 90 độ tại y: 12px đâm vào tâm Avatar và DỪNG HẲN */}
           {isLastChild ? (
             <div
               style={{
@@ -76,7 +113,6 @@ export const CommentItem: React.FC<CommentItemProps> = ({
               }}
             />
           ) : (
-            /* Comment con KHÔNG PHẢI CUỐI: Đường dọc kéo xuống hết chiều cao + Nét uốn L đâm vào tâm Avatar */
             <>
               <div
                 style={{
@@ -127,7 +163,7 @@ export const CommentItem: React.FC<CommentItemProps> = ({
             {comment.authorName}
           </span>
           <div style={{ marginTop: 4 }}>
-            <RichContentView content={comment.content} />
+            {renderFormattedContent(comment.content)}
           </div>
         </div>
 
@@ -167,7 +203,7 @@ export const CommentItem: React.FC<CommentItemProps> = ({
           <button
             onMouseEnter={() => setReplyHovered(true)}
             onMouseLeave={() => setReplyHovered(false)}
-            onClick={() => setShowReplyBox((v) => !v)}
+            onClick={handleOpenReplyBox}
             style={{
               background: 'none',
               border: 'none',
@@ -254,7 +290,7 @@ export const CommentItem: React.FC<CommentItemProps> = ({
           </div>
         )}
 
-        {/* Mảng replies đệ quy (Chỉ mở khi showReplies === true) */}
+        {/* Mảng replies phẳng chuẩn Facebook: Tất cả reply trong luồng đều gióng thẳng hàng ở Cấp 2 */}
         {showReplies && comment.replies.length > 0 && (
           <div
             style={{
@@ -262,7 +298,7 @@ export const CommentItem: React.FC<CommentItemProps> = ({
               flexDirection: 'column',
               gap: 12,
               marginTop: 10,
-              paddingLeft: 32,
+              paddingLeft: isRoot ? 32 : 0,
               position: 'relative',
             }}
           >
@@ -273,7 +309,7 @@ export const CommentItem: React.FC<CommentItemProps> = ({
                 onReply={onReply}
                 onLike={onLike}
                 isReply
-                nestingLevel={nestingLevel + 1}
+                nestingLevel={1}
                 isLastChild={index === comment.replies.length - 1}
               />
             ))}

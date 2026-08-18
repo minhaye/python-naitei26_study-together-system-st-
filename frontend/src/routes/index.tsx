@@ -18,24 +18,28 @@ const ProtectedRoute = ({ children }: { children?: React.ReactNode }) => {
   return children ? <>{children}</> : <Outlet />;
 };
 
+import { ForumStateProvider } from '../pages/forum/context/ForumStateContext';
+
 export function AppRoutes() {
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
-      <Route path="/room/:id" element={<StudyRoom />} />
-      <Route path="/" element={<Layout />}>
-        <Route index element={<HomePage />} />
-        <Route path="forum/post/:id" element={<ForumPostDetail />} />
+    <ForumStateProvider>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/room/:id" element={<StudyRoom />} />
+        <Route path="/" element={<Layout />}>
+          <Route index element={<HomePage />} />
+          <Route path="forum/post/:id" element={<ForumPostDetail />} />
 
-        {/* Protected Routes */}
-        <Route element={<ProtectedRoute />}>
-          <Route path="groups" element={<StudyRooms />} />
-          <Route path="groups/:id" element={<StudyGroupDetail />} />
-          <Route path="aim" element={<AimPage />} />
-          <Route path="settings" element={<AccountSettingsPage />} />
+          {/* Protected Routes */}
+          <Route element={<ProtectedRoute />}>
+            <Route path="groups" element={<StudyRooms />} />
+            <Route path="groups/:id" element={<StudyGroupDetail />} />
+            <Route path="aim" element={<AimPage />} />
+            <Route path="settings" element={<AccountSettingsPage />} />
+          </Route>
         </Route>
-      </Route>
-    </Routes>
+      </Routes>
+    </ForumStateProvider>
   );
 }
