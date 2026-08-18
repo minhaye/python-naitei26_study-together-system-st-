@@ -1,0 +1,70 @@
+import { useState } from 'react';
+import type { ReactNode } from 'react';
+import { LiveKitRoom, RoomAudioRenderer, StartAudio } from '@livekit/components-react';
+import { useMeetingToken } from '../../../hooks/useMeetingToken';
+import { MeetingContext } from './MeetingContext';
+
+interface MeetingProviderProps {
+  roomId: string;
+  /** Whether the caller should currently be attempting to join the meeting -- gated by the
+   * page on `isCurrentUserMember && room.status !== 'ended'`. The backend still independently
+   * re-checks authorization on every token request regardless of this flag. */
+  enabled: boolean;
+  children: ReactNode;
+}
+
+/**
+ * Owns the meeting-token request and the LiveKit room connection lifecycle. Always renders
+ * `children` (video grid / controls read `useMeetingContext()` to know whether a live room is
+ * actually available) so the rest of the Study Room page layout never has to branch on it.
+ */
+export function MeetingProvider({ roomId, enabled, children }: MeetingProviderProps) {
+  const { status, data, error, retry } = useMeetingToken(roomId, enabled);
+  const [connected, setConnected] = useState(false);
+
+  if (status !== 'ready' || !data) {
+    return (
+      <MeetingContext.Provider value={{ status, error, retry, connected: false }}>
+        {children}
+      </MeetingContext.Provider>
+    );
+  }
+
+  return (
+    <MeetingContext.Provider value={{ status, error, retry, connected }}>
+      {/* display:contents keeps LiveKitRoom's wrapper <div> out of the page's flex layout. */}
+      <LiveKitRoom
+        serverUrl={data.server_url}
+        token={data.participant_token}
+        connect
+        audio
+        video
+        onConnected={() => setConnected(true)}
+        onDisconnected={() => setConnected(false)}
+        onError={() => setConnected(false)}
+        style={{ display: 'contents' }}
+      >
+        <RoomAudioRenderer />
+        <StartAudio
+          label="Bấm để bật âm thanh cuộc gọi"
+          style={{
+            position: 'fixed',
+            top: 76,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 50,
+            background: '#2563EB',
+            color: 'white',
+            border: 'none',
+            padding: '8px 16px',
+            borderRadius: 8,
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        />
+        {children}
+      </LiveKitRoom>
+    </MeetingContext.Provider>
+  );
+}

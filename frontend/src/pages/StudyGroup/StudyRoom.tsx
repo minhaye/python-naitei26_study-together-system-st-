@@ -4,8 +4,6 @@ import {
   Mic,
   MicOff,
   Video as VideoIcon,
-  VideoOff,
-  Monitor,
   Hand,
   PhoneOff,
   MessageSquare,
@@ -32,6 +30,9 @@ import type { ReactNode } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { useStudyRoom } from '../../hooks/useStudyRoom';
 import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
+import { MeetingProvider } from './meeting/MeetingProvider';
+import { MeetingVideoGrid } from './meeting/MeetingVideoGrid';
+import { MeetingControls } from './meeting/MeetingControls';
 
 interface CenteredRoomMessageProps {
   title: string;
@@ -90,11 +91,6 @@ export function StudyRoom() {
   const [activeRightTab, setActiveRightTab] = useState<'chat' | 'participants' | 'notes'>('chat');
   const [activeBoardTab, setActiveBoardTab] = useState<'whiteboard' | 'presentation'>('whiteboard');
 
-  // Media controls (local UI-only placeholders — no LiveKit/WebRTC integration yet, so these
-  // never touch the backend and do not represent real microphone/camera state).
-  const [isMuted, setIsMuted] = useState(false);
-  const [isCameraOn, setIsCameraOn] = useState(true);
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isJoining, setIsJoining] = useState(false);
   const [isDeleteRoomModalOpen, setIsDeleteRoomModalOpen] = useState(false);
@@ -226,16 +222,17 @@ export function StudyRoom() {
     return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Real active member roster from the Study Room membership API. Camera/mic/speaking flags stay
-  // local UI placeholders (no LiveKit yet); hand-raise and moderation-mute are derived from the
-  // real moderation audit log, not fabricated.
+  // Real active member roster from the Study Room membership API. `isMuted` here reflects
+  // Study Room moderation-mute state (audit log) for the sidebar member list -- it is NOT the
+  // real LiveKit microphone state, which the video call grid (MeetingVideoGrid) renders
+  // separately from the actual LiveKit track/participant state. Hand-raise is likewise derived
+  // from the real moderation audit log, not fabricated.
   const participants = useMemo(() => {
     return members
       .filter((m) => !m.left_at)
       .map((m) => {
         const isSelf = m.user_id === currentUserId;
         const name = isSelf ? `${currentUser.name} (Bạn)` : `Người dùng #${m.user_id.slice(0, 4).toUpperCase()}`;
-        const moderationMuted = moderationMutedUserIds.has(m.user_id);
         return {
           id: m.user_id,
           userId: m.user_id,
@@ -246,13 +243,11 @@ export function StudyRoom() {
           isHost: m.role === 'host',
           isModerator: m.role === 'moderator',
           isSelf,
-          isMuted: isSelf ? isMuted || moderationMuted : moderationMuted,
-          isCameraOn: isSelf ? isCameraOn : true,
+          isMuted: moderationMutedUserIds.has(m.user_id),
           handRaised: handRaisedUserIds.has(m.user_id),
-          isSpeaking: false,
         };
       });
-  }, [members, currentUserId, currentUser, isMuted, isCameraOn, moderationMutedUserIds, handRaisedUserIds]);
+  }, [members, currentUserId, currentUser, moderationMutedUserIds, handRaisedUserIds]);
 
   // Chat mock data
   const [messages, setMessages] = useState([
@@ -336,6 +331,7 @@ export function StudyRoom() {
   const isRoomEnded = room.status === 'ended';
 
   return (
+    <MeetingProvider roomId={roomId} enabled={isCurrentUserMember && !isRoomEnded}>
     <div style={{width: '100vw', height: '100vh', background: '#0F172A', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: 'Inter, sans-serif'}}>
 
       {/* Top Header Bar */}
@@ -500,159 +496,15 @@ export function StudyRoom() {
       {/* Main Workspace Body */}
       <div style={{flex: 1, display: 'flex', overflow: 'hidden', position: 'relative'}}>
         
-        {/* MODE A: VIDEO GRID CALL VIEW & FOCUS SCREEN SHARE VIEW */}
+        {/* MODE A: LIVEKIT VIDEO CALL VIEW */}
         {activeMode === 'video' && (
           <div style={{flex: 1, padding: 20, display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto', background: '#0F172A'}}>
-            
-            {/* FOCUS MODE: SCREEN SHARING ACTIVE */}
-            {isScreenSharing ? (
-              <div style={{flex: 1, display: 'flex', flexDirection: 'column', gap: 16, height: '100%'}}>
-                
-                {/* Top Filmstrip of Participants */}
-                <div style={{display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4, flexShrink: 0}}>
-                  {participants.map((p) => (
-                    <div 
-                      key={p.id}
-                      style={{
-                        width: 160,
-                        height: 96,
-                        flexShrink: 0,
-                        position: 'relative',
-                        background: p.isCameraOn ? '#334155' : '#1E293B',
-                        borderRadius: 10,
-                        border: p.isSpeaking ? '2px solid #10B981' : '1px solid #334155',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        overflow: 'hidden'
-                      }}
-                    >
-                      <div style={{width: 40, height: 40, borderRadius: '50%', background: p.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 14}}>
-                        {p.initial}
-                      </div>
-
-                      {/* Compact Name Tag */}
-                      <div style={{position: 'absolute', bottom: 4, left: 6, right: 6, background: 'rgba(15, 23, 42, 0.8)', padding: '2px 6px', borderRadius: 4, color: 'white', fontSize: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>
-                        {p.name}
-                      </div>
-
-                      {/* Mic Status */}
-                      <div style={{position: 'absolute', top: 4, right: 6, background: p.isMuted ? '#EF4444' : '#10B981', color: 'white', padding: 3, borderRadius: '50%', display: 'flex'}}>
-                        {p.isMuted ? <MicOff size={10} /> : <Mic size={10} />}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Main Focus Screen Spotlight View */}
-                <div style={{flex: 1, background: '#1E293B', borderRadius: 16, border: '2px solid #2563EB', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 10px 30px rgba(0,0,0,0.5)', position: 'relative'}}>
-                  
-                  {/* Shared Screen Header Bar */}
-                  <div style={{height: 44, background: '#0F172A', borderBottom: '1px solid #334155', padding: '0 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                    <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
-                      <div style={{width: 8, height: 8, borderRadius: '50%', background: '#3B82F6'}} />
-                      <span style={{color: 'white', fontSize: 13, fontWeight: '600'}}>Màn hình của Minh Anh (Bạn) • Đang phát trực tiếp</span>
-                    </div>
-
-                    <div style={{display: 'flex', gap: 12}}>
-                      <button 
-                        onClick={() => setIsScreenSharing(false)}
-                        style={{padding: '4px 12px', background: '#EF4444', color: 'white', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: '600', cursor: 'pointer'}}
-                      >
-                        Dừng chia sẻ
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Simulated Screen Content (VS Code / Python Study Code) */}
-                  <div style={{flex: 1, background: '#090D16', padding: 24, fontFamily: 'Consolas, monospace', color: '#E2E8F0', overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 8}}>
-                    <div style={{color: '#64748B', fontSize: 13}}># Python Code Simulation - Quantum Mechanics Simulation</div>
-                    <div style={{color: '#F59E0B', fontSize: 14}}>import <span style={{color: '#38BDF8'}}>numpy</span> as <span style={{color: '#38BDF8'}}>np</span></div>
-                    <div style={{color: '#F59E0B', fontSize: 14}}>import <span style={{color: '#38BDF8'}}>matplotlib.pyplot</span> as <span style={{color: '#38BDF8'}}>plt</span></div>
-                    <br />
-                    <div style={{color: '#3B82F6', fontSize: 14}}>def <span style={{color: '#10B981'}}>schrodinger_wavefunction</span>(x, n, L):</div>
-                    <div style={{color: '#E2E8F0', fontSize: 14, paddingLeft: 24}}>return np.sqrt(2 / L) * np.sin(n * np.pi * x / L)</div>
-                    <br />
-                    <div style={{color: '#64748B', fontSize: 13}}># Plotting the 1D Infinite Potential Well</div>
-                    <div style={{color: '#E2E8F0', fontSize: 14}}>L = 1.0  <span style={{color: '#64748B'}}># Width of the box</span></div>
-                    <div style={{color: '#E2E8F0', fontSize: 14}}>x = np.linspace(0, L, 1000)</div>
-                    <div style={{color: '#EC4899', fontSize: 14}}>print(<span style={{color: '#10B981'}}>&quot;[Live Study Session] Wavefunction rendered successfully.&quot;</span>)</div>
-
-                    {/* Visual graph mockup inside code */}
-                    <div style={{marginTop: 16, padding: 16, background: '#1E293B', borderRadius: 8, border: '1px solid #334155', display: 'flex', alignItems: 'center', justifyContent: 'center', height: 180}}>
-                      <div style={{textAlign: 'center', color: '#38BDF8'}}>
-                        📊 [Đang trình chiếu Đồ thị Sóng Schrödinger n=1, n=2 trên màn hình học tập]
-                      </div>
-                    </div>
-                  </div>
-
-                </div>
-
-              </div>
-            ) : (
-              /* STANDARD GRID VIEW WHEN NOT SCREEN SHARING */
-              <div style={{
-                flex: 1, 
-                display: 'grid', 
-                gridTemplateColumns: participants.length > 4 ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)', 
-                gap: 16,
-                alignContent: 'center'
-              }}>
-                {participants.map((p) => (
-                  <div 
-                    key={p.id}
-                    style={{
-                      position: 'relative',
-                      aspectRatio: '16/9',
-                      background: p.isCameraOn ? '#334155' : '#1E293B',
-                      borderRadius: 16,
-                      border: p.isSpeaking ? '3px solid #10B981' : '1px solid #334155',
-                      boxShadow: p.isSpeaking ? '0 0 15px rgba(16, 185, 129, 0.4)' : 'none',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      overflow: 'hidden',
-                      transition: 'all 0.3s'
-                    }}
-                  >
-                    {/* Camera simulated view or Avatar */}
-                    {p.isCameraOn ? (
-                      <div style={{width: '100%', height: '100%', background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                        <div style={{width: 80, height: 80, borderRadius: '50%', background: p.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 28, fontWeight: 'bold', border: '3px solid white', boxShadow: '0 4px 12px rgba(0,0,0,0.3)'}}>
-                          {p.initial}
-                        </div>
-                      </div>
-                    ) : (
-                      <div style={{width: 80, height: 80, borderRadius: '50%', background: p.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 28, fontWeight: 'bold'}}>
-                        {p.initial}
-                      </div>
-                    )}
-
-                    {/* Name Tag Overlay */}
-                    <div style={{position: 'absolute', bottom: 12, left: 12, background: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)', padding: '4px 12px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 8, color: 'white', fontSize: 13, fontWeight: '500'}}>
-                      <span>{p.name}</span>
-                      {p.isHost && (
-                        <span style={{background: '#3B82F6', color: 'white', fontSize: 10, fontWeight: '700', padding: '2px 6px', borderRadius: 4}}>HOST</span>
-                      )}
-                    </div>
-
-                    {/* Status Badges (Mic / Hand) */}
-                    <div style={{position: 'absolute', top: 12, right: 12, display: 'flex', gap: 6}}>
-                      {p.handRaised && (
-                        <div style={{background: '#F59E0B', color: 'white', padding: 6, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'bounce 1s infinite'}}>
-                          <Hand size={16} />
-                        </div>
-                      )}
-                      <div style={{background: p.isMuted ? '#EF4444' : '#10B981', color: 'white', padding: 6, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                        {p.isMuted ? <MicOff size={16} /> : <Mic size={16} />}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
+            <MeetingVideoGrid
+              members={members}
+              currentUserId={currentUserId}
+              currentUserName={currentUser.name}
+              unavailableReason={isRoomEnded ? 'Phòng học này đã kết thúc, cuộc gọi không còn khả dụng.' : undefined}
+            />
           </div>
         )}
 
@@ -1071,76 +923,8 @@ export function StudyRoom() {
         {/* Center Control Buttons */}
         <div style={{position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 16}}>
           
-          {/* Mic — local UI placeholder only (no LiveKit yet); does not call the backend. */}
-          <button
-            onClick={() => setIsMuted(!isMuted)}
-            disabled={isRoomEnded}
-            style={{
-              width: 48,
-              height: 48,
-              borderRadius: '50%',
-              border: 'none',
-              background: isMuted ? '#EF4444' : '#334155',
-              color: 'white',
-              cursor: isRoomEnded ? 'default' : 'pointer',
-              opacity: isRoomEnded ? 0.5 : 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: isMuted ? '0 0 12px rgba(239, 68, 68, 0.4)' : 'none',
-              transition: 'all 0.2s'
-            }}
-            title={isMuted ? 'Bật micro' : 'Tắt micro'}
-          >
-            {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
-          </button>
-
-          {/* Camera — local UI placeholder only (no LiveKit yet); does not call the backend. */}
-          <button
-            onClick={() => setIsCameraOn(!isCameraOn)}
-            disabled={isRoomEnded}
-            style={{
-              width: 48,
-              height: 48,
-              borderRadius: '50%',
-              border: 'none',
-              background: !isCameraOn ? '#EF4444' : '#334155',
-              color: 'white',
-              cursor: isRoomEnded ? 'default' : 'pointer',
-              opacity: isRoomEnded ? 0.5 : 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: !isCameraOn ? '0 0 12px rgba(239, 68, 68, 0.4)' : 'none',
-              transition: 'all 0.2s'
-            }}
-            title={isCameraOn ? 'Tắt camera' : 'Bật camera'}
-          >
-            {!isCameraOn ? <VideoOff size={20} /> : <VideoIcon size={20} />}
-          </button>
-
-          {/* Screen Share — local UI placeholder only (no LiveKit yet); does not call the backend. */}
-          <button
-            onClick={() => setIsScreenSharing(!isScreenSharing)}
-            disabled={isRoomEnded}
-            style={{
-              width: 48,
-              height: 48,
-              borderRadius: '50%',
-              border: 'none',
-              background: isScreenSharing ? '#2563EB' : '#334155',
-              color: 'white',
-              cursor: isRoomEnded ? 'default' : 'pointer',
-              opacity: isRoomEnded ? 0.5 : 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'all 0.2s'
-            }}
-            title="Chia sẻ màn hình"
-          >
-            <Monitor size={20} />
-          </button>
+          {/* Mic / Camera — real LiveKit track state, see meeting/MeetingControls.tsx. */}
+          <MeetingControls disabled={isRoomEnded} />
 
           {/* Raise Hand — real moderation action (self-service raise_hand/lower_hand). */}
           <button
@@ -1192,5 +976,6 @@ export function StudyRoom() {
       </footer>
 
     </div>
+    </MeetingProvider>
   );
 }
