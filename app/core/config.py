@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     livekit_api_key: str
     livekit_api_secret: str
     livekit_token_ttl_seconds: int = 600
-    cors_allowed_origins: str = "http://localhost:5173"
+    cors_allowed_origins: str = "http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174"
 
     @property
     def cors_origins(self) -> list[str]:
