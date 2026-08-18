@@ -208,6 +208,68 @@ async def test_get_or_create_direct_reraises_integrity_error_if_retry_still_find
         await service.get_or_create_direct(session, user_a, user_b)
 
 
+# ============================================================================
+# ConversationsService.create_for_room / get_by_room_id
+# ============================================================================
+
+
+async def test_create_for_room_does_not_pre_check_before_inserting():
+    """create_for_room (2026-08-18, study-room/conversation creation invariant fix)
+    deliberately does a plain insert -- no get-then-insert existence check -- because
+    conversations_room_id_key (partial unique index, migration 004) is the actual uniqueness
+    guarantee; an application-level check-first cannot safely prevent duplicates under
+    concurrent requests (see docs/db/migrations/012_*.sql). Raising from execute() proves no
+    query runs before the insert -- not just that the returned conversation looks right."""
+    service = ConversationsService()
+    session = _FakeSession(existing_sequence=[None])
+
+    async def _execute_should_not_be_called(_stmt):
+        raise AssertionError("create_for_room must not query before inserting")
+
+    session.execute = _execute_should_not_be_called
+    room_id, created_by = uuid.uuid4(), uuid.uuid4()
+
+    conversation = await service.create_for_room(session, room_id, created_by)
+
+    assert conversation.type == ConversationType.ROOM
+    assert conversation.room_id == room_id
+    assert conversation.created_by == created_by
+    assert session.added == [conversation]
+    assert session.flush_call_count == 1
+
+
+async def test_create_for_room_duplicate_raises_integrity_error_from_db_constraint():
+    """A second create_for_room call for the same room_id must not silently succeed or be
+    swallowed -- it surfaces as IntegrityError from the DB's unique index, same as any other
+    constraint violation, and is the caller's (StudyRoomsService.create's) responsibility to
+    let propagate rather than retry -- unlike get_or_create_direct, there is no legitimate
+    concurrent-retry case for a brand-new room's Conversation."""
+    service = ConversationsService()
+    session = _FakeSession(existing_sequence=[None], raise_integrity_on_first_flush=True)
+
+    with pytest.raises(IntegrityError):
+        await service.create_for_room(session, uuid.uuid4(), uuid.uuid4())
+
+
+async def test_get_by_room_id_returns_conversation_when_present():
+    service = ConversationsService()
+    conversation = Conversation(id=uuid.uuid4(), type=ConversationType.ROOM, room_id=uuid.uuid4(), created_by=uuid.uuid4())
+    session = AsyncMock()
+    session.execute = AsyncMock(return_value=_FakeResult(conversation))
+
+    result = await service.get_by_room_id(session, conversation.room_id)
+
+    assert result is conversation
+
+
+async def test_get_by_room_id_returns_none_when_missing():
+    service = ConversationsService()
+    session = AsyncMock()
+    session.execute = AsyncMock(return_value=_FakeResult(None))
+
+    assert await service.get_by_room_id(session, uuid.uuid4()) is None
+
+
 def test_migration_006_defines_direct_pair_unique_index_and_check():
     """Concurrency correctness ultimately rests on the DB-level constraint, not just the
     service-layer retry logic exercised above. Since this repo has no live-Supabase test

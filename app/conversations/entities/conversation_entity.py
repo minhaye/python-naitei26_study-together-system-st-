@@ -44,7 +44,7 @@ class Conversation(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
 
     channel: Mapped["Channel | None"] = relationship(back_populates="conversation")
-    room: Mapped["StudyRoom | None"] = relationship()
+    room: Mapped["StudyRoom | None"] = relationship(back_populates="conversation")
     creator: Mapped["Profile"] = relationship(foreign_keys=[created_by])
     members: Mapped[list["ConversationMember"]] = relationship(back_populates="conversation")
     messages: Mapped[list["Message"]] = relationship(back_populates="conversation")

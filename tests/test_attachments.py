@@ -544,6 +544,10 @@ async def test_room_upload_url_authorized_member_success(async_client, monkeypat
     monkeypatch.setattr(
         permissions.study_rooms_service, "get_member", AsyncMock(return_value=_room_member(room.id, as_fake_user.id))
     )
+    # attachment_router's own StudyRoomsService() instance is separate from
+    # permissions.study_rooms_service -- used here only to build the object path, not for
+    # authorization -- so it needs its own mock.
+    monkeypatch.setattr(attachment_router.study_room_service, "get_by_id", AsyncMock(return_value=room))
     monkeypatch.setattr(
         attachment_router.attachments_service,
         "create_signed_upload_url",

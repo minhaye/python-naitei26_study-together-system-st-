@@ -645,7 +645,20 @@ direct
 
 ## Vai trò
 
-Parent chung cho mọi loại chat: channel, room, direct. Mỗi `channels` hiện có và mỗi `study_rooms` hiện có được backfill đúng 1 row `conversations` tương ứng.
+Parent chung cho mọi loại chat: channel, room, direct. Migration 004 backfill đúng 1 row `conversations` cho mỗi `channels`/`study_rooms` **hiện có tại thời điểm 004 chạy** — đây là một lần dọn dữ liệu lịch sử, không phải cơ chế tạo Conversation lâu dài.
+
+**Cập nhật 2026-08-18 (Study Room → Conversation creation invariant):** với Channel, việc tạo Conversation đã luôn là một phần của `ChannelsService.create()` (insert Channel, flush, insert Conversation type=channel trong cùng transaction — xem `app/channels/services/channel_service.py`). Với Study Room thì KHÔNG — `StudyRoomsService.create()` trước bản vá này chỉ insert `study_rooms` + `study_room_members` (host), không hề tạo `conversations`. Hệ quả: mọi Study Room tạo ra sau khi 004 chạy (và trước bản vá này) hoàn toàn không có Conversation — `room_id` đó không khớp với row `conversations` nào cả, nên chat/attachment/meeting-token cho room đó bị hỏng dù các thao tác khác (detail, members, start/end, moderation) vẫn hoạt động bình thường.
+
+Đã sửa: `StudyRoomsService.create()` giờ tạo cả ba thứ nguyên tử trong cùng một transaction/session — Study Room, `study_room_members` (host), và Conversation type=room — giống hệt pattern của `ChannelsService.create()`. Nếu bước tạo Conversation thất bại (ví dụ vi phạm `conversations_room_id_key`), exception đó phải propagate ra ngoài `create()` mà không bị nuốt, để router (`study_room_router.create_room`) rollback toàn bộ transaction — không được để lại Study Room hay `study_room_members` mồ côi. Từ nay:
+
+```text
+Study Room hợp lệ
+→ LUÔN có đúng 1 Conversation type=room
+```
+
+giữ đúng như bất biến đã thiết kế, không còn phụ thuộc vào một lần backfill lịch sử. Dữ liệu cũ (room tạo ra trong khoảng gap nói trên, kể cả room đã soft-delete) được sửa một lần bằng migration 012 (`012_backfill_missing_room_conversations.sql`) — xem `docs/db/migrations/README.md`.
+
+`StudyRoom.conversation_id` (Python, đọc qua relationship `StudyRoom.conversation` đã eager-load ở `StudyRoomsService.get_by_id`/`list_by_group`, và được set trong bộ nhớ ngay sau khi tạo) được thêm vào `StudyRoomResponse`, cùng cơ chế với `Channel.conversation_id`/`ChannelResponse.conversation_id` đã có từ trước — đây là cách duy nhất frontend có thể lấy được `conversation_id` của một room để gọi các endpoint `/conversations/{conversation_id}/messages` (không có endpoint tra cứu Conversation theo `room_id` riêng).
 
 ## Fields
 

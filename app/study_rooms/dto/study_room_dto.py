@@ -37,6 +37,7 @@ class StudyRoomResponse(BaseModel):
     ended_at: datetime | None
     deleted_at: datetime | None
     deleted_by: uuid.UUID | None
+    conversation_id: uuid.UUID | None
 
 
 class StudyRoomMemberCreate(BaseModel):
