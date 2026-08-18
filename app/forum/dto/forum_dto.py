@@ -50,6 +50,13 @@ class ForumPostResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None
+    
+    # Optional fields for UI aggregates
+    category_name: str | None = None
+    author_name: str | None = None
+    likes_count: int = 0
+    comments_count: int = 0
+    is_liked: bool = False
 
 
 class CommentCreate(BaseModel):
@@ -73,6 +80,10 @@ class CommentResponse(BaseModel):
     content: str
     created_at: datetime
     updated_at: datetime
+
+    author_name: str | None = None
+    likes_count: int = 0
+    is_liked: bool = False
 
 
 class PostLikeCreate(BaseModel):

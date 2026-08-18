@@ -1,7 +1,4 @@
-/**
- * forum.api.ts — Tầng giao tiếp với Forum API Backend (với Mock Data Store lưu trong bộ nhớ)
- */
-
+import { apiClient } from '../../../lib/apiClient';
 import type {
   ForumCategoryResponse,
   ForumPostResponse,
@@ -25,47 +22,37 @@ function timeAgo(isoString: string): string {
 }
 
 /** Map ForumPostResponse (BE DTO) → Post (UI Model) */
-function mapPost(
-  dto: ForumPostResponse,
-  categoryName: string,
-  likesCount = 24,
-  commentsCount = 8,
-  isLiked = false
-): Post {
+function mapPost(dto: ForumPostResponse & { category_name?: string; author_name?: string; likes_count?: number; comments_count?: number; is_liked?: boolean }): Post {
   return {
     id: dto.id,
     authorId: dto.author_id,
+    authorName: dto.author_name ?? 'Không rõ',
     categoryId: dto.category_id,
-    categoryName,
+    categoryName: dto.category_name ?? 'Không rõ',
     title: dto.title,
     content: dto.content,
     imagePath: dto.image_path,
     createdAt: dto.created_at,
     timeAgo: timeAgo(dto.created_at),
-    likesCount,
-    commentsCount,
-    isLiked,
+    likesCount: dto.likes_count ?? 0,
+    commentsCount: dto.comments_count ?? 0,
+    isLiked: dto.is_liked ?? false,
   };
 }
 
 /** Map CommentResponse (BE DTO) → Comment (UI Model) */
-function mapComment(
-  dto: CommentResponse,
-  authorName: string,
-  likesCount = 3,
-  isLiked = false
-): Comment {
+function mapComment(dto: CommentResponse & { author_name?: string; likes_count?: number; is_liked?: boolean }): Comment {
   return {
     id: dto.id,
     postId: dto.post_id,
     authorId: dto.author_id,
-    authorName,
+    authorName: dto.author_name ?? 'Ẩn danh',
     parentCommentId: dto.parent_comment_id,
     content: dto.content,
     createdAt: dto.created_at,
     timeAgo: timeAgo(dto.created_at),
-    likesCount,
-    isLiked,
+    likesCount: dto.likes_count ?? 0,
+    isLiked: dto.is_liked ?? false,
     replies: [],
   };
 }
@@ -111,218 +98,58 @@ function nestComments(flat: Comment[]): Comment[] {
   return roots;
 }
 
-// ─── Mock Data Store ──────────────────────────────────────────────────────────
-
-const MOCK_CATEGORIES: ForumCategoryResponse[] = [
-  { id: 'thcs', name: 'THCS (Trung học Cơ sở)', description: null, created_at: '2026-01-01T00:00:00Z' },
-  { id: 'thpt', name: 'THPT (Trung học Phổ thông)', description: null, created_at: '2026-01-01T00:00:00Z' },
-  { id: 'ngoaingu', name: 'Ngoại ngữ & Chứng chỉ', description: null, created_at: '2026-01-01T00:00:00Z' },
-  { id: 'it', name: 'CNTT & Lập trình (IT)', description: null, created_at: '2026-01-01T00:00:00Z' },
-  { id: 'kinhte', name: 'Kinh tế & Quản trị', description: null, created_at: '2026-01-01T00:00:00Z' },
-  { id: 'toan-caocap', name: 'Toán cao cấp & Đại số', description: null, created_at: '2026-01-01T00:00:00Z' },
-  { id: 'triethoc', name: 'Triết học & Lý luận', description: null, created_at: '2026-01-01T00:00:00Z' },
-  { id: 'yduoc', name: 'Y Dược & Sức khỏe', description: null, created_at: '2026-01-01T00:00:00Z' },
-  { id: 'cat-1', name: 'Toán học', description: null, created_at: '2026-01-01T00:00:00Z' },
-  { id: 'cat-2', name: 'Lập trình OOP', description: null, created_at: '2026-01-01T00:00:00Z' },
-];
-
-let MOCK_POSTS: (ForumPostResponse & { likesCount: number; commentsCount: number })[] = [
-  {
-    id: 'post-1', author_id: 'user-1', category_id: 'toan-caocap',
-    title: 'Giúp mình hiểu về tích phân từng phần?',
-    content: 'Mình đang mắc ở bài 4 trong phần bài tập. Có ai có thể giải thích chi tiết cách chọn "u" và "dv" sao cho hiệu quả không? Quy tắc "Nhất lốc, nhì đa..." thỉnh thoại làm mình bối rối khi có logarit tự nhiên.',
-    image_path: null,
-    created_at: new Date(Date.now() - 7200000).toISOString(),
-    updated_at: new Date(Date.now() - 7200000).toISOString(),
-    deleted_at: null,
-    likesCount: 24,
-    commentsCount: 8,
-  },
-  {
-    id: 'post-2', author_id: 'user-2', category_id: 'it',
-    title: 'Sự khác biệt giữa Abstract Class và Interface trong Java?',
-    content: 'Mọi người cho mình hỏi trong thực tế dự án thì khi nào nên dùng Abstract Class và khi nào thì nên dùng Interface? Mình đọc lý thuyết thì hiểu nhưng áp dụng thực tế thấy khá hoang mang.',
-    image_path: null,
-    created_at: new Date(Date.now() - 18000000).toISOString(),
-    updated_at: new Date(Date.now() - 18000000).toISOString(),
-    deleted_at: null,
-    likesCount: 45,
-    commentsCount: 12,
-  },
-  {
-    id: 'post-3', author_id: 'user-3', category_id: 'thpt',
-    title: 'Giải thích hiện tượng giao thoa ánh sáng đơn sắc?',
-    content: 'Tại sao khi dùng ánh sáng trắng thì vân trung tâm lại là vân màu trắng, còn các vân bên cạnh lại có màu như cầu vồng?',
-    image_path: null,
-    created_at: new Date(Date.now() - 86400000).toISOString(),
-    updated_at: new Date(Date.now() - 86400000).toISOString(),
-    deleted_at: null,
-    likesCount: 18,
-    commentsCount: 5,
-  },
-  {
-    id: 'post-4', author_id: 'user-1', category_id: 'ngoaingu',
-    title: 'Kinh nghiệm luyện IELTS Listening Part 3 & 4 đạt 8.0+?',
-    content: 'Có ai bị bẫy ở các câu hỏi Multiple Choice trong phần Listening Part 3 không? Chia sẻ cho mình bí quyết bắt keyword hiệu quả với ạ!',
-    image_path: null,
-    created_at: new Date(Date.now() - 120000000).toISOString(),
-    updated_at: new Date(Date.now() - 120000000).toISOString(),
-    deleted_at: null,
-    likesCount: 32,
-    commentsCount: 14,
-  },
-  {
-    id: 'post-5', author_id: 'user-2', category_id: 'thcs',
-    title: 'Ôn thi vào lớp 10 môn Toán: Các dạng bài Hệ thức Vi-ét thường gặp',
-    content: 'Mọi người tổng hợp giúp mình các dạng bài hay ra trong đề thi tuyển sinh vào 10 môn Toán phần định lý Vi-ét với ạ!',
-    image_path: null,
-    created_at: new Date(Date.now() - 150000000).toISOString(),
-    updated_at: new Date(Date.now() - 150000000).toISOString(),
-    deleted_at: null,
-    likesCount: 29,
-    commentsCount: 9,
-  },
-];
-
-const MOCK_AUTHORS: Record<string, string> = {
-  'user-1': 'Hải Minh',
-  'user-2': 'Tuấn Tú',
-  'user-3': 'Ngọc Anh',
-};
-
-let MOCK_COMMENTS: (CommentResponse & { likesCount: number })[] = [
-  {
-    id: 'cmt-1', post_id: 'post-1', author_id: 'user-2', parent_comment_id: null,
-    content: 'Bạn cứ nhớ thứ tự ưu tiên chọn u: Logarit → Đa thức → Lượng giác → Mũ.',
-    created_at: new Date(Date.now() - 3600000).toISOString(),
-    updated_at: new Date(Date.now() - 3600000).toISOString(),
-    likesCount: 5,
-  },
-  {
-    id: 'cmt-2', post_id: 'post-1', author_id: 'user-1', parent_comment_id: 'cmt-1',
-    content: 'Cảm ơn bạn! Ví dụ có x*ln(x) thì chọn u = ln(x) đúng không?',
-    created_at: new Date(Date.now() - 1800000).toISOString(),
-    updated_at: new Date(Date.now() - 1800000).toISOString(),
-    likesCount: 2,
-  },
-];
-
-const likedPosts = new Set<string>();
-const likedComments = new Set<string>();
-
 // ─── API Functions ─────────────────────────────────────────────────────────────
 
 export const forumApi = {
-  /** Đăng ký tác giả vào bộ nhớ tạm */
-  registerAuthor: (authorId: string, name: string) => {
-    if (authorId && name) {
-      MOCK_AUTHORS[authorId] = name;
-    }
+  /** Đăng ký tác giả vào bộ nhớ tạm (Không cần thiết với real API nhưng giữ để component không lỗi) */
+  registerAuthor: (_authorId: string, _name: string) => {
+    // Không dùng nữa vì Real API đã join với profiles
   },
 
   getCategories: async (): Promise<ForumCategoryResponse[]> => {
-    return Promise.resolve([...MOCK_CATEGORIES]);
+    return apiClient.get<ForumCategoryResponse[]>('/forum/categories');
   },
 
   getPosts: async (categoryId: string | null, skip = 0, limit = 5): Promise<Post[]> => {
-    let filtered = MOCK_POSTS.filter((p) => !p.deleted_at);
+    let url = `/forum/posts?skip=${skip}&limit=${limit}`;
     if (categoryId) {
-      filtered = filtered.filter((p) => p.category_id === categoryId);
+      url += `&category_id=${categoryId}`;
     }
-    const page = filtered.slice(skip, skip + limit);
-    return Promise.resolve(
-      page.map((p) => {
-        const cat = MOCK_CATEGORIES.find((c) => c.id === p.category_id);
-        return mapPost(p, cat?.name ?? '', p.likesCount, p.commentsCount, likedPosts.has(p.id));
-      })
-    );
+    const response = await apiClient.get<ForumPostResponse[]>(url);
+    return response.map((p) => mapPost(p));
   },
 
   createPost: async (payload: ForumPostCreate, authorName?: string): Promise<Post> => {
-    if (authorName) {
-      MOCK_AUTHORS[payload.author_id] = authorName;
-    }
-    const newDto = {
-      id: `post-${Date.now()}`,
-      author_id: payload.author_id,
-      category_id: payload.category_id,
-      title: payload.title,
-      content: payload.content,
-      image_path: payload.image_path ?? null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      deleted_at: null,
-      likesCount: 0,
-      commentsCount: 0,
-    };
-    MOCK_POSTS = [newDto, ...MOCK_POSTS];
-    const cat = MOCK_CATEGORIES.find((c) => c.id === payload.category_id);
-    return Promise.resolve(mapPost(newDto, cat?.name ?? '', 0, 0));
+    const response = await apiClient.post<ForumPostResponse>('/forum/posts', payload);
+    return mapPost({ ...response, category_name: 'Đang tải...', author_name: authorName ?? 'Bạn', likes_count: 0, comments_count: 0, is_liked: false });
   },
 
-  likePost: async (postId: string): Promise<void> => {
-    likedPosts.add(postId);
-    const post = MOCK_POSTS.find((p) => p.id === postId);
-    if (post) post.likesCount += 1;
-    return Promise.resolve();
+  likePost: async (postId: string, userId?: string): Promise<void> => {
+    // TODO: implement real endpoints logic handling user ID gracefully. For now sending dummy if needed.
+    // If backend requires auth token, apiClient sets it.
+    await apiClient.post(`/forum/posts/${postId}/like`, { post_id: postId, user_id: userId ?? '00000000-0000-0000-0000-000000000000' });
   },
 
-  unlikePost: async (postId: string): Promise<void> => {
-    likedPosts.delete(postId);
-    const post = MOCK_POSTS.find((p) => p.id === postId);
-    if (post && post.likesCount > 0) post.likesCount -= 1;
-    return Promise.resolve();
+  unlikePost: async (postId: string, userId?: string): Promise<void> => {
+    await apiClient.delete(`/forum/posts/${postId}/unlike?user_id=${userId ?? '00000000-0000-0000-0000-000000000000'}`);
   },
 
   getComments: async (postId: string): Promise<Comment[]> => {
-    const flat = MOCK_COMMENTS
-      .filter((c) => c.post_id === postId)
-      .map((c) =>
-        mapComment(
-          c,
-          MOCK_AUTHORS[c.author_id] ?? 'Ẩn danh', // Giữ nguyên fallback 'Ẩn danh'
-          c.likesCount,
-          likedComments.has(c.id)
-        )
-      );
-    return Promise.resolve(nestComments(flat));
+    const response = await apiClient.get<CommentResponse[]>(`/forum/comments?post_id=${postId}`);
+    const flat = response.map((c) => mapComment(c));
+    return nestComments(flat);
   },
 
   createComment: async (payload: CommentCreate, authorName?: string): Promise<Comment> => {
-    if (authorName) {
-      MOCK_AUTHORS[payload.author_id] = authorName;
-    }
-    const newDto = {
-      id: `cmt-${Date.now()}`,
-      post_id: payload.post_id,
-      author_id: payload.author_id,
-      parent_comment_id: payload.parent_comment_id ?? null,
-      content: payload.content,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      likesCount: 0,
-    };
-    MOCK_COMMENTS = [newDto, ...MOCK_COMMENTS];
-
-    // Tăng đếm comment số lượng bài viết trong bộ nhớ API Store
-    const post = MOCK_POSTS.find((p) => p.id === payload.post_id);
-    if (post) post.commentsCount += 1;
-
-    const resolvedAuthorName = MOCK_AUTHORS[payload.author_id] ?? authorName ?? 'Ẩn danh';
-    return Promise.resolve(mapComment(newDto, resolvedAuthorName, 0));
+    const response = await apiClient.post<CommentResponse>('/forum/comments', payload);
+    return mapComment({ ...response, author_name: authorName ?? 'Bạn', likes_count: 0, is_liked: false });
   },
 
-  likeComment: async (commentId: string): Promise<void> => {
-    likedComments.add(commentId);
-    const comment = MOCK_COMMENTS.find((c) => c.id === commentId);
-    if (comment) comment.likesCount += 1;
-    return Promise.resolve();
+  likeComment: async (commentId: string, userId?: string): Promise<void> => {
+    await apiClient.post(`/forum/comments/${commentId}/like`, { comment_id: commentId, user_id: userId ?? '00000000-0000-0000-0000-000000000000' });
   },
 
-  unlikeComment: async (commentId: string): Promise<void> => {
-    likedComments.delete(commentId);
-    const comment = MOCK_COMMENTS.find((c) => c.id === commentId);
-    if (comment && comment.likesCount > 0) comment.likesCount -= 1;
-    return Promise.resolve();
+  unlikeComment: async (commentId: string, userId?: string): Promise<void> => {
+    await apiClient.delete(`/forum/comments/${commentId}/unlike?user_id=${userId ?? '00000000-0000-0000-0000-000000000000'}`);
   },
 };

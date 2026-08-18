@@ -7,20 +7,25 @@ import type { Post, ForumPostCreate } from '../types/forum.types';
 import { forumApi } from '../lib/forum.api';
 import { useAuth } from '../../../hooks/useAuth';
 
-const CURRENT_USER_ID = 'user-current';
 
 export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Post[]>>) {
-  const { requireAuth } = useAuth();
+  const { requireAuth, currentUser } = useAuth();
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   const handleCreatePost = (payload: Omit<ForumPostCreate, 'author_id'>) => {
-    requireAuth(async () => {
-      const newPost = await forumApi.createPost({
-        ...payload,
-        author_id: CURRENT_USER_ID,
-      });
-      setPosts((prev) => [newPost, ...prev]);
-      setShowCreateModal(false);
+    return requireAuth(async () => {
+      try {
+        const newPost = await forumApi.createPost({
+          ...payload,
+          author_id: currentUser.id,
+        }, currentUser.name);
+        setPosts((prev) => [newPost, ...prev]);
+        setShowCreateModal(false);
+      } catch (error) {
+        console.error('Failed to create post', error);
+        alert('Có lỗi xảy ra khi đăng bài!');
+        throw error;
+      }
     });
   };
 

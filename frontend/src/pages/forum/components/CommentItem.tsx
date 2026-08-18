@@ -41,15 +41,24 @@ export const CommentItem: React.FC<CommentItemProps> = ({
   const handleOpenReplyBox = () => {
     const nextState = !showReplyBox;
     setShowReplyBox(nextState);
-    if (nextState && isReply && !replyText) {
-      // Tự động chèn @Tag tên tác giả khi trả lời bất kỳ reply nào trong luồng
+    if (nextState && !replyText) {
+      // Tự động chèn @Tag tên tác giả
       setReplyText(`@${comment.authorName} `);
     }
   };
 
   const handleSendReply = () => {
     if (!replyText.trim()) return;
-    onReply(comment.id, replyText.trim());
+
+    let finalContent = replyText.trim();
+    const mentionStr = `@${comment.authorName}`;
+    if (finalContent.startsWith(mentionStr)) {
+      // Bọc thẻ span có inline style cho tag mention để lưu vào DB
+      const restText = finalContent.substring(mentionStr.length);
+      finalContent = `<span style="color: #1D4ED8; font-weight: 600; cursor: pointer;">${mentionStr}</span>${restText}`;
+    }
+
+    onReply(comment.id, finalContent);
     setReplyText('');
     setShowReplyBox(false);
     setShowReplies(true); // Tự động mở danh sách reply khi vừa trả lời
@@ -59,8 +68,14 @@ export const CommentItem: React.FC<CommentItemProps> = ({
   // Đường kẻ nối L mượt mà từ Root sang các Reply
   const showConnectorLine = isReply;
 
-  // Render nội dung comment có nhận diện thẻ @Tag tác giả màu xanh nổi bật kiểu Facebook
+  // Render nội dung comment có nhận diện thẻ @Tag tác giả màu xanh nổi bật kiểu Facebook (Fallback cho các comment cũ)
   const renderFormattedContent = (text: string) => {
+    // Nếu text đã chứa thẻ span chứa mention do FE tự tạo thì hiển thị luôn
+    if (text.includes('<span style="color: #1D4ED8;')) {
+      return <RichContentView content={text} />;
+    }
+
+    // Fallback regex cho các dữ liệu cũ (chỉ match tối đa 2 từ)
     const mentionRegex = /^(@[^\s<]+(?:\s+[^\s<]+)?)/;
     const match = text.match(mentionRegex);
 

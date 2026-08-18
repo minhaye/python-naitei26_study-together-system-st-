@@ -101,10 +101,10 @@ export const PostCard: React.FC<PostCardProps> = ({
       {/* Post Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <Avatar name={post.authorId} size="lg" />
+          <Avatar name={post.authorName} size="lg" />
           <div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <span style={{ fontWeight: '600', color: '#0F172A', fontSize: 15 }}>{post.authorId}</span>
+              <span style={{ fontWeight: '600', color: '#0F172A', fontSize: 15 }}>{post.authorName}</span>
               <span style={{ color: '#94A3B8', fontSize: 13 }}>• {post.timeAgo}</span>
             </div>
             <div style={{ color: '#64748B', fontSize: 13, marginTop: 2 }}>{post.categoryName}</div>

@@ -16,7 +16,7 @@ import type { ForumCategoryResponse } from '../types/forum.types';
 interface CreatePostModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (payload: { category_id: string; title: string; content: string }) => void;
+  onSubmit: (payload: { category_id: string; title: string; content: string }) => Promise<void> | void;
 }
 
 export const CreatePostModal: React.FC<CreatePostModalProps> = ({
@@ -62,17 +62,25 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
     return textOnly.length > 0 || hasImage;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !hasContent(content) || !categoryId) return;
-    onSubmit({
-      category_id: categoryId,
-      title: title.trim(),
-      content: content.trim(),
-    });
-    setTitle('');
-    setContent('');
-    setIsDropdownOpen(false);
+    if (!title.trim() || !hasContent(content) || !categoryId || isSubmitting) return;
+    
+    setIsSubmitting(true);
+    try {
+      await onSubmit({
+        category_id: categoryId,
+        title: title.trim(),
+        content: content.trim(),
+      });
+      setTitle('');
+      setContent('');
+      setIsDropdownOpen(false);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const selectedCategory = categories.find((cat) => cat.id === categoryId);
@@ -219,9 +227,9 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
           <Button
             variant="primary"
             type="submit"
-            disabled={!title.trim() || !hasContent(content) || !categoryId}
+            disabled={!title.trim() || !hasContent(content) || !categoryId || isSubmitting}
           >
-            Đăng câu hỏi
+            {isSubmitting ? 'Đang đăng...' : 'Đăng câu hỏi'}
           </Button>
         </div>
       </form>

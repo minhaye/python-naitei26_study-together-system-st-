@@ -3,10 +3,11 @@ import { NavLink, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useAuthContext } from '../../contexts/auth-context';
 import { supabase } from '../../lib/supabase';
+import { Avatar } from '../ui/Avatar';
 
 export function Header() {
-  const { isLoggedIn } = useAuth();
-  const { setDevSession } = useAuthContext();
+  const { isLoggedIn, currentUser } = useAuth();
+  const { setDevSession, profile } = useAuthContext();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -80,7 +81,7 @@ export function Header() {
                     </Link>
                     <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
                         <Link to="/settings" aria-label="Trang cài đặt">
-                          <img style={{width: 32, height: 32, borderRadius: 12, border: '1px #E2E8F0 solid', cursor: 'pointer', display: 'block'}} src="https://i.pravatar.cc/150?img=11" alt="Ảnh đại diện" />
+                          <Avatar name={currentUser.name} src={profile?.avatarUrl} size="sm" style={{ cursor: 'pointer' }} />
                         </Link>
                         <div
                           onClick={handleLogout}

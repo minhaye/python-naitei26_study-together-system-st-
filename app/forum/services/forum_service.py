@@ -54,16 +54,51 @@ class ForumService:
         return await session.get(ForumPost, post_id)
 
     async def list_posts_by_category(
-        self, session: AsyncSession, category_id: uuid.UUID, skip: int = 0, limit: int = 50
+        self, session: AsyncSession, category_id: uuid.UUID | None, skip: int = 0, limit: int = 50
     ) -> list[ForumPost]:
-        result = await session.execute(
-            select(ForumPost)
-            .where(ForumPost.category_id == category_id, ForumPost.deleted_at.is_(None))
-            .order_by(ForumPost.created_at.desc())
-            .offset(skip)
-            .limit(limit)
+        from sqlalchemy import func
+        from sqlalchemy.orm import selectinload
+        from app.forum.entities.forum_entity import Comment, PostLike
+        
+        comments_count_subq = (
+            select(func.count(Comment.id))
+            .where(Comment.post_id == ForumPost.id)
+            .scalar_subquery()
         )
-        return list(result.scalars().all())
+        
+        likes_count_subq = (
+            select(func.count(PostLike.id))
+            .where(PostLike.post_id == ForumPost.id)
+            .scalar_subquery()
+        )
+        
+        stmt = select(
+            ForumPost, 
+            comments_count_subq.label("comments_count"), 
+            likes_count_subq.label("likes_count")
+        ).options(
+            selectinload(ForumPost.category),
+            selectinload(ForumPost.author)
+        ).where(ForumPost.deleted_at.is_(None))
+        
+        if category_id:
+            stmt = stmt.where(ForumPost.category_id == category_id)
+            
+        stmt = stmt.order_by(ForumPost.created_at.desc()).offset(skip).limit(limit)
+        
+        result = await session.execute(stmt)
+        rows = result.all()
+        
+        posts = []
+        for post, c_count, l_count in rows:
+            post.category_name = post.category.name if post.category else None
+            post.author_name = post.author.display_name if post.author else None
+            post.likes_count = l_count
+            post.comments_count = c_count
+            post.is_liked = False # Could be calculated if user_id passed
+            posts.append(post)
+            
+        return posts
 
     async def update_post(self, session: AsyncSession, post: ForumPost, data: ForumPostUpdate) -> ForumPost:
         for field, value in data.model_dump(exclude_unset=True).items():
@@ -88,10 +123,31 @@ class ForumService:
         return await session.get(Comment, comment_id)
 
     async def list_comments_by_post(self, session: AsyncSession, post_id: uuid.UUID) -> list[Comment]:
-        result = await session.execute(
-            select(Comment).where(Comment.post_id == post_id).order_by(Comment.created_at)
+        from sqlalchemy import func, select
+        from sqlalchemy.orm import selectinload
+        from app.forum.entities.forum_entity import Comment, CommentLike
+        
+        likes_count_subq = (
+            select(func.count(CommentLike.id))
+            .where(CommentLike.comment_id == Comment.id)
+            .scalar_subquery()
         )
-        return list(result.scalars().all())
+        
+        stmt = select(Comment, likes_count_subq.label("likes_count")).options(
+            selectinload(Comment.author)
+        ).where(Comment.post_id == post_id).order_by(Comment.created_at)
+        
+        result = await session.execute(stmt)
+        rows = result.all()
+        
+        comments = []
+        for cmt, l_count in rows:
+            cmt.author_name = cmt.author.display_name if cmt.author else None
+            cmt.likes_count = l_count
+            cmt.is_liked = False
+            comments.append(cmt)
+            
+        return comments
 
     async def update_comment(self, session: AsyncSession, comment: Comment, data: CommentUpdate) -> Comment:
         comment.content = data.content

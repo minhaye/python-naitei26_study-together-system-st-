@@ -23,10 +23,11 @@ const GUEST_USER: AuthUser = {
  */
 export function useAuth() {
   const navigate = useNavigate();
-  const { session, user, loading } = useAuthContext();
+  const { session, user, profile, loading } = useAuthContext();
   const isLoggedIn = !!session;
 
   const displayName =
+    profile?.displayName ||
     (user?.user_metadata?.full_name as string | undefined) ||
     (user?.user_metadata?.name as string | undefined) ||
     user?.email ||
@@ -48,12 +49,12 @@ export function useAuth() {
    * Nếu chưa đăng nhập → chuyển sang trang /login.
    * Nếu đã đăng nhập → thực thi action bình thường.
    */
-  const requireAuth = (action: () => void) => {
+  const requireAuth = <T>(action: () => T): T | void => {
     if (!isLoggedIn) {
       navigate('/login');
       return;
     }
-    action();
+    return action();
   };
 
   return { isLoggedIn, loading, currentUser, user, session, requireAuth };

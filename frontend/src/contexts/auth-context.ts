@@ -1,9 +1,15 @@
 import { createContext, useContext } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 
+export interface AuthProfile {
+  displayName: string;
+  avatarUrl?: string;
+}
+
 export interface AuthContextValue {
   session: Session | null;
   user: User | null;
+  profile: AuthProfile | null;
   loading: boolean;
   setDevSession: (session: Session | null) => void;
 }

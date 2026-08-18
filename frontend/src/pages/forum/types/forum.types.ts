@@ -65,6 +65,7 @@ export interface CommentCreate {
 export interface Post {
   id: string;
   authorId: string;
+  authorName: string;        // Name of the author
   categoryId: string;
   categoryName: string;      // Lấy từ ForumCategoryResponse khi join
   title: string;
