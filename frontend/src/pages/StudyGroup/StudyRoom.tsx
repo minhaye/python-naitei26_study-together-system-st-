@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Mic,
@@ -26,6 +26,7 @@ import {
 import type { ReactNode } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { useStudyRoom } from '../../hooks/useStudyRoom';
+import { useRoomMessages } from '../../hooks/useRoomMessages';
 import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
 import { getDisplayName } from '../../utils/userDisplay';
 import { InviteModal } from '../../components/invitations/InviteModal';
@@ -254,29 +255,43 @@ export function StudyRoom() {
       });
   }, [members, currentUserId, currentUser, moderationMutedUserIds, handRaisedUserIds]);
 
-  // Chat mock data
-  const [messages, setMessages] = useState([
-    { id: 1, sender: 'David Chen', initial: 'DC', time: '1:12 PM', text: 'Mọi người đã có slide bài giảng chương 4 chưa?', color: '#059669' },
-    { id: 2, sender: 'Minh Anh (Bạn)', initial: 'MA', time: '1:15 PM', text: 'Có chứ, lát nữa tớ sẽ bật Bảng trắng chia sẻ ghi chú cho nhé!', color: '#2563EB', isSelf: true },
-    { id: 3, sender: 'Elena Rodriguez', initial: 'ER', time: '1:16 PM', text: 'Cảm ơn Sarah! Liam đang có thắc mắc ở phần phương trình Schrödinger đấy.', color: '#D97706' }
-  ]);
+  // Real persisted messages for this room's ROOM Conversation (reuses the same
+  // /conversations/{id}/messages REST API + Realtime subscription as Channel chat --
+  // see useRoomMessages.ts). `room.conversation_id` is null only in the brief instant
+  // before `room` has loaded; the chat panel treats that the same as "not ready yet".
+  const { messages, isLoading: isMessagesLoading, loadError: messagesError, isSending: isSendingMessage, sendError: sendMessageError, sendMessage } =
+    useRoomMessages(room?.conversation_id ?? null);
   const [chatInput, setChatInput] = useState('');
 
-  const handleSendMessage = () => {
-    if (!chatInput.trim()) return;
-    setMessages(prev => [
-      ...prev,
-      {
-        id: Date.now(),
-        sender: 'Minh Anh (Bạn)',
-        initial: 'MA',
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        text: chatInput,
-        color: '#2563EB',
-        isSelf: true
-      }
-    ]);
-    setChatInput('');
+  const senderDisplay = (message: (typeof messages)[number]) => {
+    const isSelf = message.sender_id === currentUserId;
+    const name = isSelf ? `${currentUser.name} (Bạn)` : getDisplayName(message.sender);
+    return {
+      name,
+      initial: isSelf ? currentUser.initials : getAvatarInitials(name),
+      color: isSelf ? currentUser.color : getAvatarColor(name),
+      avatarUrl: isSelf ? null : message.sender.avatar_url,
+      isSelf,
+    };
+  };
+
+  const formatMessageTime = (iso: string) =>
+    new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, activeRightTab]);
+
+  const handleSendMessage = async () => {
+    const trimmed = chatInput.trim();
+    if (!trimmed || isSendingMessage) return;
+    try {
+      await sendMessage(trimmed);
+      setChatInput('');
+    } catch {
+      // sendMessageError is already populated by the hook; keep the draft so the user can retry.
+    }
   };
 
   // --- Loading / error / not-yet-joined states (real backend data drives all of these) ---
@@ -672,47 +687,80 @@ export function StudyRoom() {
                 
                 {/* Messages List */}
                 <div style={{flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 16}}>
-                  {messages.map((m) => (
-                    <div key={m.id} style={{display: 'flex', gap: 10, flexDirection: m.isSelf ? 'row-reverse' : 'row'}}>
-                      <div style={{width: 32, height: 32, borderRadius: '50%', background: m.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 12, flexShrink: 0}}>
-                        {m.initial}
-                      </div>
-                      <div style={{maxWidth: '75%', display: 'flex', flexDirection: 'column', alignItems: m.isSelf ? 'flex-end' : 'flex-start'}}>
-                        <div style={{display: 'flex', gap: 6, alignItems: 'baseline', marginBottom: 4}}>
-                          <span style={{color: '#94A3B8', fontSize: 11, fontWeight: '600'}}>{m.sender}</span>
-                          <span style={{color: '#64748B', fontSize: 10}}>{m.time}</span>
-                        </div>
-                        <div style={{
-                          padding: '10px 14px', 
-                          borderRadius: m.isSelf ? '14px 2px 14px 14px' : '2px 14px 14px 14px', 
-                          background: m.isSelf ? '#2563EB' : '#334155', 
-                          color: 'white', 
-                          fontSize: 13, 
-                          lineHeight: '1.4'
-                        }}>
-                          {m.text}
-                        </div>
-                      </div>
+                  {isMessagesLoading ? (
+                    <div style={{display: 'flex', justifyContent: 'center', margin: '32px 0', color: '#94A3B8', fontSize: 13}}>
+                      Đang tải tin nhắn...
                     </div>
-                  ))}
+                  ) : messagesError ? (
+                    <div style={{margin: '16px 0', padding: '12px 14px', background: '#450A0A', border: '1px solid #7F1D1D', borderRadius: 8, color: '#FCA5A5', fontSize: 12.5}}>
+                      {messagesError.message}
+                    </div>
+                  ) : messages.length === 0 ? (
+                    <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '32px 0', color: '#94A3B8', fontSize: 13, textAlign: 'center', gap: 4}}>
+                      <div>Chưa có tin nhắn nào trong phòng học này.</div>
+                      <div>Hãy là người đầu tiên nói lời chào!</div>
+                    </div>
+                  ) : (
+                    messages.map((m) => {
+                      const display = senderDisplay(m);
+                      return (
+                        <div key={m.id} style={{display: 'flex', gap: 10, flexDirection: display.isSelf ? 'row-reverse' : 'row'}}>
+                          {display.avatarUrl ? (
+                            <img src={display.avatarUrl} alt={display.name} style={{width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flexShrink: 0}} />
+                          ) : (
+                            <div style={{width: 32, height: 32, borderRadius: '50%', background: display.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 12, flexShrink: 0}}>
+                              {display.initial}
+                            </div>
+                          )}
+                          <div style={{maxWidth: '75%', display: 'flex', flexDirection: 'column', alignItems: display.isSelf ? 'flex-end' : 'flex-start'}}>
+                            <div style={{display: 'flex', gap: 6, alignItems: 'baseline', marginBottom: 4}}>
+                              <span style={{color: '#94A3B8', fontSize: 11, fontWeight: '600'}}>{display.name}</span>
+                              <span style={{color: '#64748B', fontSize: 10}}>{formatMessageTime(m.created_at)}</span>
+                            </div>
+                            <div style={{
+                              padding: '10px 14px',
+                              borderRadius: display.isSelf ? '14px 2px 14px 14px' : '2px 14px 14px 14px',
+                              background: display.isSelf ? '#2563EB' : '#334155',
+                              color: 'white',
+                              fontSize: 13,
+                              lineHeight: '1.4',
+                              wordBreak: 'break-word'
+                            }}>
+                              {m.content ?? (m.attachment_path ? '(tệp đính kèm)' : '')}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                  <div ref={chatEndRef} />
                 </div>
 
                 {/* Chat Input */}
-                <div style={{padding: 16, background: '#0F172A', borderTop: '1px solid #334155', display: 'flex', gap: 8, alignItems: 'center'}}>
-                  <input 
-                    type="text" 
-                    placeholder="Nhập tin nhắn vào phòng học..." 
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                    style={{flex: 1, padding: '10px 14px', background: '#1E293B', border: '1px solid #334155', borderRadius: 8, outline: 'none', color: 'white', fontSize: 13}}
-                  />
-                  <button 
-                    onClick={handleSendMessage}
-                    style={{background: '#2563EB', border: 'none', color: 'white', padding: 10, borderRadius: 8, cursor: 'pointer'}}
-                  >
-                    <Send size={16} />
-                  </button>
+                <div style={{padding: 16, background: '#0F172A', borderTop: '1px solid #334155', display: 'flex', flexDirection: 'column', gap: 8}}>
+                  {sendMessageError && (
+                    <div style={{padding: '8px 12px', background: '#450A0A', border: '1px solid #7F1D1D', borderRadius: 8, color: '#FCA5A5', fontSize: 12}}>
+                      {sendMessageError.message}
+                    </div>
+                  )}
+                  <div style={{display: 'flex', gap: 8, alignItems: 'center'}}>
+                    <input
+                      type="text"
+                      placeholder="Nhập tin nhắn vào phòng học..."
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                      disabled={!room?.conversation_id || isSendingMessage}
+                      style={{flex: 1, padding: '10px 14px', background: '#1E293B', border: '1px solid #334155', borderRadius: 8, outline: 'none', color: 'white', fontSize: 13, opacity: !room?.conversation_id || isSendingMessage ? 0.6 : 1}}
+                    />
+                    <button
+                      onClick={handleSendMessage}
+                      disabled={!chatInput.trim() || !room?.conversation_id || isSendingMessage}
+                      style={{background: '#2563EB', border: 'none', color: 'white', padding: 10, borderRadius: 8, cursor: !chatInput.trim() || !room?.conversation_id || isSendingMessage ? 'default' : 'pointer', opacity: !chatInput.trim() || !room?.conversation_id || isSendingMessage ? 0.6 : 1}}
+                    >
+                      <Send size={16} />
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
