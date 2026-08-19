@@ -45,6 +45,10 @@ export function endStudyRoom(roomId: string): Promise<StudyRoom> {
   return apiClient.post<StudyRoom>(`/study-rooms/${roomId}/end`);
 }
 
+export function updateWhiteboardState(roomId: string, state: Record<string, any>): Promise<StudyRoom> {
+  return apiClient.put<StudyRoom>(`/study-rooms/${roomId}/whiteboard`, state);
+}
+
 export function listStudyRoomMembers(roomId: string, activeOnly: boolean): Promise<StudyRoomMember[]> {
   return apiClient.get<StudyRoomMember[]>(`/study-rooms/${roomId}/members?active_only=${activeOnly}`);
 }

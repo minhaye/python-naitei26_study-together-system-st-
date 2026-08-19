@@ -22,6 +22,7 @@ export interface StudyRoom {
    * on the type for parity with the API response, not because the UI branches on them today. */
   deleted_at: string | null;
   deleted_by: string | null;
+  whiteboard_state: Record<string, any> | null;
 }
 
 /** Mirrors StudyRoomMemberResponse. `user` is the canonical identity source -- see

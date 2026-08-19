@@ -10,12 +10,6 @@ import {
   Users,
   FileText,
   Send,
-  Pencil,
-  Type,
-  Eraser,
-  Square,
-  RotateCcw,
-  Trash2,
   ArrowLeft,
   Share2,
   ChevronLeft,
@@ -36,8 +30,7 @@ import { InviteModal } from '../../components/invitations/InviteModal';
 import { MeetingProvider } from './meeting/MeetingProvider';
 import { MeetingVideoGrid } from './meeting/MeetingVideoGrid';
 import { MeetingControls } from './meeting/MeetingControls';
-import { Tldraw } from 'tldraw';
-import 'tldraw/tldraw.css';
+import { SyncedWhiteboard } from './meeting/SyncedWhiteboard';
 
 interface CenteredRoomMessageProps {
   title: string;
@@ -568,7 +561,13 @@ export function StudyRoom() {
               
               {activeBoardTab === 'whiteboard' ? (
                 <div style={{position: 'absolute', inset: 0}}>
-                  <Tldraw />
+                  {room && (
+                    <SyncedWhiteboard 
+                      roomId={room.id}
+                      initialState={room.whiteboard_state}
+                      isReadonly={!(isGroupManager || currentUserRole === 'host' || currentUserRole === 'moderator')}
+                    />
+                  )}
                 </div>
               ) : (
                 <div style={{width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FFFFFF', backgroundImage: 'radial-gradient(#CBD5E1 1px, transparent 1px)', backgroundSize: '24px 24px'}}>

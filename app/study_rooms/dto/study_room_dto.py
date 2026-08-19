@@ -21,6 +21,7 @@ class StudyRoomUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = None
     max_participants: int | None = Field(default=None, ge=2, le=500)
+    whiteboard_state: dict | None = None
 
 
 class StudyRoomResponse(BaseModel):
@@ -39,6 +40,7 @@ class StudyRoomResponse(BaseModel):
     deleted_at: datetime | None
     deleted_by: uuid.UUID | None
     conversation_id: uuid.UUID | None
+    whiteboard_state: dict | None = None
 
 
 class StudyRoomMemberCreate(BaseModel):
