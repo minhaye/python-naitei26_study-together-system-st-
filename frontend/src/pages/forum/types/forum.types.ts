@@ -85,6 +85,7 @@ export interface Post {
   commentsCount: number;     // Số lượt bình luận
   isLiked: boolean;          // Client-side toggle
   tags?: string[];           // Danh sách hashtag
+  status?: 'sending' | 'error'; // Optimistic UI: undefined = đã lưu thành công
 }
 
 export interface Comment {

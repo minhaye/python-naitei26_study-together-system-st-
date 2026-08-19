@@ -1,5 +1,11 @@
 /**
  * usePostActions — Quản lý các hành động trên bài viết Forum.
+ *
+ * Optimistic UI pattern (Facebook/Twitter style):
+ * 1. Tạo ngay post tạm (status: 'sending') và hiển thị lên Feed trước khi API phản hồi.
+ * 2. API gọi song song ở background.
+ * 3. Thành công → thay id tạm bằng id thực từ server, xóa status.
+ * 4. Thất bại → set status: 'error' trên post đó (KHÔNG tự ý xóa bài).
  */
 
 import { useState } from 'react';
@@ -14,23 +20,83 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
 
   const handleCreatePost = (payload: Omit<ForumPostCreate, 'author_id'>, categoryName?: string) => {
     return requireAuth(async () => {
+      // Tạo id tạm để theo dõi bài viết optimistic
+      const optimisticId = `optimistic-${crypto.randomUUID()}`;
+
+      // Tạo đối tượng Post tạm từ dữ liệu form (không cần đợi BE)
+      const optimisticPost: Post = {
+        id: optimisticId,
+        authorId: currentUser.id,
+        authorName: currentUser.name,
+        categoryId: payload.category_id,
+        categoryName: categoryName ?? 'Chung',
+        title: payload.title,
+        content: payload.content,
+        imagePath: payload.image_path ?? null,
+        createdAt: new Date().toISOString(),
+        timeAgo: 'Vừa xong',
+        likesCount: 0,
+        commentsCount: 0,
+        isLiked: false,
+        tags: [],
+        status: 'sending',
+      };
+
+      // Hiển thị ngay lên đầu Feed
+      setPosts((prev) => [optimisticPost, ...prev]);
+      setShowCreateModal(false);
+
       try {
+        // Gửi API ở background
         const newPost = await forumApi.createPost(
-          {
-            ...payload,
-            author_id: currentUser.id,
-          },
+          { ...payload, author_id: currentUser.id },
           currentUser.name,
           categoryName
         );
-        setPosts((prev) => [newPost, ...prev]);
-        setShowCreateModal(false);
+
+        // Thay thế post tạm bằng post thực từ server
+        setPosts((prev) =>
+          prev.map((p) => (p.id === optimisticId ? { ...newPost, status: undefined } : p))
+        );
+
+        // Báo hiệu để Trending Tags sidebar refresh
+        window.dispatchEvent(new CustomEvent('post_created'));
       } catch (error) {
         console.error('Failed to create post', error);
-        alert('Có lỗi xảy ra khi đăng bài!');
-        throw error;
+        // Không xóa bài — chuyển sang trạng thái lỗi, để người dùng tự quyết định
+        setPosts((prev) =>
+          prev.map((p) => (p.id === optimisticId ? { ...p, status: 'error' } : p))
+        );
       }
     });
+  };
+
+  const handleRetryPost = (failedPost: Post, payload: Omit<ForumPostCreate, 'author_id'>) => {
+    requireAuth(async () => {
+      // Chuyển lại trạng thái 'sending'
+      setPosts((prev) =>
+        prev.map((p) => (p.id === failedPost.id ? { ...p, status: 'sending' } : p))
+      );
+      try {
+        const newPost = await forumApi.createPost(
+          { ...payload, author_id: currentUser.id },
+          currentUser.name,
+          failedPost.categoryName
+        );
+        setPosts((prev) =>
+          prev.map((p) => (p.id === failedPost.id ? { ...newPost, status: undefined } : p))
+        );
+        window.dispatchEvent(new CustomEvent('post_created'));
+      } catch {
+        setPosts((prev) =>
+          prev.map((p) => (p.id === failedPost.id ? { ...p, status: 'error' } : p))
+        );
+      }
+    });
+  };
+
+  const handleDiscardPost = (postId: string) => {
+    setPosts((prev) => prev.filter((p) => p.id !== postId));
   };
 
   const handleToggleLike = (postId: string) => {
@@ -65,6 +131,8 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
     showCreateModal,
     setShowCreateModal,
     handleCreatePost,
+    handleRetryPost,
+    handleDiscardPost,
     handleToggleLike,
   };
 }

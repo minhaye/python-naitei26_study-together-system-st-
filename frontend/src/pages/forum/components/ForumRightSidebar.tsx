@@ -24,11 +24,20 @@ export const ForumRightSidebar: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
-    setIsLoadingTrending(true);
-    forumApi.getTrendingTags(10)
-      .then((tags) => setTrendingTags(tags))
-      .catch(console.error)
-      .finally(() => setIsLoadingTrending(false));
+    const fetchTrending = () => {
+      setIsLoadingTrending(true);
+      forumApi.getTrendingTags(10)
+        .then((tags) => setTrendingTags(tags))
+        .catch(console.error)
+        .finally(() => setIsLoadingTrending(false));
+    };
+
+    // Nạp lần đầu khi Sidebar mount
+    fetchTrending();
+
+    // Refetch sau khi người dùng đăng bài mới thành công
+    window.addEventListener('post_created', fetchTrending);
+    return () => window.removeEventListener('post_created', fetchTrending);
   }, []);
 
   useEffect(() => {
