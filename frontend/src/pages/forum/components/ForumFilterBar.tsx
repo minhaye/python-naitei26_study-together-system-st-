@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Filter, ChevronDown, Edit3, Check } from 'lucide-react';
+import { Filter, ChevronDown, Edit3, Check, X } from 'lucide-react';
 
 export type FilterOption = 'latest' | 'my_questions';
 
@@ -20,6 +20,8 @@ export const FILTER_LABELS: Record<FilterOption, string> = {
 
 interface ForumFilterBarProps {
   categoryName: string | null;
+  selectedTag?: string | null;
+  onClearTag?: () => void;
   selectedFilter: FilterOption;
   onSelectFilter: (filter: FilterOption) => void;
   onOpenCreateModal: () => void;
@@ -27,6 +29,8 @@ interface ForumFilterBarProps {
 
 export const ForumFilterBar: React.FC<ForumFilterBarProps> = ({
   categoryName,
+  selectedTag,
+  onClearTag,
   selectedFilter,
   onSelectFilter,
   onOpenCreateModal,
@@ -49,13 +53,38 @@ export const ForumFilterBar: React.FC<ForumFilterBarProps> = ({
 
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <h1 style={{ fontSize: 24, fontWeight: '700', color: '#0F172A', margin: 0 }}>
           Diễn đàn thảo luận
         </h1>
         <div style={{ padding: '4px 12px', background: '#DBEAFE', color: '#1E40AF', borderRadius: 999, fontSize: 12, fontWeight: '600' }}>
           {categoryName || 'Tất cả'}
         </div>
+        {selectedTag && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '4px 10px',
+              background: '#EFF6FF',
+              color: '#2563EB',
+              border: '1px solid #BFDBFE',
+              borderRadius: 999,
+              fontSize: 12,
+              fontWeight: '600',
+            }}
+          >
+            <span>🏷️ #{selectedTag}</span>
+            {onClearTag && (
+              <X
+                size={14}
+                style={{ cursor: 'pointer' }}
+                onClick={onClearTag}
+              />
+            )}
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'flex', gap: 12, position: 'relative' }}>

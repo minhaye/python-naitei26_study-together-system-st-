@@ -30,6 +30,8 @@ export const ForumPage: React.FC = () => {
     setSelectedCategoryId,
     selectedCategoryName,
     setSelectedCategoryName,
+    selectedTag,
+    setSelectedTag,
     selectedFilter,
     setSelectedFilter,
     search,
@@ -47,7 +49,7 @@ export const ForumPage: React.FC = () => {
     selectedFilter,
     currentUser.id
   );
-  const { showCreateModal, setShowCreateModal, handleCreatePost, handleToggleLike } = usePostActions(setPosts);
+  const { showCreateModal, setShowCreateModal, handleCreatePost, handleRetryPost, handleDiscardPost, handleToggleLike } = usePostActions(setPosts);
 
   // Ref cho cột giữa (Middle Feed) để lưu & khôi phục scrollTop
   const feedRef = useRef<HTMLDivElement | null>(null);
@@ -117,6 +119,7 @@ export const ForumPage: React.FC = () => {
             onSelectCategory={(id, name) => {
               setSelectedCategoryId(id);
               setSelectedCategoryName(name ?? null);
+              setSelectedTag(null);
             }}
             onSearchChange={setSearch}
           />
@@ -140,6 +143,8 @@ export const ForumPage: React.FC = () => {
           {/* Header Filter Bar */}
           <ForumFilterBar
             categoryName={resolvedCategoryName}
+            selectedTag={selectedTag}
+            onClearTag={() => setSelectedTag(null)}
             selectedFilter={selectedFilter}
             onSelectFilter={setSelectedFilter}
             onOpenCreateModal={() => setShowCreateModal(true)}
@@ -182,7 +187,13 @@ export const ForumPage: React.FC = () => {
           {/* Feed Bài Viết */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {posts.map((post) => (
-              <PostCard key={post.id} post={post} onToggleLike={handleToggleLike} />
+              <PostCard
+                key={post.id}
+                post={post}
+                onToggleLike={handleToggleLike}
+                onRetryPost={handleRetryPost}
+                onDiscardPost={handleDiscardPost}
+              />
             ))}
 
             {/* Skeleton Loading State khi nạp bài viết lần đầu */}

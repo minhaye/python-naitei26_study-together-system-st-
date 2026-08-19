@@ -14,6 +14,8 @@ interface ForumState {
   setSelectedCategoryId: (id: string | null) => void;
   selectedCategoryName: string | null;
   setSelectedCategoryName: (name: string | null) => void;
+  selectedTag: string | null;
+  setSelectedTag: (tag: string | null) => void;
   selectedFilter: FilterOption;
   setSelectedFilter: (filter: FilterOption) => void;
   search: string;
@@ -33,6 +35,7 @@ const ForumStateContext = createContext<ForumState | undefined>(undefined);
 export const ForumStateProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [selectedCategoryName, setSelectedCategoryName] = useState<string | null>(null);
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [selectedFilter, setSelectedFilter] = useState<FilterOption>('latest');
   const [search, setSearch] = useState('');
   const [posts, setPosts] = useState<Post[]>([]);
@@ -47,6 +50,8 @@ export const ForumStateProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setSelectedCategoryId,
         selectedCategoryName,
         setSelectedCategoryName,
+        selectedTag,
+        setSelectedTag,
         selectedFilter,
         setSelectedFilter,
         search,

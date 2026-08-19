@@ -38,6 +38,15 @@ class ForumPostUpdate(BaseModel):
     image_path: str | None = None
 
 
+class TagResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    post_count: int
+    created_at: datetime
+
+
 class ForumPostResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -57,6 +66,7 @@ class ForumPostResponse(BaseModel):
     likes_count: int = 0
     comments_count: int = 0
     is_liked: bool = False
+    tags: list[str] = Field(default_factory=list)
 
 
 class CommentCreate(BaseModel):

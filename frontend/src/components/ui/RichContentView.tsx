@@ -1,8 +1,7 @@
 import React from 'react';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
-import { Hashtag } from './Hashtag';
-import { parseContentWithHashtags } from '../../pages/forum/lib/hashtagUtils';
+import { injectHashtagSpansInHtml } from '../../pages/forum/lib/hashtagUtils';
 
 export interface RichContentViewProps {
   content: string;
@@ -29,9 +28,7 @@ export function extractImagesFromHtml(rawHtml: string): { textHtml: string; imag
   }
 
   // Loại bỏ các thẻ <img> khỏi HTML văn bản
-  let textHtml = rawHtml.replace(/<img[^>]*>/gi, '');
-  // Xóa các paragraph rỗng thừa
-  textHtml = textHtml.replace(/<p>\s*<\/p>/gi, '');
+  const textHtml = rawHtml.replace(/<img[^>]*>/gi, '');
 
   return { textHtml, images };
 }
@@ -64,9 +61,12 @@ function renderMathInHtml(rawContent: string): string {
   return processed;
 }
 
+
 /**
  * RichContentView — Component hiển thị nội dung giàu định dạng chuẩn kiểu Facebook.
- * Render an toàn: HTML, Khung ảnh đính kèm riêng biệt (Facebook-style attachment), Công thức toán KaTeX, và Hashtag pills.
+ *
+ * Render an toàn: HTML, Khung ảnh đính kèm riêng biệt (Facebook-style attachment),
+ * Công thức toán KaTeX, và Hashtag pills (via event delegation — không phá vỡ HTML structure).
  */
 export const RichContentView: React.FC<RichContentViewProps> = ({
   content,
@@ -82,8 +82,18 @@ export const RichContentView: React.FC<RichContentViewProps> = ({
   // 2. Xử lý render KaTeX cho nội dung văn bản
   const htmlWithMath = renderMathInHtml(textHtml);
 
-  // 3. Phân rã Hashtags
-  const parts = parseContentWithHashtags(htmlWithMath);
+  // 3. Inject hashtag <span> vào trong HTML string mà không phá vỡ cấu trúc thẻ HTML
+  const htmlWithHashtags = injectHashtagSpansInHtml(htmlWithMath);
+
+  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('forum-hashtag-pill')) {
+      const tag = target.dataset.tag;
+      if (tag && onTagClick) {
+        onTagClick(`#${tag}`);
+      }
+    }
+  };
 
   return (
     <div
@@ -96,29 +106,12 @@ export const RichContentView: React.FC<RichContentViewProps> = ({
         ...style,
       }}
     >
-      {/* Văn bản (HTML + KaTeX + Hashtag) */}
-      {parts.length > 0 && (
-        <div>
-          {parts.map((part, idx) => {
-            if (part.type === 'hashtag') {
-              return (
-                <Hashtag
-                  key={idx}
-                  tag={part.value}
-                  onClick={onTagClick || ((t) => alert(`Lọc bài viết theo thẻ ${t}`))}
-                  style={{ margin: '0 2px' }}
-                />
-              );
-            }
-
-            return (
-              <span
-                key={idx}
-                dangerouslySetInnerHTML={{ __html: part.value }}
-              />
-            );
-          })}
-        </div>
+      {/* Văn bản (HTML + KaTeX + Hashtag pills via event delegation) */}
+      {htmlWithHashtags && (
+        <div
+          dangerouslySetInnerHTML={{ __html: htmlWithHashtags }}
+          onClick={handleClick}
+        />
       )}
 
       {/* Khung ảnh đính kèm riêng biệt kiểu Facebook (Facebook Attachment Frame) */}
