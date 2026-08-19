@@ -19,6 +19,8 @@ import {
 import { useAuth } from '../../hooks/useAuth';
 import { useChannelMessagesRealtime } from '../../hooks/useChannelMessagesRealtime';
 import { useGroupResources } from '../../hooks/useGroupResources';
+import { useGroupNotes } from '../../hooks/useGroupNotes';
+import { NotesStackPanel } from './NotesStackPanel';
 import { ApiError } from '../../lib/apiClient';
 import { getGroup, listGroupMembers, leaveGroup, removeMember, updateMemberRole } from '../../lib/group.api';
 import { InviteModal } from '../../components/invitations/InviteModal';
@@ -57,9 +59,12 @@ export function StudyGroupDetail() {
 
   // Group Settings & Dropdown Menu States
   const [showGroupMenu, setShowGroupMenu] = useState(false);
-  const [ownerNote, setOwnerNote] = useState('Nhắc nhở từ Thầy Hoàng: Đọc slide Bài 4 trước 15h hôm nay!');
-  const [isEditingNote, setIsEditingNote] = useState(false);
-  const [newNote, setNewNote] = useState(ownerNote);
+
+  // Group Notes: shared content maintained by the Group Owner/Moderator (real, group-scoped,
+  // persisted via backend -- see note_router.py). Displayed as a paper stack (see
+  // NotesStackPanel): exactly one Note focused/visible at a time, navigated via Previous/Next.
+  // All stack/composer/editor state lives in the hook -- this page only wires it to the panel.
+  const groupNotesController = useGroupNotes(groupId);
 
   // Real Group/Channel/Study Room domain state (replaces the previous hard-coded mock group).
   const [group, setGroup] = useState<Group | null>(null);
@@ -637,69 +642,9 @@ export function StudyGroupDetail() {
                     </div>
                 )}
 
-                {/* Owner Note / Announcement Banner (local-only placeholder; no backend concept for this yet) */}
-                <div style={{
-                    margin: '12px 12px 4px 12px',
-                    padding: '12px 14px',
-                    background: '#F0F9FF',
-                    borderRadius: '8px',
-                    border: '1px solid #BAE6FD',
-                    borderLeft: '4px solid #0284C7',
-                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
-                }}>
-                    <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6}}>
-                        <span style={{fontSize: 11, fontWeight: '700', color: '#0369A1', textTransform: 'uppercase', letterSpacing: '0.5px'}}>
-                            Ghi chú
-                        </span>
-                        {isOwner && (
-                            <span
-                                onClick={(e) => { e.stopPropagation(); setIsEditingNote(!isEditingNote); }}
-                                style={{fontSize: 11, fontWeight: '600', color: '#0284C7', cursor: 'pointer', textDecoration: 'underline'}}
-                            >
-                                {isEditingNote ? 'Hủy' : 'Sửa'}
-                            </span>
-                        )}
-                    </div>
-                    {isEditingNote ? (
-                        <div style={{marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6}}>
-                            <textarea
-                                value={newNote}
-                                onChange={e => setNewNote(e.target.value)}
-                                style={{
-                                    padding: '6px 8px',
-                                    fontSize: 12,
-                                    borderRadius: 6,
-                                    border: '1px solid #7DD3FC',
-                                    outline: 'none',
-                                    resize: 'vertical',
-                                    minHeight: '54px',
-                                    fontFamily: 'inherit'
-                                }}
-                            />
-                            <button
-                                onClick={() => { setOwnerNote(newNote); setIsEditingNote(false); }}
-                                style={{
-                                    padding: '4px 12px',
-                                    background: '#0284C7',
-                                    color: 'white',
-                                    border: 'none',
-                                    borderRadius: 4,
-                                    fontSize: 11,
-                                    fontWeight: '600',
-                                    cursor: 'pointer',
-                                    alignSelf: 'flex-end',
-                                    transition: 'background 0.2s'
-                                }}
-                            >
-                                Lưu
-                            </button>
-                        </div>
-                    ) : (
-                        <div style={{fontSize: 12.5, color: '#0F172A', lineHeight: '1.5', fontWeight: '450'}}>
-                            {ownerNote}
-                        </div>
-                    )}
-                </div>
+                {/* Group Notes -- paper stack, one focused Note at a time (see
+                    NotesStackPanel); real, group-scoped, persisted via backend */}
+                <NotesStackPanel {...groupNotesController} isGroupManager={isGroupManager} />
 
                 {/* Scrollable Channels List */}
                 <div style={{flex: 1, overflowY: 'auto', padding: '16px 8px'}}>
