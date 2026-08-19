@@ -4,6 +4,7 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { setAccessTokenProvider } from '../lib/apiClient';
 import { fetchCurrentUser } from '../lib/auth.api';
+import { fetchProfile } from '../lib/profile.api';
 import { AuthContext } from './auth-context';
 import type { AuthProfile } from './auth-context';
 
@@ -14,81 +15,66 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const sessionRef = useRef<Session | null>(null);
   const verifiedUserIdRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    // Registered once; always reads sessionRef.current, so refreshed tokens are never stale.
-    setAccessTokenProvider(() => sessionRef.current?.access_token ?? null);
+  const refreshProfile = async (): Promise<AuthProfile | null> => {
+    const activeSession = sessionRef.current;
+    const userId = activeSession?.user.id;
+    if (!userId) {
+      setProfile(null);
+      return null;
+    }
+    try {
+      const data = await fetchProfile(userId);
+      if (sessionRef.current?.user.id !== userId) return null;
+      const nextProfile: AuthProfile = {
+        id: data.id,
+        username: data.username,
+        displayName: data.display_name || data.username || activeSession.user.email || 'Người dùng',
+        avatarUrl: data.avatar_url,
+        bio: data.bio,
+      };
+      setProfile(nextProfile);
+      return nextProfile;
+    } catch (err) {
+      // A newly registered account may not have a profile row yet.
+      console.error('Failed to fetch profile from the backend', err);
+      setProfile(null);
+      return null;
+    }
+  };
 
+  useEffect(() => {
+    setAccessTokenProvider(() => sessionRef.current?.access_token ?? null);
     const applySession = async (nextSession: Session | null) => {
       sessionRef.current = nextSession;
       setSession(nextSession);
-
       const userId = nextSession?.user?.id ?? null;
       if (userId) {
-        // Lấy profile từ CSDL để đồng bộ tên
-        try {
-          const { data, error } = await supabase
-            .from('profiles')
-            .select('display_name, username, avatar_url')
-            .eq('id', userId)
-            .single();
-            
-          if (!error && data) {
-            setProfile({
-              displayName: data.display_name || data.username || nextSession?.user?.email || 'Người dùng',
-              avatarUrl: data.avatar_url,
-            });
-          }
-        } catch (err) {
-          console.error('Error fetching profile:', err);
-        }
-
+        await refreshProfile();
         if (verifiedUserIdRef.current !== userId) {
           verifiedUserIdRef.current = userId;
-          fetchCurrentUser().catch((err) => {
-            console.error('Failed to verify session with GET /auth/me', err);
-          });
+          fetchCurrentUser().catch((err) => console.error('Failed to verify session with GET /auth/me', err));
         }
       } else {
         setProfile(null);
         verifiedUserIdRef.current = null;
       }
     };
-
     const getDevSession = (): Session | null => {
       const stored = localStorage.getItem('dev_session');
       if (!stored) return null;
-      try {
-        return JSON.parse(stored) as Session;
-      } catch {
-        return null;
-      }
+      try { return JSON.parse(stored) as Session; } catch { return null; }
     };
-
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) {
-        applySession(data.session).finally(() => setLoading(false));
-      } else {
-        applySession(getDevSession()).finally(() => setLoading(false));
-      }
+      void applySession(data.session ?? getDevSession()).finally(() => setLoading(false));
     }).catch(() => {
-      applySession(getDevSession()).finally(() => setLoading(false));
+      void applySession(getDevSession()).finally(() => setLoading(false));
     });
-
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      if (nextSession) {
-        localStorage.removeItem('dev_session');
-        applySession(nextSession);
-      } else {
-        applySession(getDevSession());
-      }
+      if (nextSession) localStorage.removeItem('dev_session');
+      void applySession(nextSession ?? getDevSession());
     });
-
-    const handleDevAuthChange = () => {
-      const devSess = getDevSession();
-      applySession(devSess);
-    };
+    const handleDevAuthChange = () => { void applySession(getDevSession()); };
     window.addEventListener('dev_auth_changed', handleDevAuthChange);
-
     return () => {
       listener.subscription.unsubscribe();
       window.removeEventListener('dev_auth_changed', handleDevAuthChange);
@@ -96,22 +82,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setDevSession = (nextSession: Session | null) => {
-    if (nextSession) {
-      localStorage.setItem('dev_session', JSON.stringify(nextSession));
-    } else {
-      localStorage.removeItem('dev_session');
-    }
+    if (nextSession) localStorage.setItem('dev_session', JSON.stringify(nextSession));
+    else localStorage.removeItem('dev_session');
     sessionRef.current = nextSession;
     setSession(nextSession);
-    
-    if (!nextSession) {
-      setProfile(null);
-    }
+    if (!nextSession) setProfile(null);
   };
 
-  return (
-    <AuthContext.Provider value={{ session, user: session?.user ?? null, profile, loading, setDevSession }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={{ session, user: session?.user ?? null, profile, loading, setDevSession, refreshProfile }}>{children}</AuthContext.Provider>;
 }

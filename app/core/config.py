@@ -7,6 +7,11 @@ class Settings(BaseSettings):
     database_url: str
     supabase_url: str
     supabase_publishable_key: str | None = None
+    # Current Supabase server-side elevated key (sb_secret_...). Preferred over the legacy
+    # service_role JWT below -- see supabase_server_key.
+    supabase_secret_key: str | None = None
+    # Legacy elevated key, kept only as a fallback for setups that haven't migrated to
+    # SUPABASE_SECRET_KEY yet. Not required when supabase_secret_key is set.
     supabase_service_role_key: str | None = None
     attachment_download_url_expires_in: int = 300
     livekit_url: str
@@ -36,6 +41,39 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
+
+    @property
+    def supabase_server_key(self) -> str | None:
+        """The elevated server-side Supabase credential, whichever is configured. Prefers the
+        current Secret Key (sb_secret_...) over the legacy service_role JWT so new setups
+        never need the deprecated key. Prefer `supabase_storage_headers` for actually calling
+        Supabase's Storage REST API -- the two key formats need different header shapes (see
+        its docstring), so this raw string is mostly useful for "is anything configured"
+        checks."""
+        return self.supabase_secret_key or self.supabase_service_role_key
+
+    @property
+    def supabase_storage_headers(self) -> dict[str, str] | None:
+        """Headers for elevated Supabase Storage REST calls (signed upload/download URLs) --
+        shared by Attachment Storage and Resource Storage, see
+        app/attachments/services/attachment_service.py and
+        app/resources/services/resource_storage_service.py. The two supported credential
+        formats are NOT interchangeable header-wise:
+        - Current Secret Key (sb_secret_...): an opaque key validated by Supabase's API
+          gateway itself, not a JWT. Only `apikey` is correct; sending it as
+          `Authorization: Bearer sb_secret_...` is not the intended usage.
+        - Legacy service_role key: a JWT whose `role` claim grants elevated/RLS-bypassing
+          access, resolved by Storage from the `Authorization: Bearer <jwt>` header -- both
+          `apikey` and `Authorization` are required here, same as before.
+        Returns None if neither key is configured."""
+        if self.supabase_secret_key:
+            return {"apikey": self.supabase_secret_key}
+        if self.supabase_service_role_key:
+            return {
+                "apikey": self.supabase_service_role_key,
+                "Authorization": f"Bearer {self.supabase_service_role_key}",
+            }
+        return None
 
     @property
     def supabase_jwks_url(self) -> str:

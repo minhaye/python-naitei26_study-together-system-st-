@@ -1,5 +1,5 @@
 -- Hashtag System for Forum: tags & post_tags tables with automated post_count triggers.
--- Migration: 014_create_forum_tags.sql
+-- Migration: 016_create_forum_tags.sql
 
 BEGIN;
 

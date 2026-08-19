@@ -16,10 +16,12 @@ import {
     Plus,
     MoreVertical,
     Trash2,
-    Ticket
+    Ticket,
+    Download
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useChannelMessagesRealtime } from '../../hooks/useChannelMessagesRealtime';
+import { useGroupResources } from '../../hooks/useGroupResources';
 import { ApiError } from '../../lib/apiClient';
 import { getGroup, listGroupMembers, leaveGroup, updateGroup } from '../../lib/group.api';
 import { InviteModal } from '../../components/invitations/InviteModal';
@@ -162,6 +164,52 @@ export function StudyGroupDetail() {
   // is creator metadata, not an independent authorization grant). This is UX-only; the
   // backend independently re-checks the same rule (study_room_router.delete_room).
   const canDeleteRoom = isGroupManager;
+
+  const {
+    resources,
+    loading: resourcesLoading,
+    listError: resourcesListError,
+    uploadError: resourceUploadError,
+    isUploading: isUploadingResource,
+    pendingDeleteId: pendingDeleteResourceId,
+    deleteError: resourceDeleteError,
+    downloadError: resourceDownloadError,
+    pendingDownloadId: pendingDownloadResourceId,
+    upload: uploadResource,
+    remove: removeResource,
+    open: openResourceFile,
+    download: downloadResourceFile,
+    canDelete: canDeleteResource,
+  } = useGroupResources(group?.id);
+  const resourceFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [resourcePendingDelete, setResourcePendingDelete] = useState<{ id: string; name: string } | null>(null);
+
+  function formatFileSize(bytes: number | null): string {
+    if (bytes === null) return '';
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  async function handleResourceFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      await uploadResource(file);
+    } catch {
+      // uploadError state already surfaces this in the UI
+    }
+  }
+
+  async function handleConfirmDeleteResource() {
+    if (!resourcePendingDelete) return;
+    try {
+      await removeResource(resourcePendingDelete.id);
+      setResourcePendingDelete(null);
+    } catch {
+      // deleteError state already surfaces this in the UI; keep the dialog open
+    }
+  }
 
   async function handleLeaveGroup() {
     if (!group || !currentUserId || isLeaving) return;
@@ -831,25 +879,60 @@ export function StudyGroupDetail() {
                         </div>
                     </div>
 
-                    {/* Resources — placeholder until Resources API integration (separate task) */}
+                    {/* Resources — real backend data (app/resources) */}
                     <div>
-                        <div style={{color: '#64748B', fontSize: 12, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase', marginBottom: 8, paddingLeft: 8}}>Tài liệu đính kèm</div>
-                        <div style={{display: 'flex', flexDirection: 'column', gap: 2}}>
-                            <div style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer'}} onMouseOver={e => e.currentTarget.style.background = '#F1F5F9'} onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
-                                <FileText size={18} color="#3B82F6" style={{marginTop: 2}} />
-                                <div>
-                                    <div style={{color: '#334155', fontSize: 13, fontWeight: '500', marginBottom: 2}}>Bai_Giang_Chuong_1.pdf</div>
-                                    <div style={{color: '#94A3B8', fontSize: 11}}>2.4 MB • Tải xuống</div>
-                                </div>
-                            </div>
-                            <div style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer'}} onMouseOver={e => e.currentTarget.style.background = '#F1F5F9'} onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
-                                <FileText size={18} color="#10B981" style={{marginTop: 2}} />
-                                <div>
-                                    <div style={{color: '#334155', fontSize: 13, fontWeight: '500', marginBottom: 2}}>Ghi_chep_nhom.docx</div>
-                                    <div style={{color: '#94A3B8', fontSize: 11}}>Đang cùng chỉnh sửa</div>
-                                </div>
-                            </div>
+                        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingLeft: 8, paddingRight: 4}}>
+                            <div style={{color: '#64748B', fontSize: 12, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase'}}>Tài liệu đính kèm</div>
+                            <button
+                                onClick={() => resourceFileInputRef.current?.click()}
+                                disabled={isUploadingResource}
+                                title="Tải tài liệu lên"
+                                style={{width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', borderRadius: 4, cursor: isUploadingResource ? 'not-allowed' : 'pointer', color: '#4338CA', opacity: isUploadingResource ? 0.5 : 1}}
+                            >
+                                <Plus size={16} />
+                            </button>
+                            <input
+                                ref={resourceFileInputRef}
+                                type="file"
+                                style={{display: 'none'}}
+                                onChange={handleResourceFileSelected}
+                                disabled={isUploadingResource}
+                            />
                         </div>
+
+                        {isUploadingResource && (
+                            <div style={{padding: '4px 8px', fontSize: 12, color: '#4338CA'}}>Đang tải lên...</div>
+                        )}
+                        {resourceUploadError && (
+                            <div style={{padding: '4px 8px', fontSize: 12, color: '#DC2626'}}>{resourceUploadError.message}</div>
+                        )}
+
+                        {resourcesLoading ? (
+                            <div style={{padding: '8px', fontSize: 12, color: '#94A3B8'}}>Đang tải...</div>
+                        ) : resourcesListError ? (
+                            <div style={{padding: '8px', fontSize: 12, color: '#DC2626'}}>{resourcesListError.message}</div>
+                        ) : resources.length === 0 ? (
+                            <div style={{padding: '8px', fontSize: 12, color: '#94A3B8'}}>Chưa có tài liệu nào.</div>
+                        ) : (
+                            <div style={{display: 'flex', flexDirection: 'column', gap: 2}}>
+                                {resources.slice(0, 2).map((resource) => (
+                                    <div
+                                        key={resource.id}
+                                        onClick={() => openResourceFile(resource.id)}
+                                        style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer'}}
+                                        onMouseOver={e => e.currentTarget.style.background = '#F1F5F9'}
+                                        onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                        <FileText size={18} color="#3B82F6" style={{marginTop: 2, flexShrink: 0}} />
+                                        <div style={{minWidth: 0}}>
+                                            <div style={{color: '#334155', fontSize: 13, fontWeight: '500', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{resource.name}</div>
+                                            <div style={{color: '#94A3B8', fontSize: 11}}>{formatFileSize(resource.file_size)} • {getDisplayName(resource.uploader)}</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
                         {/* Nút Xem tất cả tài liệu đính kèm */}
                         <div style={{marginTop: 12, borderTop: '1px solid #E2E8F0', paddingTop: 12}}>
                             <div
@@ -1007,37 +1090,93 @@ export function StudyGroupDetail() {
                 </div>
             ) : (
                 <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: 'white'}}>
-                    <div style={{height: 60, padding: '0 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', color: '#0F172A', fontSize: 18, fontWeight: '700', background: 'white'}}>
+                    <div style={{height: 60, padding: '0 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#0F172A', fontSize: 18, fontWeight: '700', background: 'white'}}>
                         Tất cả dữ liệu đính kèm
+                        <button
+                            onClick={() => resourceFileInputRef.current?.click()}
+                            disabled={isUploadingResource}
+                            style={{display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 6, background: isUploadingResource ? '#93C5FD' : '#3B82F6', color: 'white', border: 'none', fontSize: 13, fontWeight: 600, cursor: isUploadingResource ? 'not-allowed' : 'pointer'}}
+                        >
+                            <Plus size={16} /> {isUploadingResource ? 'Đang tải lên...' : 'Tải tài liệu lên'}
+                        </button>
                     </div>
+
+                    {resourceUploadError && (
+                        <div style={{padding: '10px 24px', fontSize: 13, color: '#B91C1C', background: '#FEF2F2', borderBottom: '1px solid #FECACA'}}>
+                            {resourceUploadError.message}
+                        </div>
+                    )}
+                    {resourceDeleteError && (
+                        <div style={{padding: '10px 24px', fontSize: 13, color: '#B91C1C', background: '#FEF2F2', borderBottom: '1px solid #FECACA'}}>
+                            {resourceDeleteError.message}
+                        </div>
+                    )}
+                    {resourceDownloadError && (
+                        <div style={{padding: '10px 24px', fontSize: 13, color: '#B91C1C', background: '#FEF2F2', borderBottom: '1px solid #FECACA'}}>
+                            {resourceDownloadError.message}
+                        </div>
+                    )}
+
                     {/* Bảng danh sách tài liệu (Zalo Style) */}
-                    <div style={{display: 'grid', gridTemplateColumns: '1fr 100px 120px', padding: '16px 24px', borderBottom: '1px solid #E2E8F0', fontSize: 13, color: '#64748B', fontWeight: '500', background: '#F8FAFC'}}>
+                    <div style={{display: 'grid', gridTemplateColumns: '1fr 140px 140px 120px 76px', padding: '16px 24px', borderBottom: '1px solid #E2E8F0', fontSize: 13, color: '#64748B', fontWeight: '500', background: '#F8FAFC'}}>
                         <div>Tên</div>
+                        <div>Người tải lên</div>
                         <div>Kích thước</div>
                         <div>Ngày gửi</div>
+                        <div />
                     </div>
                     {/* Danh sách file */}
                     <div style={{flex: 1, overflowY: 'auto'}}>
-                        <div style={{display: 'grid', gridTemplateColumns: '1fr 100px 120px', padding: '16px 24px', borderBottom: '1px solid #F1F5F9', alignItems: 'center', transition: 'background 0.2s', cursor: 'pointer'}} onMouseOver={e => e.currentTarget.style.background = '#F8FAFC'} onMouseOut={e => e.currentTarget.style.background = 'white'}>
-                            <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
-                                <div style={{width: 36, height: 36, borderRadius: 8, background: '#EFF6FF', display: 'flex', justifyContent: 'center', alignItems: 'center'}}>
-                                    <FileText size={20} color="#3B82F6" />
+                        {resourcesLoading ? (
+                            <div style={{padding: 32, textAlign: 'center', color: '#94A3B8', fontSize: 14}}>Đang tải danh sách tài liệu...</div>
+                        ) : resourcesListError ? (
+                            <div style={{padding: 32, textAlign: 'center', color: '#DC2626', fontSize: 14}}>{resourcesListError.message}</div>
+                        ) : resources.length === 0 ? (
+                            <div style={{padding: 32, textAlign: 'center', color: '#94A3B8', fontSize: 14}}>Chưa có tài liệu nào trong nhóm này.</div>
+                        ) : (
+                            resources.map((resource) => (
+                                <div
+                                    key={resource.id}
+                                    style={{display: 'grid', gridTemplateColumns: '1fr 140px 140px 120px 76px', padding: '16px 24px', borderBottom: '1px solid #F1F5F9', alignItems: 'center', transition: 'background 0.2s'}}
+                                    onMouseOver={e => e.currentTarget.style.background = '#F8FAFC'}
+                                    onMouseOut={e => e.currentTarget.style.background = 'white'}
+                                >
+                                    <div onClick={() => openResourceFile(resource.id)} style={{display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', minWidth: 0}}>
+                                        <div style={{width: 36, height: 36, borderRadius: 8, background: '#EFF6FF', display: 'flex', justifyContent: 'center', alignItems: 'center', flexShrink: 0}}>
+                                            <FileText size={20} color="#3B82F6" />
+                                        </div>
+                                        <div style={{color: '#0F172A', fontSize: 14, fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{resource.name}</div>
+                                    </div>
+                                    <div style={{color: '#64748B', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{getDisplayName(resource.uploader)}</div>
+                                    <div style={{color: '#64748B', fontSize: 13}}>{formatFileSize(resource.file_size)}</div>
+                                    <div style={{color: '#64748B', fontSize: 13}}>{new Date(resource.created_at).toLocaleDateString('vi-VN')}</div>
+                                    <div style={{display: 'flex', gap: 4}}>
+                                        <button
+                                            onClick={() => downloadResourceFile(resource.id)}
+                                            disabled={pendingDownloadResourceId === resource.id}
+                                            title="Tải xuống"
+                                            style={{width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', borderRadius: 4, cursor: pendingDownloadResourceId === resource.id ? 'not-allowed' : 'pointer', color: pendingDownloadResourceId === resource.id ? '#CBD5E1' : '#94A3B8'}}
+                                            onMouseOver={e => { if (pendingDownloadResourceId !== resource.id) { e.currentTarget.style.background = '#EFF6FF'; e.currentTarget.style.color = '#3B82F6'; } }}
+                                            onMouseOut={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = pendingDownloadResourceId === resource.id ? '#CBD5E1' : '#94A3B8'; }}
+                                        >
+                                            <Download size={16} />
+                                        </button>
+                                        {canDeleteResource(resource, isGroupManager) && (
+                                            <button
+                                                onClick={() => setResourcePendingDelete({ id: resource.id, name: resource.name })}
+                                                disabled={pendingDeleteResourceId === resource.id}
+                                                title="Xóa tài liệu"
+                                                style={{width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', borderRadius: 4, cursor: pendingDeleteResourceId === resource.id ? 'not-allowed' : 'pointer', color: '#94A3B8'}}
+                                                onMouseOver={e => { e.currentTarget.style.background = '#FEF2F2'; e.currentTarget.style.color = '#DC2626'; }}
+                                                onMouseOut={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#94A3B8'; }}
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
-                                <div style={{color: '#0F172A', fontSize: 14, fontWeight: '500'}}>Bai_Giang_Chuong_1.pdf</div>
-                            </div>
-                            <div style={{color: '#64748B', fontSize: 13}}>2.4 MB</div>
-                            <div style={{color: '#64748B', fontSize: 13}}>22/07/2026</div>
-                        </div>
-                        <div style={{display: 'grid', gridTemplateColumns: '1fr 100px 120px', padding: '16px 24px', borderBottom: '1px solid #F1F5F9', alignItems: 'center', transition: 'background 0.2s', cursor: 'pointer'}} onMouseOver={e => e.currentTarget.style.background = '#F8FAFC'} onMouseOut={e => e.currentTarget.style.background = 'white'}>
-                            <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
-                                <div style={{width: 36, height: 36, borderRadius: 8, background: '#ECFDF5', display: 'flex', justifyContent: 'center', alignItems: 'center'}}>
-                                    <FileText size={20} color="#10B981" />
-                                </div>
-                                <div style={{color: '#0F172A', fontSize: 14, fontWeight: '500'}}>Ghi_chep_nhom.docx</div>
-                            </div>
-                            <div style={{color: '#64748B', fontSize: 13}}>261 KB</div>
-                            <div style={{color: '#64748B', fontSize: 13}}>22/07/2026</div>
-                        </div>
+                            ))
+                        )}
                     </div>
                 </div>
             )}
@@ -1395,6 +1534,52 @@ export function StudyGroupDetail() {
                             style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: isDeletingRoom ? '#F1A9A0' : '#DC2626', color: 'white', border: 'none', fontSize: 14, fontWeight: 600, cursor: isDeletingRoom ? 'not-allowed' : 'pointer', fontFamily: 'Inter' }}
                         >
                             {isDeletingRoom ? 'Đang xóa...' : 'Xóa phòng học'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* Modal: Xác nhận xóa tài liệu */}
+        {resourcePendingDelete && (
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.4)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
+                <div style={{ background: 'white', borderRadius: 12, width: 420, padding: 32, display: 'flex', flexDirection: 'column', position: 'relative', boxShadow: '0px 10px 25px rgba(0, 0, 0, 0.1)' }}>
+                    <button
+                        onClick={() => { if (!pendingDeleteResourceId) setResourcePendingDelete(null); }}
+                        disabled={!!pendingDeleteResourceId}
+                        style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', cursor: pendingDeleteResourceId ? 'not-allowed' : 'pointer', color: '#64748B', fontSize: 18 }}
+                    >
+                        ✕
+                    </button>
+
+                    <h2 style={{ fontSize: 18, fontWeight: 600, color: '#0F172A', marginBottom: 12, fontFamily: 'Inter' }}>
+                        Xóa "{resourcePendingDelete.name}"?
+                    </h2>
+
+                    <p style={{ fontSize: 14, color: '#475569', lineHeight: 1.5, marginBottom: 24, fontFamily: 'Inter' }}>
+                        Tài liệu này sẽ bị xóa vĩnh viễn khỏi nhóm. Thao tác này không thể hoàn tác.
+                    </p>
+
+                    {resourceDeleteError && (
+                        <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: 12, color: '#B91C1C', fontSize: 13, marginBottom: 16 }}>
+                            {resourceDeleteError.message}
+                        </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                        <button
+                            onClick={() => { if (!pendingDeleteResourceId) setResourcePendingDelete(null); }}
+                            disabled={!!pendingDeleteResourceId}
+                            style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: '#F1F5F9', color: '#475569', border: 'none', fontSize: 14, fontWeight: 600, cursor: pendingDeleteResourceId ? 'not-allowed' : 'pointer', fontFamily: 'Inter' }}
+                        >
+                            Hủy
+                        </button>
+                        <button
+                            onClick={handleConfirmDeleteResource}
+                            disabled={!!pendingDeleteResourceId}
+                            style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: pendingDeleteResourceId ? '#F1A9A0' : '#DC2626', color: 'white', border: 'none', fontSize: 14, fontWeight: 600, cursor: pendingDeleteResourceId ? 'not-allowed' : 'pointer', fontFamily: 'Inter' }}
+                        >
+                            {pendingDeleteResourceId ? 'Đang xóa...' : 'Xóa tài liệu'}
                         </button>
                     </div>
                 </div>
