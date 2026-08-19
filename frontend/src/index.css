@@ -129,12 +129,6 @@ h1, h2, h3, h4, h5, h6, p {
   box-shadow: none !important;
 }
 
-/* ─── Forum Hashtag Pill ──────────────────────────────────────────────────────
-   Dùng cho thẻ <span class="forum-hashtag-pill"> được inject bởi
-   injectHashtagSpansInHtml() trong hashtagUtils.ts.
-   Style khớp với <Hashtag /> component (Hashtag.tsx).
-─────────────────────────────────────────────────────────────────────────────── */
-
 .forum-hashtag-pill {
   display: inline-flex;
   align-items: center;
