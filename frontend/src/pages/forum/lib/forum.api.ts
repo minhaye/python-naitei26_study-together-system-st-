@@ -112,13 +112,22 @@ export const forumApi = {
     return apiClient.get<ForumCategoryResponse[]>('/forum/categories');
   },
 
-  getPosts: async (categoryId: string | null, skip = 0, limit = 5, tag?: string | null): Promise<Post[]> => {
+  getPosts: async (
+    categoryId: string | null,
+    skip = 0,
+    limit = 5,
+    tag?: string | null,
+    userId?: string | null
+  ): Promise<Post[]> => {
     let url = `/forum/posts?skip=${skip}&limit=${limit}`;
     if (categoryId) {
       url += `&category_id=${categoryId}`;
     }
     if (tag) {
       url += `&tag=${encodeURIComponent(tag)}`;
+    }
+    if (userId) {
+      url += `&user_id=${userId}`;
     }
     const response = await apiClient.get<ForumPostResponse[]>(url);
     return response.map((p) => mapPost(p));
@@ -158,8 +167,12 @@ export const forumApi = {
     return response.map((p) => mapPost(p));
   },
 
-  getComments: async (postId: string): Promise<Comment[]> => {
-    const response = await apiClient.get<CommentResponse[]>(`/forum/comments?post_id=${postId}`);
+  getComments: async (postId: string, userId?: string | null): Promise<Comment[]> => {
+    let url = `/forum/comments?post_id=${postId}`;
+    if (userId) {
+      url += `&user_id=${userId}`;
+    }
+    const response = await apiClient.get<CommentResponse[]>(url);
     const flat = response.map((c) => mapComment(c));
     return nestComments(flat);
   },

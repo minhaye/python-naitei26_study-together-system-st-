@@ -13,8 +13,11 @@ import { ForumRightSidebar } from './components/ForumRightSidebar';
 import { forumApi } from './lib/forum.api';
 import type { Post } from './types/forum.types';
 
+import { useAuth } from '../../hooks/useAuth';
+
 export const ForumPostDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const { currentUser } = useAuth();
   const [post, setPost] = useState<Post | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -23,22 +26,30 @@ export const ForumPostDetail: React.FC = () => {
     setIsLoading(true);
     // Lấy bài viết theo ID từ API
     forumApi
-      .getPosts(null, 0, 9999)
+      .getPosts(null, 0, 9999, null, currentUser?.id)
       .then((all) => {
         const found = all.find((p) => p.id === id);
         if (found) setPost(found);
       })
       .finally(() => setIsLoading(false));
-  }, [id]);
+  }, [id, currentUser?.id]);
 
   const handleToggleLike = async (postId: string) => {
     if (!post) return;
     if (post.isLiked) {
-      await forumApi.unlikePost(postId);
+      await forumApi.unlikePost(postId, currentUser?.id);
     } else {
-      await forumApi.likePost(postId);
+      await forumApi.likePost(postId, currentUser?.id);
     }
-    setPost((prev) => (prev ? { ...prev, isLiked: !prev.isLiked } : null));
+    setPost((prev) =>
+      prev
+        ? {
+            ...prev,
+            isLiked: !prev.isLiked,
+            likesCount: !prev.isLiked ? prev.likesCount + 1 : Math.max(0, prev.likesCount - 1),
+          }
+        : null
+    );
   };
 
   return (
