@@ -1,6 +1,7 @@
 import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.resources.entities.resource_entity import Resource, ResourceFolder
 from app.resources.dto.resource_dto import (
@@ -14,8 +15,10 @@ from app.resources.dto.resource_dto import (
 class ResourcesService:
     # --- Folders ---
 
-    async def create_folder(self, session: AsyncSession, data: ResourceFolderCreate) -> ResourceFolder:
-        folder = ResourceFolder(**data.model_dump())
+    async def create_folder(
+        self, session: AsyncSession, data: ResourceFolderCreate, created_by: uuid.UUID
+    ) -> ResourceFolder:
+        folder = ResourceFolder(**data.model_dump(), created_by=created_by)
         session.add(folder)
         await session.flush()
         return folder
@@ -47,21 +50,26 @@ class ResourcesService:
 
     # --- Files (Resources) ---
 
-    async def create_file(self, session: AsyncSession, data: ResourceCreate) -> Resource:
-        resource = Resource(**data.model_dump())
+    async def create_file(self, session: AsyncSession, data: ResourceCreate, uploader_id: uuid.UUID) -> Resource:
+        resource = Resource(**data.model_dump(), uploader_id=uploader_id)
         session.add(resource)
         await session.flush()
+        await session.refresh(resource, attribute_names=["uploader"])
         return resource
 
     async def get_file_by_id(self, session: AsyncSession, resource_id: uuid.UUID) -> Resource | None:
-        return await session.get(Resource, resource_id)
+        return await session.get(Resource, resource_id, options=[selectinload(Resource.uploader)])
 
     async def list_files_by_group(self, session: AsyncSession, group_id: uuid.UUID) -> list[Resource]:
-        result = await session.execute(select(Resource).where(Resource.group_id == group_id))
+        result = await session.execute(
+            select(Resource).options(selectinload(Resource.uploader)).where(Resource.group_id == group_id)
+        )
         return list(result.scalars().all())
 
     async def list_files_by_folder(self, session: AsyncSession, folder_id: uuid.UUID) -> list[Resource]:
-        result = await session.execute(select(Resource).where(Resource.folder_id == folder_id))
+        result = await session.execute(
+            select(Resource).options(selectinload(Resource.uploader)).where(Resource.folder_id == folder_id)
+        )
         return list(result.scalars().all())
 
     async def update_file(self, session: AsyncSession, resource: Resource, data: ResourceUpdate) -> Resource:

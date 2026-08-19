@@ -383,7 +383,9 @@ npm run build     # tsc -b && vite build (type-checks + production build)
 - The Study Room page renders a full video-call UI (participant grid, mic/camera/screen-share/raise-hand, whiteboard) and an in-room chat panel, entirely from local component state with mock participants/messages — no LiveKit connection and no Conversations/Messages API calls occur.
 - There is no automated frontend test suite (see [Testing](#testing)).
 
-In short: the backend is a complete, tested API surface; the frontend is a UI shell over the intended screens that has not yet been connected to it. Wiring the frontend to the backend (real auth via Supabase, real data via the FastAPI endpoints, LiveKit for meetings, Realtime for chat) is the next major milestone.
+**Resources update (2026-08-19):** the bullet points above no longer hold for Resources specifically. `frontend/src/pages/StudyGroup/StudyGroupDetail.tsx` (via `frontend/src/hooks/useGroupResources.ts` + `frontend/src/lib/resource.api.ts`) is wired to the real `app/resources` API and Supabase Storage: list, upload, Open/Preview, explicit Download, and delete all use persisted backend/Storage data, no mock resource list remains. Files live in the private `group-resources` Storage bucket via FastAPI-issued signed upload/download URLs (migration `014_create_group_resources_bucket.sql`, applied live and verified). Stale legacy seed metadata (`mock-resource-*` rows with no real Storage object) was removed by migration `015_cleanup_stale_mock_resources.sql`, also applied live and verified — see [docs/db/migrations/README.md](docs/db/migrations/README.md).
+
+In short: the backend is a complete, tested API surface; the frontend is a UI shell over the intended screens that has not yet been connected to it, except where noted above (Resources). Wiring the rest of the frontend to the backend (real auth via Supabase, real data via the FastAPI endpoints, LiveKit for meetings, Realtime for chat) is the next major milestone.
 
 ## Documentation
 
