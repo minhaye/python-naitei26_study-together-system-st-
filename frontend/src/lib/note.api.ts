@@ -6,6 +6,12 @@ export function listGroupNotes(groupId: string): Promise<Note[]> {
   return apiClient.get<Note[]>(`/notes?${params.toString()}`);
 }
 
+/** Single-note lookup -- primarily for Realtime hydration (see useGroupNotesRealtime.ts):
+ * a raw `group_notes` postgres_changes row has `author_id` but not the joined `author`. */
+export function getNote(noteId: string): Promise<Note> {
+  return apiClient.get<Note>(`/notes/${noteId}`);
+}
+
 export function createNote(data: NoteCreate): Promise<Note> {
   return apiClient.post<Note>('/notes', data);
 }

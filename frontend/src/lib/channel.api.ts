@@ -5,6 +5,15 @@ export function listChannelsByGroup(groupId: string): Promise<Channel[]> {
   return apiClient.get<Channel[]>(`/channels/?group_id=${groupId}`);
 }
 
+/** Single-channel lookup -- primarily for Realtime hydration (see useGroupTableRealtime.ts):
+ * `channels.conversation_id` is not a real column (it's a Python @property on the backend
+ * entity, derived from the channel's related Conversation row), so a raw `channels`
+ * postgres_changes row never carries it. Any INSERT/UPDATE consumed as a `Channel` must be
+ * hydrated through this REST endpoint instead of the raw row. */
+export function getChannel(channelId: string): Promise<Channel> {
+  return apiClient.get<Channel>(`/channels/${channelId}`);
+}
+
 /** Owner/moderator only -- enforced server-side via is_group_manager. Creator identity
  * is always derived from the bearer token (see channel_router.create_channel); no
  * created_by field exists on the request. */
