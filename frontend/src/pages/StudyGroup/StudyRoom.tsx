@@ -36,6 +36,8 @@ import { InviteModal } from '../../components/invitations/InviteModal';
 import { MeetingProvider } from './meeting/MeetingProvider';
 import { MeetingVideoGrid } from './meeting/MeetingVideoGrid';
 import { MeetingControls } from './meeting/MeetingControls';
+import { Tldraw } from 'tldraw';
+import 'tldraw/tldraw.css';
 
 interface CenteredRoomMessageProps {
   title: string;
@@ -101,9 +103,7 @@ export function StudyRoom() {
   const [isDeletingRoom, setIsDeletingRoom] = useState(false);
   const [isLifecycleBusy, setIsLifecycleBusy] = useState(false);
 
-  // Whiteboard tools
-  const [selectedTool, setSelectedTool] = useState<'pen' | 'text' | 'eraser' | 'shape'>('pen');
-  const [penColor, setPenColor] = useState('#00236F');
+  // Whiteboard tools (now handled internally by Tldraw)
 
   const handleLeaveRoom = async () => {
     if (document.fullscreenElement && document.exitFullscreen) {
@@ -564,103 +564,21 @@ export function StudyRoom() {
             </div>
 
             {/* Canvas Area */}
-            <div style={{flex: 1, position: 'relative', background: '#FFFFFF', backgroundImage: 'radial-gradient(#CBD5E1 1px, transparent 1px)', backgroundSize: '24px 24px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+            <div style={{flex: 1, position: 'relative', overflow: 'hidden'}}>
               
               {activeBoardTab === 'whiteboard' ? (
-                <div style={{width: '90%', maxWidth: 900, background: 'white', padding: 32, borderRadius: 16, boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: 20}}>
-                  <h2 style={{color: '#0F172A', fontSize: 24, fontWeight: '700', margin: 0, borderBottom: '2px solid #E2E8F0', paddingBottom: 12}}>
-                    Chủ đề 4: Phương trình Schrödinger trong Giếng thế 1D
-                  </h2>
-
-                  {/* Formula display box */}
-                  <div style={{background: '#F0F9FF', border: '1px solid #BAE6FD', borderRadius: 12, padding: 20, textAlign: 'center'}}>
-                    <div style={{color: '#0369A1', fontSize: 22, fontFamily: 'serif', fontWeight: 'bold'}}>
-                      iℏ (∂Ψ / ∂t) = ĤΨ
-                    </div>
-                    <div style={{color: '#0284C7', fontSize: 13, marginTop: 6}}>
-                      Phương trình trạng thái cơ học lượng tử phụ thuộc thời gian
-                    </div>
-                  </div>
-
-                  {/* Notes cards */}
-                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16}}>
-                    <div style={{background: '#FEF9C3', border: '1px solid #FDE047', padding: 16, borderRadius: 10, color: '#854D0E', fontSize: 14, lineHeight: '1.5'}}>
-                      <strong>Ghi chú từ Thầy Hoàng:</strong><br />
-                      Chú ý điều kiện biên Ψ(0) = 0 và Ψ(L) = 0 đối với giếng thế vô hạn chiều rộng L!
-                    </div>
-                    <div style={{background: '#ECFDF5', border: '1px solid #6EE7B7', padding: 16, borderRadius: 10, color: '#065F46', fontSize: 14, lineHeight: '1.5'}}>
-                      <strong>Giải thích của Tuấn Kiệt:</strong><br />
-                      Toán tử Ĥ bao gồm động năng (-ℏ²/2m ∇²) cộng với thế năng V(r).
-                    </div>
-                  </div>
+                <div style={{position: 'absolute', inset: 0}}>
+                  <Tldraw />
                 </div>
               ) : (
-                <div style={{width: '80%', height: '90%', background: 'white', borderRadius: 12, border: '1px solid #CBD5E1', boxShadow: '0 8px 20px rgba(0,0,0,0.08)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32}}>
-                  <FileText size={64} color="#3B82F6" style={{marginBottom: 16}} />
-                  <h3 style={{fontSize: 20, fontWeight: '700', color: '#0F172A', margin: '0 0 8px 0'}}>Slide Bài Giảng Chương 4: Cơ Học Lượng Tử</h3>
-                  <p style={{color: '#64748B', fontSize: 14, margin: 0}}>Trang 12 / 45 • Đang trình chiếu trực tiếp bởi Thầy Hoàng</p>
+                <div style={{width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FFFFFF', backgroundImage: 'radial-gradient(#CBD5E1 1px, transparent 1px)', backgroundSize: '24px 24px'}}>
+                  <div style={{width: '80%', height: '90%', background: 'white', borderRadius: 12, border: '1px solid #CBD5E1', boxShadow: '0 8px 20px rgba(0,0,0,0.08)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32}}>
+                    <FileText size={64} color="#3B82F6" style={{marginBottom: 16}} />
+                    <h3 style={{fontSize: 20, fontWeight: '700', color: '#0F172A', margin: '0 0 8px 0'}}>Slide Bài Giảng Chương 4: Cơ Học Lượng Tử</h3>
+                    <p style={{color: '#64748B', fontSize: 14, margin: 0}}>Trang 12 / 45 • Đang trình chiếu trực tiếp bởi Thầy Hoàng</p>
+                  </div>
                 </div>
               )}
-
-              {/* Floating Drawing Toolbar */}
-              <div style={{position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: 'white', padding: '8px 16px', borderRadius: 16, boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15)', border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', gap: 12}}>
-                <button 
-                  onClick={() => setSelectedTool('pen')}
-                  style={{padding: 8, borderRadius: 8, border: 'none', background: selectedTool === 'pen' ? '#EFF6FF' : 'transparent', color: selectedTool === 'pen' ? '#2563EB' : '#64748B', cursor: 'pointer'}}
-                  title="Bút vẽ"
-                >
-                  <Pencil size={18} />
-                </button>
-                <button 
-                  onClick={() => setSelectedTool('text')}
-                  style={{padding: 8, borderRadius: 8, border: 'none', background: selectedTool === 'text' ? '#EFF6FF' : 'transparent', color: selectedTool === 'text' ? '#2563EB' : '#64748B', cursor: 'pointer'}}
-                  title="Nhập văn bản"
-                >
-                  <Type size={18} />
-                </button>
-                <button 
-                  onClick={() => setSelectedTool('shape')}
-                  style={{padding: 8, borderRadius: 8, border: 'none', background: selectedTool === 'shape' ? '#EFF6FF' : 'transparent', color: selectedTool === 'shape' ? '#2563EB' : '#64748B', cursor: 'pointer'}}
-                  title="Hình học"
-                >
-                  <Square size={18} />
-                </button>
-                <button 
-                  onClick={() => setSelectedTool('eraser')}
-                  style={{padding: 8, borderRadius: 8, border: 'none', background: selectedTool === 'eraser' ? '#EFF6FF' : 'transparent', color: selectedTool === 'eraser' ? '#2563EB' : '#64748B', cursor: 'pointer'}}
-                  title="Tẩy xóa"
-                >
-                  <Eraser size={18} />
-                </button>
-
-                <div style={{height: 20, width: 1, background: '#CBD5E1'}} />
-
-                {/* Color Palette */}
-                {['#00236F', '#10B981', '#EF4444', '#F59E0B'].map(c => (
-                  <div 
-                    key={c}
-                    onClick={() => setPenColor(c)}
-                    style={{
-                      width: 20, 
-                      height: 20, 
-                      borderRadius: '50%', 
-                      background: c, 
-                      cursor: 'pointer', 
-                      outline: penColor === c ? '2px solid #2563EB' : 'none',
-                      outlineOffset: 2
-                    }}
-                  />
-                ))}
-
-                <div style={{height: 20, width: 1, background: '#CBD5E1'}} />
-
-                <button style={{padding: 8, borderRadius: 8, border: 'none', background: 'transparent', color: '#64748B', cursor: 'pointer'}} title="Hoàn tác">
-                  <RotateCcw size={18} />
-                </button>
-                <button style={{padding: 8, borderRadius: 8, border: 'none', background: 'transparent', color: '#EF4444', cursor: 'pointer'}} title="Xóa bảng">
-                  <Trash2 size={18} />
-                </button>
-              </div>
 
             </div>
 
