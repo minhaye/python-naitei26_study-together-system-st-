@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, Integer, Text, UniqueConstraint, text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -39,6 +39,7 @@ class StudyRoom(Base):
     # a deleted room does not (see STUDY_PLATFORM_DATABASE_SPEC.md §17).
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="RESTRICT"))
+    whiteboard_state: Mapped[dict | None] = mapped_column(JSONB)
 
     group: Mapped["Group"] = relationship(back_populates="study_rooms")
     # foreign_keys pinned explicitly: with `deleted_by` now also FK'd to profiles, this

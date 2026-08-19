@@ -117,6 +117,31 @@ async def update_room(
         )
 
 
+@router.put("/{room_id}/whiteboard", response_model=StudyRoomResponse)
+async def update_whiteboard_state(
+    room_id: uuid.UUID,
+    state: dict,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session)
+):
+    room = await _get_active_room_or_404(session, room_id)
+    # Anyone who can access the room (active participant) can sync the whiteboard state.
+    if not await can_access_room(session, room, current_user.id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have access to this study room")
+    try:
+        room.whiteboard_state = state
+        await session.commit()
+        await session.refresh(room)
+        return room
+    except Exception as e:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Could not update whiteboard state: {str(e)}"
+        )
+
+
+
 @router.post("/{room_id}/start", response_model=StudyRoomResponse)
 async def start_room(
     room_id: uuid.UUID,

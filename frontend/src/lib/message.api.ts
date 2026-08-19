@@ -19,3 +19,12 @@ export function listConversationMessages(
 export function sendConversationMessage(conversationId: string, data: MessageCreate): Promise<Message> {
   return apiClient.post<Message>(`/conversations/${conversationId}/messages`, data);
 }
+
+/** Fetches a single fully-hydrated message (with its joined `sender: UserSummary`) by id.
+ * Used by useChannelMessagesRealtime.ts to hydrate a Realtime INSERT event -- Supabase's
+ * `postgres_changes` payload only ever carries the raw `messages` row, never a SQL join, so
+ * this REST call is what turns that raw row into a real `Message`. Authorization is the same
+ * `can_access_conversation` check as every other message endpoint (message_router.get_message). */
+export function getMessage(messageId: string): Promise<Message> {
+  return apiClient.get<Message>(`/messages/${messageId}`);
+}

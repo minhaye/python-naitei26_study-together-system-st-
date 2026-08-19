@@ -11,6 +11,7 @@ import type { Post, ForumPostCreate } from '../types/forum.types';
 import { CommentSection } from './CommentSection';
 import { Avatar } from '../../../components/ui/Avatar';
 import { RichContentView } from '../../../components/ui/RichContentView';
+
 import { useForumState } from '../context/ForumStateContext';
 
 interface PostCardProps {

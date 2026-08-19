@@ -4,12 +4,36 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
 from app.auth.dto.auth_dto import CurrentUser
+from app.core.config import settings
 from app.db.session import get_db_session
-from app.profiles.dto.profile_dto import ProfileCreate, ProfileResponse, ProfileUpdate
+from app.profiles.dto.profile_dto import AvatarConfirm, ProfileCreate, ProfileResponse, ProfileUpdate
 from app.profiles.services.profile_service import ProfilesService
 
 router = APIRouter(prefix="/profiles", tags=["Profiles"])
 service = ProfilesService()
+
+
+@router.post("/me/avatar", response_model=ProfileResponse)
+async def confirm_avatar_upload(
+    data: AvatarConfirm,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
+    prefix = f"users/{current_user.id}/"
+    if not data.path.startswith(prefix) or not data.path.endswith(".avatar"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid avatar reference")
+    profile = await service.get_by_id(session, current_user.id)
+    if not profile:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Profile not found")
+    try:
+        profile.avatar_url = f"{settings.supabase_url.rstrip('/')}/storage/v1/object/public/profile-avatars/{data.path}"
+        await session.commit()
+        return profile
+    except HTTPException:
+        raise
+    except Exception as exc:
+        await session.rollback()
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Could not save avatar") from exc
 
 
 @router.post("/", response_model=ProfileResponse, status_code=status.HTTP_201_CREATED)

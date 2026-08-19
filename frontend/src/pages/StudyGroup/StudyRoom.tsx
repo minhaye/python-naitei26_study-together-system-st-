@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Mic,
@@ -10,12 +10,6 @@ import {
   Users,
   FileText,
   Send,
-  Pencil,
-  Type,
-  Eraser,
-  Square,
-  RotateCcw,
-  Trash2,
   ArrowLeft,
   Share2,
   ChevronLeft,
@@ -25,17 +19,25 @@ import {
   UserX,
   ShieldCheck,
   ShieldOff,
-  UserPlus
+  UserPlus,
+  Pencil,
+  Trash2,
+  Image as ImageIcon
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { useStudyRoom } from '../../hooks/useStudyRoom';
+import { useRoomMessages } from '../../hooks/useRoomMessages';
+import { useMessageImageAttachment, ALLOWED_IMAGE_ACCEPT } from '../../hooks/useMessageImageAttachment';
+import { MessageAttachmentImage } from '../../components/chat/MessageAttachmentImage';
+import { SelectedImagePreview } from '../../components/chat/SelectedImagePreview';
 import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
 import { getDisplayName } from '../../utils/userDisplay';
 import { InviteModal } from '../../components/invitations/InviteModal';
 import { MeetingProvider } from './meeting/MeetingProvider';
 import { MeetingVideoGrid } from './meeting/MeetingVideoGrid';
 import { MeetingControls } from './meeting/MeetingControls';
+import { SyncedWhiteboard } from './meeting/SyncedWhiteboard';
 
 interface CenteredRoomMessageProps {
   title: string;
@@ -89,9 +91,14 @@ export function StudyRoom() {
     changeMemberRole,
   } = useStudyRoom(roomId);
 
+  const currentUserRole = useMemo(() => {
+    const member = members.find((m) => m.user_id === currentUserId && !m.left_at);
+    return member?.role;
+  }, [members, currentUserId]);
+
   // Room states
   const [activeMode, setActiveMode] = useState<'video' | 'whiteboard'>('video');
-  const [activeRightTab, setActiveRightTab] = useState<'chat' | 'participants' | 'notes'>('chat');
+  const [activeRightTab, setActiveRightTab] = useState<'chat' | 'participants'>('chat');
   const [activeBoardTab, setActiveBoardTab] = useState<'whiteboard' | 'presentation'>('whiteboard');
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -101,9 +108,7 @@ export function StudyRoom() {
   const [isDeletingRoom, setIsDeletingRoom] = useState(false);
   const [isLifecycleBusy, setIsLifecycleBusy] = useState(false);
 
-  // Whiteboard tools
-  const [selectedTool, setSelectedTool] = useState<'pen' | 'text' | 'eraser' | 'shape'>('pen');
-  const [penColor, setPenColor] = useState('#00236F');
+  // Whiteboard tools (now handled internally by Tldraw)
 
   const handleLeaveRoom = async () => {
     if (document.fullscreenElement && document.exitFullscreen) {
@@ -254,29 +259,57 @@ export function StudyRoom() {
       });
   }, [members, currentUserId, currentUser, moderationMutedUserIds, handRaisedUserIds]);
 
-  // Chat mock data
-  const [messages, setMessages] = useState([
-    { id: 1, sender: 'David Chen', initial: 'DC', time: '1:12 PM', text: 'Mọi người đã có slide bài giảng chương 4 chưa?', color: '#059669' },
-    { id: 2, sender: 'Minh Anh (Bạn)', initial: 'MA', time: '1:15 PM', text: 'Có chứ, lát nữa tớ sẽ bật Bảng trắng chia sẻ ghi chú cho nhé!', color: '#2563EB', isSelf: true },
-    { id: 3, sender: 'Elena Rodriguez', initial: 'ER', time: '1:16 PM', text: 'Cảm ơn Sarah! Liam đang có thắc mắc ở phần phương trình Schrödinger đấy.', color: '#D97706' }
-  ]);
+  // Real persisted messages for this room's ROOM Conversation (reuses the same
+  // /conversations/{id}/messages REST API + Realtime subscription as Channel chat --
+  // see useRoomMessages.ts). `room.conversation_id` is null only in the brief instant
+  // before `room` has loaded; the chat panel treats that the same as "not ready yet".
+  const { messages, isLoading: isMessagesLoading, loadError: messagesError, isSending: isSendingMessage, sendError: sendMessageError, sendMessage } =
+    useRoomMessages(room?.conversation_id ?? null);
   const [chatInput, setChatInput] = useState('');
+  const imageAttachment = useMessageImageAttachment();
+  const chatImageInputRef = useRef<HTMLInputElement | null>(null);
 
-  const handleSendMessage = () => {
-    if (!chatInput.trim()) return;
-    setMessages(prev => [
-      ...prev,
-      {
-        id: Date.now(),
-        sender: 'Minh Anh (Bạn)',
-        initial: 'MA',
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        text: chatInput,
-        color: '#2563EB',
-        isSelf: true
-      }
-    ]);
-    setChatInput('');
+  const senderDisplay = (message: (typeof messages)[number]) => {
+    const isSelf = message.sender_id === currentUserId;
+    const name = isSelf ? `${currentUser.name} (Bạn)` : getDisplayName(message.sender);
+    return {
+      name,
+      initial: isSelf ? currentUser.initials : getAvatarInitials(name),
+      color: isSelf ? currentUser.color : getAvatarColor(name),
+      avatarUrl: isSelf ? null : message.sender.avatar_url,
+      isSelf,
+    };
+  };
+
+  const formatMessageTime = (iso: string) =>
+    new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, activeRightTab]);
+
+  const handleSendMessage = async () => {
+    const trimmed = chatInput.trim();
+    const conversationId = room?.conversation_id ?? null;
+    if ((!trimmed && !imageAttachment.hasImage) || !conversationId || isSendingMessage || imageAttachment.isUploading) return;
+    try {
+      // Upload first, create the message second -- a failed upload must never produce an
+      // orphaned/misleading message record (see useMessageImageAttachment.uploadImage).
+      const attachmentPath = imageAttachment.hasImage ? await imageAttachment.uploadImage(conversationId) : null;
+      await sendMessage(trimmed, attachmentPath);
+      setChatInput('');
+      imageAttachment.clearImage();
+    } catch {
+      // sendMessageError / imageAttachment.uploadError is already populated; keep the draft
+      // (and any selected image) so the user can retry.
+    }
+  };
+
+  const handleChatImageSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = e.target.files?.[0];
+    if (picked) imageAttachment.selectImage(picked);
+    e.target.value = '';
   };
 
   // --- Loading / error / not-yet-joined states (real backend data drives all of these) ---
@@ -564,103 +597,27 @@ export function StudyRoom() {
             </div>
 
             {/* Canvas Area */}
-            <div style={{flex: 1, position: 'relative', background: '#FFFFFF', backgroundImage: 'radial-gradient(#CBD5E1 1px, transparent 1px)', backgroundSize: '24px 24px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+            <div style={{flex: 1, position: 'relative', overflow: 'hidden'}}>
               
               {activeBoardTab === 'whiteboard' ? (
-                <div style={{width: '90%', maxWidth: 900, background: 'white', padding: 32, borderRadius: 16, boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: 20}}>
-                  <h2 style={{color: '#0F172A', fontSize: 24, fontWeight: '700', margin: 0, borderBottom: '2px solid #E2E8F0', paddingBottom: 12}}>
-                    Chủ đề 4: Phương trình Schrödinger trong Giếng thế 1D
-                  </h2>
-
-                  {/* Formula display box */}
-                  <div style={{background: '#F0F9FF', border: '1px solid #BAE6FD', borderRadius: 12, padding: 20, textAlign: 'center'}}>
-                    <div style={{color: '#0369A1', fontSize: 22, fontFamily: 'serif', fontWeight: 'bold'}}>
-                      iℏ (∂Ψ / ∂t) = ĤΨ
-                    </div>
-                    <div style={{color: '#0284C7', fontSize: 13, marginTop: 6}}>
-                      Phương trình trạng thái cơ học lượng tử phụ thuộc thời gian
-                    </div>
-                  </div>
-
-                  {/* Notes cards */}
-                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16}}>
-                    <div style={{background: '#FEF9C3', border: '1px solid #FDE047', padding: 16, borderRadius: 10, color: '#854D0E', fontSize: 14, lineHeight: '1.5'}}>
-                      <strong>Ghi chú từ Thầy Hoàng:</strong><br />
-                      Chú ý điều kiện biên Ψ(0) = 0 và Ψ(L) = 0 đối với giếng thế vô hạn chiều rộng L!
-                    </div>
-                    <div style={{background: '#ECFDF5', border: '1px solid #6EE7B7', padding: 16, borderRadius: 10, color: '#065F46', fontSize: 14, lineHeight: '1.5'}}>
-                      <strong>Giải thích của Tuấn Kiệt:</strong><br />
-                      Toán tử Ĥ bao gồm động năng (-ℏ²/2m ∇²) cộng với thế năng V(r).
-                    </div>
-                  </div>
+                <div style={{position: 'absolute', inset: 0}}>
+                  {room && (
+                    <SyncedWhiteboard 
+                      roomId={room.id}
+                      initialState={room.whiteboard_state}
+                      isReadonly={!(isGroupManager || currentUserRole === 'host' || currentUserRole === 'moderator')}
+                    />
+                  )}
                 </div>
               ) : (
-                <div style={{width: '80%', height: '90%', background: 'white', borderRadius: 12, border: '1px solid #CBD5E1', boxShadow: '0 8px 20px rgba(0,0,0,0.08)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32}}>
-                  <FileText size={64} color="#3B82F6" style={{marginBottom: 16}} />
-                  <h3 style={{fontSize: 20, fontWeight: '700', color: '#0F172A', margin: '0 0 8px 0'}}>Slide Bài Giảng Chương 4: Cơ Học Lượng Tử</h3>
-                  <p style={{color: '#64748B', fontSize: 14, margin: 0}}>Trang 12 / 45 • Đang trình chiếu trực tiếp bởi Thầy Hoàng</p>
+                <div style={{width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FFFFFF', backgroundImage: 'radial-gradient(#CBD5E1 1px, transparent 1px)', backgroundSize: '24px 24px'}}>
+                  <div style={{width: '80%', height: '90%', background: 'white', borderRadius: 12, border: '1px solid #CBD5E1', boxShadow: '0 8px 20px rgba(0,0,0,0.08)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32}}>
+                    <FileText size={64} color="#3B82F6" style={{marginBottom: 16}} />
+                    <h3 style={{fontSize: 20, fontWeight: '700', color: '#0F172A', margin: '0 0 8px 0'}}>Slide Bài Giảng Chương 4: Cơ Học Lượng Tử</h3>
+                    <p style={{color: '#64748B', fontSize: 14, margin: 0}}>Trang 12 / 45 • Đang trình chiếu trực tiếp bởi Thầy Hoàng</p>
+                  </div>
                 </div>
               )}
-
-              {/* Floating Drawing Toolbar */}
-              <div style={{position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: 'white', padding: '8px 16px', borderRadius: 16, boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15)', border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', gap: 12}}>
-                <button 
-                  onClick={() => setSelectedTool('pen')}
-                  style={{padding: 8, borderRadius: 8, border: 'none', background: selectedTool === 'pen' ? '#EFF6FF' : 'transparent', color: selectedTool === 'pen' ? '#2563EB' : '#64748B', cursor: 'pointer'}}
-                  title="Bút vẽ"
-                >
-                  <Pencil size={18} />
-                </button>
-                <button 
-                  onClick={() => setSelectedTool('text')}
-                  style={{padding: 8, borderRadius: 8, border: 'none', background: selectedTool === 'text' ? '#EFF6FF' : 'transparent', color: selectedTool === 'text' ? '#2563EB' : '#64748B', cursor: 'pointer'}}
-                  title="Nhập văn bản"
-                >
-                  <Type size={18} />
-                </button>
-                <button 
-                  onClick={() => setSelectedTool('shape')}
-                  style={{padding: 8, borderRadius: 8, border: 'none', background: selectedTool === 'shape' ? '#EFF6FF' : 'transparent', color: selectedTool === 'shape' ? '#2563EB' : '#64748B', cursor: 'pointer'}}
-                  title="Hình học"
-                >
-                  <Square size={18} />
-                </button>
-                <button 
-                  onClick={() => setSelectedTool('eraser')}
-                  style={{padding: 8, borderRadius: 8, border: 'none', background: selectedTool === 'eraser' ? '#EFF6FF' : 'transparent', color: selectedTool === 'eraser' ? '#2563EB' : '#64748B', cursor: 'pointer'}}
-                  title="Tẩy xóa"
-                >
-                  <Eraser size={18} />
-                </button>
-
-                <div style={{height: 20, width: 1, background: '#CBD5E1'}} />
-
-                {/* Color Palette */}
-                {['#00236F', '#10B981', '#EF4444', '#F59E0B'].map(c => (
-                  <div 
-                    key={c}
-                    onClick={() => setPenColor(c)}
-                    style={{
-                      width: 20, 
-                      height: 20, 
-                      borderRadius: '50%', 
-                      background: c, 
-                      cursor: 'pointer', 
-                      outline: penColor === c ? '2px solid #2563EB' : 'none',
-                      outlineOffset: 2
-                    }}
-                  />
-                ))}
-
-                <div style={{height: 20, width: 1, background: '#CBD5E1'}} />
-
-                <button style={{padding: 8, borderRadius: 8, border: 'none', background: 'transparent', color: '#64748B', cursor: 'pointer'}} title="Hoàn tác">
-                  <RotateCcw size={18} />
-                </button>
-                <button style={{padding: 8, borderRadius: 8, border: 'none', background: 'transparent', color: '#EF4444', cursor: 'pointer'}} title="Xóa bảng">
-                  <Trash2 size={18} />
-                </button>
-              </div>
 
             </div>
 
@@ -740,26 +697,6 @@ export function StudyRoom() {
               >
                 <Users size={16} /> Thành viên ({participants.length})
               </button>
-              <button 
-                onClick={() => setActiveRightTab('notes')}
-                style={{
-                  flex: 1, 
-                  padding: '14px 0', 
-                  border: 'none', 
-                  background: 'transparent', 
-                  color: activeRightTab === 'notes' ? '#38BDF8' : '#94A3B8', 
-                  borderBottom: activeRightTab === 'notes' ? '2px solid #38BDF8' : '2px solid transparent',
-                  fontWeight: '600', 
-                  fontSize: 13, 
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6
-                }}
-              >
-                <FileText size={16} /> Tài liệu
-              </button>
             </div>
 
             {/* TAB CONTENT: CHAT */}
@@ -768,47 +705,104 @@ export function StudyRoom() {
                 
                 {/* Messages List */}
                 <div style={{flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 16}}>
-                  {messages.map((m) => (
-                    <div key={m.id} style={{display: 'flex', gap: 10, flexDirection: m.isSelf ? 'row-reverse' : 'row'}}>
-                      <div style={{width: 32, height: 32, borderRadius: '50%', background: m.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 12, flexShrink: 0}}>
-                        {m.initial}
-                      </div>
-                      <div style={{maxWidth: '75%', display: 'flex', flexDirection: 'column', alignItems: m.isSelf ? 'flex-end' : 'flex-start'}}>
-                        <div style={{display: 'flex', gap: 6, alignItems: 'baseline', marginBottom: 4}}>
-                          <span style={{color: '#94A3B8', fontSize: 11, fontWeight: '600'}}>{m.sender}</span>
-                          <span style={{color: '#64748B', fontSize: 10}}>{m.time}</span>
-                        </div>
-                        <div style={{
-                          padding: '10px 14px', 
-                          borderRadius: m.isSelf ? '14px 2px 14px 14px' : '2px 14px 14px 14px', 
-                          background: m.isSelf ? '#2563EB' : '#334155', 
-                          color: 'white', 
-                          fontSize: 13, 
-                          lineHeight: '1.4'
-                        }}>
-                          {m.text}
-                        </div>
-                      </div>
+                  {isMessagesLoading ? (
+                    <div style={{display: 'flex', justifyContent: 'center', margin: '32px 0', color: '#94A3B8', fontSize: 13}}>
+                      Đang tải tin nhắn...
                     </div>
-                  ))}
+                  ) : messagesError ? (
+                    <div style={{margin: '16px 0', padding: '12px 14px', background: '#450A0A', border: '1px solid #7F1D1D', borderRadius: 8, color: '#FCA5A5', fontSize: 12.5}}>
+                      {messagesError.message}
+                    </div>
+                  ) : messages.length === 0 ? (
+                    <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '32px 0', color: '#94A3B8', fontSize: 13, textAlign: 'center', gap: 4}}>
+                      <div>Chưa có tin nhắn nào trong phòng học này.</div>
+                      <div>Hãy là người đầu tiên nói lời chào!</div>
+                    </div>
+                  ) : (
+                    messages.map((m) => {
+                      const display = senderDisplay(m);
+                      return (
+                        <div key={m.id} style={{display: 'flex', gap: 10, flexDirection: display.isSelf ? 'row-reverse' : 'row'}}>
+                          {display.avatarUrl ? (
+                            <img src={display.avatarUrl} alt={display.name} style={{width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flexShrink: 0}} />
+                          ) : (
+                            <div style={{width: 32, height: 32, borderRadius: '50%', background: display.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 12, flexShrink: 0}}>
+                              {display.initial}
+                            </div>
+                          )}
+                          <div style={{maxWidth: '75%', display: 'flex', flexDirection: 'column', alignItems: display.isSelf ? 'flex-end' : 'flex-start'}}>
+                            <div style={{display: 'flex', gap: 6, alignItems: 'baseline', marginBottom: 4}}>
+                              <span style={{color: '#94A3B8', fontSize: 11, fontWeight: '600'}}>{display.name}</span>
+                              <span style={{color: '#64748B', fontSize: 10}}>{formatMessageTime(m.created_at)}</span>
+                            </div>
+                            <div style={{
+                              padding: '10px 14px',
+                              borderRadius: display.isSelf ? '14px 2px 14px 14px' : '2px 14px 14px 14px',
+                              background: display.isSelf ? '#2563EB' : '#334155',
+                              color: 'white',
+                              fontSize: 13,
+                              lineHeight: '1.4',
+                              wordBreak: 'break-word'
+                            }}>
+                              {m.content && <div style={{marginBottom: m.attachment_path ? 6 : 0}}>{m.content}</div>}
+                              {m.attachment_path && <MessageAttachmentImage messageId={m.id} />}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                  <div ref={chatEndRef} />
                 </div>
 
                 {/* Chat Input */}
-                <div style={{padding: 16, background: '#0F172A', borderTop: '1px solid #334155', display: 'flex', gap: 8, alignItems: 'center'}}>
-                  <input 
-                    type="text" 
-                    placeholder="Nhập tin nhắn vào phòng học..." 
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                    style={{flex: 1, padding: '10px 14px', background: '#1E293B', border: '1px solid #334155', borderRadius: 8, outline: 'none', color: 'white', fontSize: 13}}
-                  />
-                  <button 
-                    onClick={handleSendMessage}
-                    style={{background: '#2563EB', border: 'none', color: 'white', padding: 10, borderRadius: 8, cursor: 'pointer'}}
-                  >
-                    <Send size={16} />
-                  </button>
+                <div style={{padding: 16, background: '#0F172A', borderTop: '1px solid #334155', display: 'flex', flexDirection: 'column', gap: 8}}>
+                  {(sendMessageError || imageAttachment.uploadError || imageAttachment.pickError) && (
+                    <div style={{padding: '8px 12px', background: '#450A0A', border: '1px solid #7F1D1D', borderRadius: 8, color: '#FCA5A5', fontSize: 12}}>
+                      {sendMessageError?.message || imageAttachment.uploadError?.message || imageAttachment.pickError}
+                    </div>
+                  )}
+                  {imageAttachment.previewUrl && (
+                    <SelectedImagePreview
+                      previewUrl={imageAttachment.previewUrl}
+                      onRemove={imageAttachment.clearImage}
+                      disabled={isSendingMessage || imageAttachment.isUploading}
+                    />
+                  )}
+                  <div style={{display: 'flex', gap: 8, alignItems: 'center'}}>
+                    <input
+                      type="file"
+                      accept={ALLOWED_IMAGE_ACCEPT}
+                      ref={chatImageInputRef}
+                      onChange={handleChatImageSelected}
+                      style={{display: 'none'}}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => chatImageInputRef.current?.click()}
+                      disabled={!room?.conversation_id || isSendingMessage}
+                      aria-label="Đính kèm ảnh"
+                      style={{background: '#1E293B', border: '1px solid #334155', color: '#94A3B8', padding: 10, borderRadius: 8, display: 'flex', cursor: !room?.conversation_id || isSendingMessage ? 'default' : 'pointer', opacity: !room?.conversation_id || isSendingMessage ? 0.6 : 1}}
+                    >
+                      <ImageIcon size={16} />
+                    </button>
+                    <input
+                      type="text"
+                      placeholder="Nhập tin nhắn vào phòng học..."
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                      disabled={!room?.conversation_id || isSendingMessage}
+                      style={{flex: 1, padding: '10px 14px', background: '#1E293B', border: '1px solid #334155', borderRadius: 8, outline: 'none', color: 'white', fontSize: 13, opacity: !room?.conversation_id || isSendingMessage ? 0.6 : 1}}
+                    />
+                    <button
+                      onClick={handleSendMessage}
+                      disabled={(!chatInput.trim() && !imageAttachment.hasImage) || !room?.conversation_id || isSendingMessage || imageAttachment.isUploading}
+                      style={{background: '#2563EB', border: 'none', color: 'white', padding: 10, borderRadius: 8, cursor: ((!chatInput.trim() && !imageAttachment.hasImage) || !room?.conversation_id || isSendingMessage || imageAttachment.isUploading) ? 'default' : 'pointer', opacity: ((!chatInput.trim() && !imageAttachment.hasImage) || !room?.conversation_id || isSendingMessage || imageAttachment.isUploading) ? 0.6 : 1}}
+                    >
+                      <Send size={16} />
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -879,31 +873,6 @@ export function StudyRoom() {
                   </div>
                   );
                 })}
-              </div>
-            )}
-
-            {/* TAB CONTENT: RESOURCES & NOTES */}
-            {activeRightTab === 'notes' && (
-              <div style={{flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 16}}>
-                <span style={{color: '#94A3B8', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5}}>Tài liệu phòng học</span>
-                
-                <div style={{background: '#0F172A', padding: 12, borderRadius: 10, border: '1px solid #334155', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer'}}>
-                  <FileText color="#38BDF8" size={24} />
-                  <div style={{flex: 1}}>
-                    <div style={{color: 'white', fontSize: 13, fontWeight: '600'}}>Slide_Chuong_4_Schrodinger.pdf</div>
-                    <div style={{color: '#64748B', fontSize: 11}}>3.2 MB • Thầy Hoàng đăng</div>
-                  </div>
-                  <Download size={16} color="#94A3B8" />
-                </div>
-
-                <div style={{background: '#0F172A', padding: 12, borderRadius: 10, border: '1px solid #334155', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer'}}>
-                  <FileText color="#10B981" size={24} />
-                  <div style={{flex: 1}}>
-                    <div style={{color: 'white', fontSize: 13, fontWeight: '600'}}>Ghi_chep_phong_hoc_101.docx</div>
-                    <div style={{color: '#64748B', fontSize: 11}}>2.1 MB • Đang tự động lưu</div>
-                  </div>
-                  <Download size={16} color="#94A3B8" />
-                </div>
               </div>
             )}
 

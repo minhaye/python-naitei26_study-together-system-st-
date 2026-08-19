@@ -11,6 +11,7 @@ from app.channels.routers.channel_router import router as channels_router
 from app.messages.routers.message_router import router as messages_router
 from app.study_rooms.routers.study_room_router import router as study_rooms_router
 from app.resources.routers.resource_router import router as resources_router
+from app.notes.routers.note_router import router as notes_router
 from app.forum.routers.forum_router import router as forum_router
 from app.notifications.routers.notification_router import router as notifications_router
 from app.invitations.routers.invitation_router import router as invitations_router
@@ -35,6 +36,7 @@ app.include_router(messages_router)
 app.include_router(attachments_router)
 app.include_router(study_rooms_router)
 app.include_router(resources_router)
+app.include_router(notes_router)
 app.include_router(forum_router)
 app.include_router(notifications_router)
 app.include_router(invitations_router)

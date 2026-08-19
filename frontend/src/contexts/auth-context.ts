@@ -7,6 +7,7 @@ export interface AuthProfile {
   displayName: string;
   avatarUrl: string | null;
   bio: string | null;
+  organization: string | null;
 }
 
 export interface AuthContextValue {

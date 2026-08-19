@@ -22,6 +22,11 @@ export interface StudyRoom {
    * on the type for parity with the API response, not because the UI branches on them today. */
   deleted_at: string | null;
   deleted_by: string | null;
+  /** The room's single ROOM-type Conversation, created atomically with the room
+   * (StudyRoomsService.create). Used to address GET/POST /conversations/{id}/messages --
+   * there is no /study-rooms/{id}/messages route. */
+  conversation_id: string | null;
+  whiteboard_state: Record<string, any> | null;
 }
 
 /** Mirrors StudyRoomMemberResponse. `user` is the canonical identity source -- see

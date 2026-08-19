@@ -8,26 +8,32 @@ import {
     Send,
     UserPlus,
     ChevronDown,
-    Shield,
-    Globe,
     Lock,
     LogOut,
-    Users,
     Plus,
     MoreVertical,
     Trash2,
     Ticket,
-    Download
+    Download,
+    Image as ImageIcon
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useChannelMessagesRealtime } from '../../hooks/useChannelMessagesRealtime';
+import { useMessageImageAttachment, ALLOWED_IMAGE_ACCEPT } from '../../hooks/useMessageImageAttachment';
+import { MessageAttachmentImage } from '../../components/chat/MessageAttachmentImage';
+import { SelectedImagePreview } from '../../components/chat/SelectedImagePreview';
+import { useGroupTableRealtime } from '../../hooks/useGroupTableRealtime';
 import { useGroupResources } from '../../hooks/useGroupResources';
+import { useGroupNotes } from '../../hooks/useGroupNotes';
+import { NotesStackPanel } from './NotesStackPanel';
 import { ApiError } from '../../lib/apiClient';
-import { getGroup, listGroupMembers, leaveGroup, updateGroup } from '../../lib/group.api';
+import { getGroup, listGroupMembers, leaveGroup, removeMember, updateMemberRole } from '../../lib/group.api';
 import { InviteModal } from '../../components/invitations/InviteModal';
 import { JoinByCodeModal } from '../../components/invitations/JoinByCodeModal';
-import { createChannel, deleteChannel, listChannelsByGroup } from '../../lib/channel.api';
-import { createStudyRoom, deleteStudyRoom, listStudyRoomsByGroup } from '../../lib/studyRoom.api';
+import { GroupSettingsModal } from '../../components/groups/GroupSettingsModal';
+import { GroupMembersPanel } from '../../components/groups/GroupMembersPanel';
+import { createChannel, deleteChannel, getChannel, listChannelsByGroup } from '../../lib/channel.api';
+import { createStudyRoom, deleteStudyRoom, getStudyRoom, listStudyRoomsByGroup } from '../../lib/studyRoom.api';
 import { listConversationMessages, sendConversationMessage } from '../../lib/message.api';
 import type { Group, GroupMember } from '../../lib/group.types';
 import type { Channel } from '../../lib/channel.types';
@@ -58,9 +64,12 @@ export function StudyGroupDetail() {
 
   // Group Settings & Dropdown Menu States
   const [showGroupMenu, setShowGroupMenu] = useState(false);
-  const [ownerNote, setOwnerNote] = useState('Nhắc nhở từ Thầy Hoàng: Đọc slide Bài 4 trước 15h hôm nay!');
-  const [isEditingNote, setIsEditingNote] = useState(false);
-  const [newNote, setNewNote] = useState(ownerNote);
+
+  // Group Notes: shared content maintained by the Group Owner/Moderator (real, group-scoped,
+  // persisted via backend -- see note_router.py). Displayed as a paper stack (see
+  // NotesStackPanel): exactly one Note focused/visible at a time, navigated via Previous/Next.
+  // All stack/composer/editor state lives in the hook -- this page only wires it to the panel.
+  const groupNotesController = useGroupNotes(groupId);
 
   // Real Group/Channel/Study Room domain state (replaces the previous hard-coded mock group).
   const [group, setGroup] = useState<Group | null>(null);
@@ -70,11 +79,17 @@ export function StudyGroupDetail() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<{ status: number | null; message: string } | null>(null);
 
-  // Leave-group and public/private-toggle mutation state
+  // Leave-group mutation state
   const [isLeaving, setIsLeaving] = useState(false);
   const [leaveError, setLeaveError] = useState<string | null>(null);
-  const [isTogglingPublic, setIsTogglingPublic] = useState(false);
-  const [toggleError, setToggleError] = useState<string | null>(null);
+
+  // Group Settings modal state
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+
+  // Member role-change / removal mutation state -- a single pending action at a time,
+  // mirrors the single-flag pattern used by isDeletingChannel/isDeletingRoom below.
+  const [memberActionPendingId, setMemberActionPendingId] = useState<string | null>(null);
+  const [memberActionError, setMemberActionError] = useState<string | null>(null);
 
   // Create Study Room modal state
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
@@ -150,6 +165,55 @@ export function StudyGroupDetail() {
       cancelled = true;
     };
   }, [groupId]);
+
+  // Live-syncs Channels/Study Rooms as other Group members create/rename/edit them, on top of
+  // the REST load above (see useGroupTableRealtime.ts). Both hydrate every INSERT/UPDATE via
+  // GET /channels/{id} / GET /study-rooms/{id}: `conversation_id` on both Channel and StudyRoom
+  // is a backend-computed field (a Python @property joined from the row's related Conversation,
+  // not a real `channels`/`study_rooms` column), so the raw Realtime row can never be cast
+  // directly to these types -- same reason Group Notes (useGroupNotesRealtime.ts) and messages
+  // (useChannelMessagesRealtime.ts) hydrate instead of using the raw row. INSERT/UPDATE only:
+  // both tables are soft-deleted via UPDATE, and Realtime does not reliably deliver an UPDATE
+  // that flips a row from visible to invisible under RLS -- see useGroupTableRealtime.ts's
+  // header for why that gap is deliberately not worked around here. The `deleted_at` branches
+  // below are defense in depth for the rare case such an event *does* arrive and *does*
+  // hydrate, not the primary removal path.
+  useGroupTableRealtime<Channel>('channels', group?.id ?? null, getChannel, {
+    onInsert: (channel) => {
+      if (channel.deleted_at) return;
+      setChannels((prev) => (prev.some((c) => c.id === channel.id) ? prev : [...prev, channel]));
+    },
+    onUpdate: (channel) => {
+      setChannels((prev) => {
+        if (channel.deleted_at) return prev.filter((c) => c.id !== channel.id);
+        const idx = prev.findIndex((c) => c.id === channel.id);
+        if (idx === -1) return [...prev, channel]; // e.g. newly visible: is_private flipped to false
+        const next = [...prev];
+        next[idx] = channel;
+        return next;
+      });
+      if (channel.deleted_at) {
+        setActiveChannel((prev) => (prev === channel.id ? '' : prev));
+      }
+    },
+  });
+
+  useGroupTableRealtime<StudyRoom>('study_rooms', group?.id ?? null, getStudyRoom, {
+    onInsert: (room) => {
+      if (room.deleted_at) return;
+      setStudyRooms((prev) => (prev.some((r) => r.id === room.id) ? prev : [...prev, room]));
+    },
+    onUpdate: (room) => {
+      setStudyRooms((prev) => {
+        if (room.deleted_at) return prev.filter((r) => r.id !== room.id);
+        const idx = prev.findIndex((r) => r.id === room.id);
+        if (idx === -1) return [...prev, room];
+        const next = [...prev];
+        next[idx] = room;
+        return next;
+      });
+    },
+  });
 
   const activeMembers = groupMembers.filter((m) => m.status === 'active');
   const isOwner = !!group && !!currentUserId && group.owner_id === currentUserId;
@@ -229,17 +293,49 @@ export function StudyGroupDetail() {
     }
   }
 
-  async function handleTogglePublic() {
-    if (!group || isTogglingPublic) return;
-    setIsTogglingPublic(true);
-    setToggleError(null);
+  // Owner-only; backend independently re-checks owner authority on both endpoints
+  // (group_router.update_member_role / remove_member) -- these UI gates are UX-only.
+  async function handlePromoteMember(member: GroupMember) {
+    if (!group || memberActionPendingId) return;
+    setMemberActionPendingId(member.id);
+    setMemberActionError(null);
     try {
-      const updated = await updateGroup(group.id, { is_public: !group.is_public });
-      setGroup(updated);
+      const updated = await updateMemberRole(group.id, member.user_id, 'moderator');
+      setGroupMembers((prev) => prev.map((m) => (m.id === member.id ? updated : m)));
     } catch (err) {
-      setToggleError(err instanceof ApiError ? err.message : 'Không thể đổi chế độ công khai/riêng tư.');
+      setMemberActionError(err instanceof ApiError ? err.message : 'Không thể thăng cấp thành viên.');
     } finally {
-      setIsTogglingPublic(false);
+      setMemberActionPendingId(null);
+    }
+  }
+
+  async function handleDemoteMember(member: GroupMember) {
+    if (!group || memberActionPendingId) return;
+    setMemberActionPendingId(member.id);
+    setMemberActionError(null);
+    try {
+      const updated = await updateMemberRole(group.id, member.user_id, 'member');
+      setGroupMembers((prev) => prev.map((m) => (m.id === member.id ? updated : m)));
+    } catch (err) {
+      setMemberActionError(err instanceof ApiError ? err.message : 'Không thể hạ cấp điều hành viên.');
+    } finally {
+      setMemberActionPendingId(null);
+    }
+  }
+
+  async function handleRemoveMember(member: GroupMember) {
+    if (!group || memberActionPendingId) return;
+    const display = memberDisplay(member);
+    if (!window.confirm(`Bạn có chắc muốn xóa "${display.name}" khỏi nhóm học?`)) return;
+    setMemberActionPendingId(member.id);
+    setMemberActionError(null);
+    try {
+      await removeMember(group.id, member.user_id);
+      setGroupMembers((prev) => prev.filter((m) => m.id !== member.id));
+    } catch (err) {
+      setMemberActionError(err instanceof ApiError ? err.message : 'Không thể xóa thành viên.');
+    } finally {
+      setMemberActionPendingId(null);
     }
   }
 
@@ -344,6 +440,8 @@ export function StudyGroupDetail() {
   const [messagesError, setMessagesError] = useState<string | null>(null);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [sendMessageError, setSendMessageError] = useState<string | null>(null);
+  const imageAttachment = useMessageImageAttachment();
+  const chatImageInputRef = useRef<HTMLInputElement | null>(null);
   // Tracks the channel each in-flight request belongs to, so a response for a channel the
   // user has since navigated away from is discarded instead of leaking into the new view.
   const activeChannelRef = useRef(activeChannel);
@@ -409,13 +507,16 @@ export function StudyGroupDetail() {
   const handleSendMessage = async () => {
     const trimmed = chatInput.trim();
     const conversationId = activeChannelObj?.conversation_id ?? null;
-    if (!trimmed || !conversationId || isSendingMessage) return;
+    if ((!trimmed && !imageAttachment.hasImage) || !conversationId || isSendingMessage || imageAttachment.isUploading) return;
 
     const targetChannelId = activeChannel;
     setIsSendingMessage(true);
     setSendMessageError(null);
     try {
-      const sent = await sendConversationMessage(conversationId, { content: trimmed });
+      // Upload first, create the message second -- a failed upload must never produce an
+      // orphaned/misleading message record (see useMessageImageAttachment.uploadImage).
+      const attachmentPath = imageAttachment.hasImage ? await imageAttachment.uploadImage(conversationId) : null;
+      const sent = await sendConversationMessage(conversationId, { content: trimmed || null, attachment_path: attachmentPath });
       // Only reflect it in the visible list if the user hasn't switched channels while
       // the request was in flight; the message is still persisted either way. Deduped
       // against appendMessageDeduped since Realtime may also deliver this same row.
@@ -423,11 +524,18 @@ export function StudyGroupDetail() {
         setMessages((prev) => appendMessageDeduped(prev, sent));
       }
       setChatInput('');
+      imageAttachment.clearImage();
     } catch (err) {
       setSendMessageError(err instanceof ApiError ? err.message : 'Không thể gửi tin nhắn.');
     } finally {
       setIsSendingMessage(false);
     }
+  };
+
+  const handleChatImageSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = e.target.files?.[0];
+    if (picked) imageAttachment.selectImage(picked);
+    e.target.value = '';
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -554,40 +662,17 @@ export function StudyGroupDetail() {
                                 gap: 2
                             }}
                         >
-                            <div
-                                onClick={() => { alert('Mở bảng Cài đặt nhóm học'); setShowGroupMenu(false); }}
-                                style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#1E293B', cursor: 'pointer'}}
-                                onMouseOver={e => e.currentTarget.style.background = '#F1F5F9'}
-                                onMouseOut={e => e.currentTarget.style.background = 'transparent'}
-                            >
-                                <Settings size={16} color="#475569" /> Cài đặt nhóm
-                            </div>
-
+                            {/* Group settings (name/description/visibility) are owner-only -- the backend
+                                rejects PUT /groups/{id} for anyone else (is_group_owner). */}
                             {isOwner && (
-                                <>
-                                    <div
-                                        onClick={() => { alert('Phân quyền và quản lý danh sách vai trò'); setShowGroupMenu(false); }}
-                                        style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#1E293B', cursor: 'pointer'}}
-                                        onMouseOver={e => e.currentTarget.style.background = '#F1F5F9'}
-                                        onMouseOut={e => e.currentTarget.style.background = 'transparent'}
-                                    >
-                                        <Shield size={16} color="#475569" /> Phân quyền & Vai trò
-                                    </div>
-
-                                    <div
-                                        onClick={() => {
-                                            if (isTogglingPublic) return;
-                                            setShowGroupMenu(false);
-                                            handleTogglePublic();
-                                        }}
-                                        style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: isTogglingPublic ? '#94A3B8' : '#1E293B', cursor: isTogglingPublic ? 'not-allowed' : 'pointer'}}
-                                        onMouseOver={e => !isTogglingPublic && (e.currentTarget.style.background = '#F1F5F9')}
-                                        onMouseOut={e => !isTogglingPublic && (e.currentTarget.style.background = 'transparent')}
-                                    >
-                                        {group.is_public ? <Lock size={16} color="#475569" /> : <Globe size={16} color="#475569" />}
-                                        {isTogglingPublic ? 'Đang cập nhật...' : group.is_public ? 'Chuyển sang Riêng tư' : 'Chuyển sang Công khai'}
-                                    </div>
-                                </>
+                                <div
+                                    onClick={() => { setIsSettingsModalOpen(true); setShowGroupMenu(false); }}
+                                    style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#1E293B', cursor: 'pointer'}}
+                                    onMouseOver={e => e.currentTarget.style.background = '#F1F5F9'}
+                                    onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                                >
+                                    <Settings size={16} color="#475569" /> Cài đặt nhóm
+                                </div>
                             )}
 
                             <div
@@ -617,75 +702,15 @@ export function StudyGroupDetail() {
                     )}
                 </div>
 
-                {(leaveError || toggleError) && (
+                {leaveError && (
                     <div style={{ margin: '12px 12px 0 12px', padding: '10px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, color: '#B91C1C', fontSize: 12.5 }}>
-                        {leaveError || toggleError}
+                        {leaveError}
                     </div>
                 )}
 
-                {/* Owner Note / Announcement Banner (local-only placeholder; no backend concept for this yet) */}
-                <div style={{
-                    margin: '12px 12px 4px 12px',
-                    padding: '12px 14px',
-                    background: '#F0F9FF',
-                    borderRadius: '8px',
-                    border: '1px solid #BAE6FD',
-                    borderLeft: '4px solid #0284C7',
-                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
-                }}>
-                    <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6}}>
-                        <span style={{fontSize: 11, fontWeight: '700', color: '#0369A1', textTransform: 'uppercase', letterSpacing: '0.5px'}}>
-                            Ghi chú
-                        </span>
-                        {isOwner && (
-                            <span
-                                onClick={(e) => { e.stopPropagation(); setIsEditingNote(!isEditingNote); }}
-                                style={{fontSize: 11, fontWeight: '600', color: '#0284C7', cursor: 'pointer', textDecoration: 'underline'}}
-                            >
-                                {isEditingNote ? 'Hủy' : 'Sửa'}
-                            </span>
-                        )}
-                    </div>
-                    {isEditingNote ? (
-                        <div style={{marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6}}>
-                            <textarea
-                                value={newNote}
-                                onChange={e => setNewNote(e.target.value)}
-                                style={{
-                                    padding: '6px 8px',
-                                    fontSize: 12,
-                                    borderRadius: 6,
-                                    border: '1px solid #7DD3FC',
-                                    outline: 'none',
-                                    resize: 'vertical',
-                                    minHeight: '54px',
-                                    fontFamily: 'inherit'
-                                }}
-                            />
-                            <button
-                                onClick={() => { setOwnerNote(newNote); setIsEditingNote(false); }}
-                                style={{
-                                    padding: '4px 12px',
-                                    background: '#0284C7',
-                                    color: 'white',
-                                    border: 'none',
-                                    borderRadius: 4,
-                                    fontSize: 11,
-                                    fontWeight: '600',
-                                    cursor: 'pointer',
-                                    alignSelf: 'flex-end',
-                                    transition: 'background 0.2s'
-                                }}
-                            >
-                                Lưu
-                            </button>
-                        </div>
-                    ) : (
-                        <div style={{fontSize: 12.5, color: '#0F172A', lineHeight: '1.5', fontWeight: '450'}}>
-                            {ownerNote}
-                        </div>
-                    )}
-                </div>
+                {/* Group Notes -- paper stack, one focused Note at a time (see
+                    NotesStackPanel); real, group-scoped, persisted via backend */}
+                <NotesStackPanel {...groupNotesController} isGroupManager={isGroupManager} />
 
                 {/* Scrollable Channels List */}
                 <div style={{flex: 1, overflowY: 'auto', padding: '16px 8px'}}>
@@ -1007,9 +1032,12 @@ export function StudyGroupDetail() {
                                                 <span style={{color: '#0F172A', fontSize: 15, fontWeight: '600'}}>{display.name}</span>
                                                 <span style={{color: '#94A3B8', fontSize: 12}}>{formatMessageTime(msg.created_at)}</span>
                                             </div>
-                                            <div style={{color: '#334155', fontSize: 15, lineHeight: '1.5', wordBreak: 'break-word'}}>
-                                                {msg.content ?? (msg.attachment_path ? '(tệp đính kèm)' : '')}
-                                            </div>
+                                            {msg.content && (
+                                                <div style={{color: '#334155', fontSize: 15, lineHeight: '1.5', wordBreak: 'break-word', marginBottom: msg.attachment_path ? 8 : 0}}>
+                                                    {msg.content}
+                                                </div>
+                                            )}
+                                            {msg.attachment_path && <MessageAttachmentImage messageId={msg.id} />}
                                         </div>
                                     </div>
                                 );
@@ -1020,12 +1048,35 @@ export function StudyGroupDetail() {
 
                     {/* Chat Input */}
                     <div style={{padding: '0 24px 24px 24px'}}>
-                        {sendMessageError && (
+                        {(sendMessageError || imageAttachment.uploadError || imageAttachment.pickError) && (
                             <div style={{marginBottom: 8, padding: '8px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, color: '#B91C1C', fontSize: 12.5}}>
-                                {sendMessageError}
+                                {sendMessageError || imageAttachment.uploadError?.message || imageAttachment.pickError}
                             </div>
                         )}
-                        <div style={{background: '#F1F5F9', borderRadius: 8, display: 'flex', alignItems: 'center', padding: '12px 16px', border: '1px solid #E2E8F0', transition: 'border-color 0.2s'}}>
+                        {imageAttachment.previewUrl && (
+                            <SelectedImagePreview
+                                previewUrl={imageAttachment.previewUrl}
+                                onRemove={imageAttachment.clearImage}
+                                disabled={isSendingMessage || imageAttachment.isUploading}
+                            />
+                        )}
+                        <div style={{background: '#F1F5F9', borderRadius: 8, display: 'flex', alignItems: 'center', padding: '12px 16px', border: '1px solid #E2E8F0', transition: 'border-color 0.2s', gap: 8}}>
+                            <input
+                                type="file"
+                                accept={ALLOWED_IMAGE_ACCEPT}
+                                ref={chatImageInputRef}
+                                onChange={handleChatImageSelected}
+                                style={{display: 'none'}}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => chatImageInputRef.current?.click()}
+                                disabled={!activeChannelObj?.conversation_id || isSendingMessage}
+                                style={{background: 'transparent', border: 'none', padding: 0, display: 'flex', cursor: (!activeChannelObj?.conversation_id || isSendingMessage) ? 'not-allowed' : 'pointer', opacity: (!activeChannelObj?.conversation_id || isSendingMessage) ? 0.5 : 1}}
+                                aria-label="Đính kèm ảnh"
+                            >
+                              <ImageIcon size={20} color="#64748B" />
+                            </button>
                             <input
                                 type="text"
                                 value={chatInput}
@@ -1037,8 +1088,8 @@ export function StudyGroupDetail() {
                             />
                             <button
                                 onClick={handleSendMessage}
-                                disabled={!chatInput.trim() || !activeChannelObj?.conversation_id || isSendingMessage}
-                                style={{background: 'transparent', border: 'none', padding: 0, display: 'flex', cursor: (chatInput.trim() && !isSendingMessage) ? 'pointer' : 'not-allowed', opacity: (chatInput.trim() && !isSendingMessage) ? 1 : 0.5}}
+                                disabled={(!chatInput.trim() && !imageAttachment.hasImage) || !activeChannelObj?.conversation_id || isSendingMessage || imageAttachment.isUploading}
+                                style={{background: 'transparent', border: 'none', padding: 0, display: 'flex', cursor: ((chatInput.trim() || imageAttachment.hasImage) && !isSendingMessage && !imageAttachment.isUploading) ? 'pointer' : 'not-allowed', opacity: ((chatInput.trim() || imageAttachment.hasImage) && !isSendingMessage && !imageAttachment.isUploading) ? 1 : 0.5}}
                             >
                               <Send size={20} color="#00236F" />
                             </button>
@@ -1182,87 +1233,19 @@ export function StudyGroupDetail() {
             )}
 
             {/* Right Sidebar - Members (real backend group members) */}
-            <div style={{width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', background: '#F8FAFC', borderLeft: '1px solid #E2E8F0'}}>
-
-                {/* Header */}
-                <div style={{padding: '16px 20px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white'}}>
-                    <div style={{color: '#0F172A', fontWeight: '700', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%'}}>
-                        <Users size={18} color="#00236F" /> Thành viên ({activeMembers.length})
-                    </div>
-                </div>
-
-                {/* Members List */}
-                <div style={{flex: 1, overflowY: 'auto', padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: 24}}>
-
-                    {/* Role Group: Owner */}
-                    <div>
-                        <div style={{color: '#64748B', fontSize: 11, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase', marginBottom: 12}}>Trưởng nhóm</div>
-                        <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
-                            {activeMembers.filter(m => m.role === 'owner').map((member) => {
-                                const display = memberDisplay(member);
-                                return (
-                                    <div key={member.id} style={{display: 'flex', alignItems: 'center', gap: 12, padding: '8px', borderRadius: 6, cursor: 'default'}} onMouseOver={e => e.currentTarget.style.background = '#E2E8F0'} onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
-                                        {display.avatarUrl ? (
-                                            <img src={display.avatarUrl} alt={display.name} style={{width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0}} />
-                                        ) : (
-                                            <div style={{width: 36, height: 36, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: '700', fontSize: 13}}>
-                                                {display.initials}
-                                            </div>
-                                        )}
-                                        <div style={{flex: 1}}>
-                                            <div style={{color: '#0F172A', fontSize: 14, fontWeight: '600'}}>{display.name}</div>
-                                            <div style={{color: '#64748B', fontSize: 12}}>Host</div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-
-                    {/* Role Group: Members */}
-                    <div>
-                        <div style={{color: '#64748B', fontSize: 11, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase', marginBottom: 12}}>Thành viên</div>
-                        <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
-                            {activeMembers.filter(m => m.role !== 'owner').length === 0 && (
-                                <div style={{color: '#94A3B8', fontSize: 13, padding: '8px'}}>Chưa có thành viên khác.</div>
-                            )}
-                            {activeMembers.filter(m => m.role !== 'owner').map((member) => {
-                                const display = memberDisplay(member);
-                                return (
-                                    <div key={member.id} style={{display: 'flex', alignItems: 'center', gap: 12, padding: '8px', borderRadius: 6, cursor: 'default'}} onMouseOver={e => e.currentTarget.style.background = '#E2E8F0'} onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
-                                        {display.avatarUrl ? (
-                                            <img src={display.avatarUrl} alt={display.name} style={{width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0}} />
-                                        ) : (
-                                            <div style={{width: 36, height: 36, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: '700', fontSize: 13}}>
-                                                {display.initials}
-                                            </div>
-                                        )}
-                                        <div style={{flex: 1}}>
-                                            <div style={{color: '#0F172A', fontSize: 14, fontWeight: '600'}}>{display.name}</div>
-                                            {member.role === 'moderator' && <div style={{color: '#7C3AED', fontSize: 12}}>Điều hành viên</div>}
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-
-                </div>
-
-                {/* Invite Button -- only an active group owner/moderator may create
-                    invitations (backend rule, is_group_manager on POST /invitations/); this
-                    is UX-only, the endpoint independently re-checks the same rule. */}
-                {isGroupManager && (
-                    <div style={{padding: '16px', borderTop: '1px solid #E2E8F0', background: 'white'}}>
-                        <button
-                            onClick={() => setIsInviteModalOpen(true)}
-                            style={{width: '100%', padding: '10px', background: '#00236F', color: 'white', border: 'none', borderRadius: 6, fontWeight: '600', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, cursor: 'pointer'}}
-                        >
-                            <UserPlus size={18} /> Mời thêm người
-                        </button>
-                    </div>
-                )}
-            </div>
+            <GroupMembersPanel
+                members={activeMembers}
+                currentUserId={currentUserId}
+                currentUser={currentUser}
+                isOwner={isOwner}
+                isGroupManager={isGroupManager}
+                pendingMemberId={memberActionPendingId}
+                error={memberActionError}
+                onPromote={handlePromoteMember}
+                onDemote={handleDemoteMember}
+                onRemove={handleRemoveMember}
+                onInviteClick={() => setIsInviteModalOpen(true)}
+            />
 
         </div>
 
@@ -1272,6 +1255,15 @@ export function StudyGroupDetail() {
                 onClose={() => setIsInviteModalOpen(false)}
                 target={{ groupId: group.id }}
                 targetLabel={group.name}
+            />
+        )}
+
+        {group && isOwner && (
+            <GroupSettingsModal
+                isOpen={isSettingsModalOpen}
+                onClose={() => setIsSettingsModalOpen(false)}
+                group={group}
+                onUpdated={(updated) => setGroup(updated)}
             />
         )}
 
