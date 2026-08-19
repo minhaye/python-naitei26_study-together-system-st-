@@ -115,6 +115,24 @@ describe('useMessageImageAttachment', () => {
     expect(result.current.uploadError).toBeNull();
   });
 
+  it('revokes an outstanding preview URL on unmount (e.g. navigating away with an image still selected)', () => {
+    const { result, unmount } = renderHook(() => useMessageImageAttachment());
+    act(() => {
+      result.current.selectImage(makeImageFile());
+    });
+    expect(revokeObjectURLSpy).not.toHaveBeenCalled();
+
+    unmount();
+
+    expect(revokeObjectURLSpy).toHaveBeenCalledWith('blob:mock-preview-url');
+  });
+
+  it('does not attempt to revoke on unmount when no image was ever selected', () => {
+    const { unmount } = renderHook(() => useMessageImageAttachment());
+    unmount();
+    expect(revokeObjectURLSpy).not.toHaveBeenCalled();
+  });
+
   it('uploadImage requests a signed URL, PUTs the file, and returns the storage path', async () => {
     mockedCreateUploadUrl.mockResolvedValue({
       path: 'groups/g1/channels/c1/user-1/obj/photo.png',

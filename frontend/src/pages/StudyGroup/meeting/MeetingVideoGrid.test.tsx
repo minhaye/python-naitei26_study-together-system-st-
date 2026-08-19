@@ -43,7 +43,7 @@ const members: StudyRoomMember[] = [
 ];
 
 function renderGrid(contextValue: Partial<MeetingContextValue>, unavailableReason?: string) {
-  const value: MeetingContextValue = { status: 'idle', error: null, retry: vi.fn(), connected: false, ...contextValue };
+  const value: MeetingContextValue = { status: 'idle', error: null, retry: vi.fn(), connected: false, liveKitError: null, ...contextValue };
   return render(
     <MeetingContext.Provider value={value}>
       <MeetingVideoGrid members={members} currentUserId="user-1" currentUserName="Minh Anh" unavailableReason={unavailableReason} />

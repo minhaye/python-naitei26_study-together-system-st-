@@ -185,4 +185,33 @@ describe('useChannelMessagesRealtime', () => {
 
     expect(onInsert).not.toHaveBeenCalled();
   });
+
+  it('discards a late hydration response after the component unmounts, so it cannot call back into unmounted state', async () => {
+    const { fake, trigger } = createFakeChannel();
+    mockedChannel.mockReturnValue(fake as unknown as ReturnType<typeof supabase.channel>);
+
+    let resolveGetMessage!: (message: Message) => void;
+    mockedGetMessage.mockReturnValue(
+      new Promise((resolve) => {
+        resolveGetMessage = resolve;
+      })
+    );
+    const onInsert = vi.fn();
+
+    const { unmount } = renderHook(() => useChannelMessagesRealtime('conv-1', onInsert));
+
+    act(() => {
+      trigger({ new: makeRawRow() });
+    });
+    await waitFor(() => expect(mockedGetMessage).toHaveBeenCalledTimes(1));
+
+    unmount();
+    expect(mockedRemoveChannel).toHaveBeenCalledWith(fake);
+
+    await act(async () => {
+      resolveGetMessage(makeHydratedMessage());
+    });
+
+    expect(onInsert).not.toHaveBeenCalled();
+  });
 });
