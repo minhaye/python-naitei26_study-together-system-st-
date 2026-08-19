@@ -10,6 +10,7 @@ class ProfileCreate(BaseModel):
     display_name: str | None = None
     avatar_url: str | None = None
     bio: str | None = None
+    organization: str | None = Field(default=None, max_length=120)
 
 
 class ProfileUpdate(BaseModel):
@@ -17,20 +18,11 @@ class ProfileUpdate(BaseModel):
     display_name: str | None = None
     avatar_url: str | None = None
     bio: str | None = None
+    organization: str | None = Field(default=None, max_length=120)
 
 
-class AvatarUploadUrlRequest(BaseModel):
-    content_type: str
-    file_size: int = Field(gt=0, le=5 * 1024 * 1024)
-
-    def model_post_init(self, __context: object) -> None:
-        if self.content_type not in {"image/jpeg", "image/png", "image/webp", "image/gif"}:
-            raise ValueError("Avatar must be a JPEG, PNG, WebP, or GIF image")
-
-
-class AvatarUploadUrlResponse(BaseModel):
+class AvatarConfirm(BaseModel):
     path: str
-    upload_url: str
 
 
 class ProfileResponse(BaseModel):
@@ -41,6 +33,7 @@ class ProfileResponse(BaseModel):
     display_name: str | None
     avatar_url: str | None
     bio: str | None
+    organization: str | None
     created_at: datetime
     updated_at: datetime
 

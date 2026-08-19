@@ -31,6 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         displayName: data.display_name || data.username || activeSession.user.email || 'Người dùng',
         avatarUrl: data.avatar_url,
         bio: data.bio,
+        organization: data.organization,
       };
       setProfile(nextProfile);
       return nextProfile;
