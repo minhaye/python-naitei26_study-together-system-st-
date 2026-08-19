@@ -71,10 +71,10 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
   const loadComments = useCallback(async () => {
     if (!postId) return;
     setIsLoading(true);
-    const data = await forumApi.getComments(postId);
+    const data = await forumApi.getComments(postId, currentUser?.id);
     setComments(data);
     setIsLoading(false);
-  }, [postId]);
+  }, [postId, currentUser?.id]);
 
   useEffect(() => {
     loadComments();
@@ -170,9 +170,9 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
 
       // 2. Gọi API ngầm
       if (isLiked) {
-        await forumApi.unlikeComment(commentId);
+        await forumApi.unlikeComment(commentId, currentUser?.id);
       } else {
-        await forumApi.likeComment(commentId);
+        await forumApi.likeComment(commentId, currentUser?.id);
       }
     });
   };

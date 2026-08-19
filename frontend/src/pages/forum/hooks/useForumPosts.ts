@@ -60,7 +60,7 @@ export function useForumPosts(
     if (isLoading || !hasMore) return;
     setIsLoading(true);
 
-    const newPosts = await forumApi.getPosts(categoryId, skip, PAGE_SIZE, selectedTag);
+    const newPosts = await forumApi.getPosts(categoryId, skip, PAGE_SIZE, selectedTag, currentUserId);
     const processed = applyFilterAndSearch(newPosts, filter, search, currentUserId);
 
     setPosts((prev) => [...prev, ...processed]);
@@ -86,7 +86,7 @@ export function useForumPosts(
 
     (async () => {
       setIsLoading(true);
-      const firstPage = await forumApi.getPosts(categoryId, 0, PAGE_SIZE, selectedTag);
+      const firstPage = await forumApi.getPosts(categoryId, 0, PAGE_SIZE, selectedTag, currentUserId);
       const processed = applyFilterAndSearch(firstPage, filter, search, currentUserId);
       setPosts(processed);
       setSkip(PAGE_SIZE);
