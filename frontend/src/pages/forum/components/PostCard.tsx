@@ -11,7 +11,7 @@ import type { Post, ForumPostCreate } from '../types/forum.types';
 import { CommentSection } from './CommentSection';
 import { Avatar } from '../../../components/ui/Avatar';
 import { RichContentView } from '../../../components/ui/RichContentView';
-import { extractHashtags } from '../lib/hashtagUtils';
+
 import { useForumState } from '../context/ForumStateContext';
 
 interface PostCardProps {
@@ -58,10 +58,7 @@ export const PostCard: React.FC<PostCardProps> = ({
     setLocalCommentsCount((prev) => prev + 1);
   };
 
-  // Ưu tiên hiển thị tags từ Backend DB (fallback sang Regex bóc tách client nếu cần)
-  const displayTags = (post.tags && post.tags.length > 0)
-    ? post.tags
-    : extractHashtags(post.content);
+
 
   // Bóc tách ảnh và văn bản riêng để tính độ dài chữ chuẩn kiểu Facebook (không tính chuỗi Base64 ảnh)
   const imgMatches = post.content.match(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi) || [];

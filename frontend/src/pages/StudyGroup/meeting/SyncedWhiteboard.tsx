@@ -12,6 +12,6 @@ export function SyncedWhiteboard({ roomId, initialState, isReadonly }: SyncedWhi
   const store = useWhiteboardSync(roomId, initialState, isReadonly);
 
   return (
-    <Tldraw store={store} isReadOnly={isReadonly} />
+    <Tldraw store={store} />
   );
 }

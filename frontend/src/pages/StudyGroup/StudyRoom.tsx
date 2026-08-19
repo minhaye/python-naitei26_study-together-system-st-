@@ -19,7 +19,9 @@ import {
   UserX,
   ShieldCheck,
   ShieldOff,
-  UserPlus
+  UserPlus,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useAuth } from '../../hooks/useAuth';
@@ -83,6 +85,11 @@ export function StudyRoom() {
     moderate,
     changeMemberRole,
   } = useStudyRoom(roomId);
+
+  const currentUserRole = useMemo(() => {
+    const member = members.find((m) => m.user_id === currentUserId && !m.left_at);
+    return member?.role;
+  }, [members, currentUserId]);
 
   // Room states
   const [activeMode, setActiveMode] = useState<'video' | 'whiteboard'>('video');

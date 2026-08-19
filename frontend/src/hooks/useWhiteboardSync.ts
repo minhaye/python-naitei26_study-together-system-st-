@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMaybeRoomContext } from '@livekit/components-react';
-import { createTLStore, defaultShapeUtils, getSnapshot, loadSnapshot, TLRecord, TLStore } from 'tldraw';
+import { createTLStore, defaultShapeUtils, getSnapshot, loadSnapshot } from 'tldraw';
+import type { TLRecord, TLStore } from 'tldraw';
 import { updateWhiteboardState } from '../lib/studyRoom.api';
 import { RoomEvent } from 'livekit-client';
 
@@ -72,9 +73,9 @@ export function useWhiteboardSync(roomId: string, initialState: Record<string, a
 
     const handleDataReceived = (
       payload: Uint8Array,
-      participant: any,
-      kind: any,
-      topic?: string
+      _participant: any,
+      _kind: any,
+      _topic?: string
     ) => {
       try {
         const text = new TextDecoder().decode(payload);
