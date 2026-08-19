@@ -166,6 +166,43 @@ async def test_list_groups_remains_public(async_client, monkeypatch):
     assert response.status_code == 200
 
 
+# --- My Groups: active membership, independent of is_public ---
+
+
+async def test_list_my_groups_requires_auth(async_client):
+    response = await async_client.get("/groups/mine")
+    assert response.status_code == 401
+
+
+async def test_list_my_groups_returns_active_memberships_public_and_private(
+    async_client, monkeypatch, as_fake_user
+):
+    """A Private Group must stay in "My Groups" for an active member -- is_public governs
+    discoverability, not whether an active member keeps seeing their own Group."""
+    public_group = _make_group(is_public=True)
+    private_group = _make_group(is_public=False)
+    list_mock = AsyncMock(return_value=[public_group, private_group])
+    monkeypatch.setattr(group_router.service, "list_by_member", list_mock)
+
+    response = await async_client.get("/groups/mine", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    ids = {g["id"] for g in response.json()}
+    assert ids == {str(public_group.id), str(private_group.id)}
+    assert list_mock.await_args.args[1] == as_fake_user.id
+
+
+async def test_list_my_groups_route_not_shadowed_by_group_id_route(async_client, monkeypatch, as_fake_user):
+    """"/groups/mine" must resolve to list_my_groups, not be captured by the "/{group_id}"
+    route with group_id="mine" -- route registration order matters here."""
+    get_by_id_mock = AsyncMock()
+    monkeypatch.setattr(group_router.service, "get_by_id", get_by_id_mock)
+    monkeypatch.setattr(group_router.service, "list_by_member", AsyncMock(return_value=[]))
+
+    response = await async_client.get("/groups/mine", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    get_by_id_mock.assert_not_awaited()
+
+
 # --- Update/Delete: owner-only ---
 
 

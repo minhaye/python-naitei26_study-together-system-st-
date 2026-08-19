@@ -5,6 +5,13 @@ export function getGroups(publicOnly: boolean): Promise<Group[]> {
   return apiClient.get<Group[]>(`/groups/?public_only=${publicOnly}`);
 }
 
+/** "My Groups": every Group the caller currently has an ACTIVE membership in, public or
+ * private alike -- distinct from getGroups(true), which is public *discoverability*, not
+ * membership. Requires auth; the backend derives the caller from the bearer token. */
+export function getMyGroups(): Promise<Group[]> {
+  return apiClient.get<Group[]>('/groups/mine');
+}
+
 export function getGroup(groupId: string): Promise<Group> {
   return apiClient.get<Group>(`/groups/${groupId}`);
 }

@@ -42,6 +42,20 @@ class GroupsService:
         result = await session.execute(select(Group).where(Group.is_public.is_(True)).offset(skip).limit(limit))
         return list(result.scalars().all())
 
+    async def list_by_member(self, session: AsyncSession, user_id: uuid.UUID) -> list[Group]:
+        """"My Groups": active membership, independent of `is_public`. A private Group must
+        stay listed here for its active Owner/Moderator/Member -- `is_public` only governs
+        public *discoverability*, not whether an already-active member keeps seeing their own
+        Group. Filters on `GroupMember.status == ACTIVE` so a left/removed/banned membership
+        row (status != active) drops the Group from this list even though the row itself
+        still exists."""
+        result = await session.execute(
+            select(Group)
+            .join(GroupMember, GroupMember.group_id == Group.id)
+            .where(GroupMember.user_id == user_id, GroupMember.status == MemberStatus.ACTIVE)
+        )
+        return list(result.scalars().all())
+
     async def update(self, session: AsyncSession, group: Group, data: GroupUpdate) -> Group:
         for field, value in data.model_dump(exclude_unset=True).items():
             setattr(group, field, value)

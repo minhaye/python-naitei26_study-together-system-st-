@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, get_current_user_optional
 from app.auth.dto.auth_dto import CurrentUser
-from app.core.permissions import is_group_manager
+from app.core.permissions import can_access_channel, is_group_manager
 from app.db.session import get_db_session
 from app.channels.dto.channel_dto import (
     ChannelCreate,
@@ -50,6 +50,7 @@ async def create_channel(
 @router.get("/", response_model=list[ChannelResponse])
 async def list_channels(
     group_id: uuid.UUID | None = None,
+    current_user: CurrentUser | None = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_db_session)
 ):
     if not group_id:
@@ -59,8 +60,18 @@ async def list_channels(
         )
     # Left public/unauthenticated (existing behavior, matches the already-shipped Group
     # Detail frontend which browses a public group's channel list before joining). Only
-    # membership *rosters* are gated below -- see _require_channel_member_access.
-    return await service.list_by_group(session, group_id)
+    # Private Channels are gated below, via the same `can_access_channel` helper used for
+    # direct access -- a caller who cannot access a Private Channel must not even see its
+    # metadata/name in this listing (reuses the existing authorization model rather than
+    # inventing a separate one; also covers a stale channel_members row after the caller
+    # lost active Group membership, since can_access_channel re-checks that first).
+    channels = await service.list_by_group(session, group_id)
+    if current_user is None:
+        return [channel for channel in channels if not channel.is_private]
+    return [
+        channel for channel in channels
+        if not channel.is_private or await can_access_channel(session, channel, current_user.id)
+    ]
 
 
 async def _get_active_channel_or_404(session: AsyncSession, channel_id: uuid.UUID) -> Channel:
@@ -76,8 +87,24 @@ async def _get_active_channel_or_404(session: AsyncSession, channel_id: uuid.UUI
 
 
 @router.get("/{channel_id}", response_model=ChannelResponse)
-async def get_channel(channel_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)):
-    return await _get_active_channel_or_404(session, channel_id)
+async def get_channel(
+    channel_id: uuid.UUID,
+    current_user: CurrentUser | None = Depends(get_current_user_optional),
+    session: AsyncSession = Depends(get_db_session)
+):
+    """Public channels stay open/unauthenticated (matches list_channels). Private channels
+    must not expose their metadata by direct ID lookup any more than they do through the
+    list endpoint -- gated by the same `can_access_channel` helper used there, so a stale
+    channel_members row or lost Group membership is denied the same way in both places."""
+    channel = await _get_active_channel_or_404(session, channel_id)
+    if channel.is_private:
+        if current_user is None:
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED, "Missing bearer token", headers={"WWW-Authenticate": "Bearer"}
+            )
+        if not await can_access_channel(session, channel, current_user.id):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have access to this channel")
+    return channel
 
 
 @router.put("/{channel_id}", response_model=ChannelResponse)
