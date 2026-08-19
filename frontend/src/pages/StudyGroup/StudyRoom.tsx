@@ -93,7 +93,7 @@ export function StudyRoom() {
 
   // Room states
   const [activeMode, setActiveMode] = useState<'video' | 'whiteboard'>('video');
-  const [activeRightTab, setActiveRightTab] = useState<'chat' | 'participants' | 'notes'>('chat');
+  const [activeRightTab, setActiveRightTab] = useState<'chat' | 'participants'>('chat');
   const [activeBoardTab, setActiveBoardTab] = useState<'whiteboard' | 'presentation'>('whiteboard');
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -664,26 +664,6 @@ export function StudyRoom() {
               >
                 <Users size={16} /> Thành viên ({participants.length})
               </button>
-              <button 
-                onClick={() => setActiveRightTab('notes')}
-                style={{
-                  flex: 1, 
-                  padding: '14px 0', 
-                  border: 'none', 
-                  background: 'transparent', 
-                  color: activeRightTab === 'notes' ? '#38BDF8' : '#94A3B8', 
-                  borderBottom: activeRightTab === 'notes' ? '2px solid #38BDF8' : '2px solid transparent',
-                  fontWeight: '600', 
-                  fontSize: 13, 
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6
-                }}
-              >
-                <FileText size={16} /> Tài liệu
-              </button>
             </div>
 
             {/* TAB CONTENT: CHAT */}
@@ -803,31 +783,6 @@ export function StudyRoom() {
                   </div>
                   );
                 })}
-              </div>
-            )}
-
-            {/* TAB CONTENT: RESOURCES & NOTES */}
-            {activeRightTab === 'notes' && (
-              <div style={{flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 16}}>
-                <span style={{color: '#94A3B8', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5}}>Tài liệu phòng học</span>
-                
-                <div style={{background: '#0F172A', padding: 12, borderRadius: 10, border: '1px solid #334155', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer'}}>
-                  <FileText color="#38BDF8" size={24} />
-                  <div style={{flex: 1}}>
-                    <div style={{color: 'white', fontSize: 13, fontWeight: '600'}}>Slide_Chuong_4_Schrodinger.pdf</div>
-                    <div style={{color: '#64748B', fontSize: 11}}>3.2 MB • Thầy Hoàng đăng</div>
-                  </div>
-                  <Download size={16} color="#94A3B8" />
-                </div>
-
-                <div style={{background: '#0F172A', padding: 12, borderRadius: 10, border: '1px solid #334155', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer'}}>
-                  <FileText color="#10B981" size={24} />
-                  <div style={{flex: 1}}>
-                    <div style={{color: 'white', fontSize: 13, fontWeight: '600'}}>Ghi_chep_phong_hoc_101.docx</div>
-                    <div style={{color: '#64748B', fontSize: 11}}>2.1 MB • Đang tự động lưu</div>
-                  </div>
-                  <Download size={16} color="#94A3B8" />
-                </div>
               </div>
             )}
 

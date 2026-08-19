@@ -57,6 +57,18 @@ async def list_groups(
     return await service.list_all(session, skip=skip, limit=limit)
 
 
+@router.get("/mine", response_model=list[GroupResponse])
+async def list_my_groups(
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session)
+):
+    """"My Groups": every Group the caller currently has an ACTIVE membership in, public or
+    private alike -- distinct from `public_only` discovery above, which is about
+    discoverability, not membership. Registered before `/{group_id}` so the literal path
+    "mine" is never captured as a group_id."""
+    return await service.list_by_member(session, current_user.id)
+
+
 @router.get("/{group_id}", response_model=GroupResponse)
 async def get_group(group_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)):
     group = await service.get_by_id(session, group_id)

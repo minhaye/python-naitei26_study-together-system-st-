@@ -201,6 +201,86 @@ async def test_list_channels_remains_public(async_client, monkeypatch):
     assert response.status_code == 200
 
 
+# --- Direct detail (GET /channels/{id}): Private Channel metadata must not leak, same as list ---
+
+
+async def test_get_channel_private_channel_requires_auth(async_client, monkeypatch):
+    channel = _make_channel(is_private=True)
+    monkeypatch.setattr(channel_router.service, "get_by_id", AsyncMock(return_value=channel))
+
+    response = await async_client.get(f"/channels/{channel.id}")
+    assert response.status_code == 401
+
+
+async def test_get_channel_private_channel_forbidden_for_non_member(async_client, monkeypatch, as_fake_user):
+    group_id = uuid.uuid4()
+    channel = _make_channel(group_id=group_id, is_private=True)
+    monkeypatch.setattr(channel_router.service, "get_by_id", AsyncMock(return_value=channel))
+    monkeypatch.setattr(
+        permissions.groups_service,
+        "get_member",
+        AsyncMock(return_value=_group_member(group_id, as_fake_user.id, role=GroupMemberRole.MEMBER)),
+    )
+    monkeypatch.setattr(permissions.channels_service, "get_member", AsyncMock(return_value=None))
+
+    response = await async_client.get(f"/channels/{channel.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_get_channel_private_channel_allowed_for_channel_member(async_client, monkeypatch, as_fake_user):
+    group_id = uuid.uuid4()
+    channel = _make_channel(group_id=group_id, is_private=True)
+    monkeypatch.setattr(channel_router.service, "get_by_id", AsyncMock(return_value=channel))
+    monkeypatch.setattr(
+        permissions.groups_service,
+        "get_member",
+        AsyncMock(return_value=_group_member(group_id, as_fake_user.id, role=GroupMemberRole.MEMBER)),
+    )
+    monkeypatch.setattr(
+        permissions.channels_service,
+        "get_member",
+        AsyncMock(return_value=_channel_member(channel.id, as_fake_user.id)),
+    )
+
+    response = await async_client.get(f"/channels/{channel.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    assert response.json()["id"] == str(channel.id)
+
+
+async def test_get_channel_private_channel_allowed_for_group_manager_without_explicit_row(
+    async_client, monkeypatch, as_fake_user
+):
+    group_id = uuid.uuid4()
+    channel = _make_channel(group_id=group_id, is_private=True)
+    monkeypatch.setattr(channel_router.service, "get_by_id", AsyncMock(return_value=channel))
+    monkeypatch.setattr(
+        permissions.groups_service,
+        "get_member",
+        AsyncMock(return_value=_group_member(group_id, as_fake_user.id, role=GroupMemberRole.OWNER)),
+    )
+    channel_member_mock = AsyncMock()
+    monkeypatch.setattr(permissions.channels_service, "get_member", channel_member_mock)
+
+    response = await async_client.get(f"/channels/{channel.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    channel_member_mock.assert_not_awaited()
+
+
+async def test_get_channel_private_channel_denied_after_group_membership_lost_despite_stale_channel_member_row(
+    async_client, monkeypatch, as_fake_user
+):
+    group_id = uuid.uuid4()
+    channel = _make_channel(group_id=group_id, is_private=True)
+    monkeypatch.setattr(channel_router.service, "get_by_id", AsyncMock(return_value=channel))
+    monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock(return_value=None))
+    channel_member_mock = AsyncMock(return_value=_channel_member(channel.id, as_fake_user.id))
+    monkeypatch.setattr(permissions.channels_service, "get_member", channel_member_mock)
+
+    response = await async_client.get(f"/channels/{channel.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+    channel_member_mock.assert_not_awaited()
+
+
 # --- Update/Delete: group owner or moderator, checked against the channel's *actual* group ---
 
 
@@ -437,6 +517,122 @@ async def test_update_channel_already_deleted_returns_404(async_client, monkeypa
     response = await async_client.put(f"/channels/{channel.id}", json={"name": "new"}, headers=AUTH_HEADERS)
     assert response.status_code == 404
     manager_mock.assert_not_awaited()
+
+
+# --- List: Private Channels only visible to those with existing access ---
+
+
+async def test_list_channels_hides_private_channel_from_unauthenticated(async_client, monkeypatch):
+    group_id = uuid.uuid4()
+    public_channel = _make_channel(group_id=group_id, is_private=False)
+    private_channel = _make_channel(group_id=group_id, is_private=True)
+    monkeypatch.setattr(
+        channel_router.service, "list_by_group", AsyncMock(return_value=[public_channel, private_channel])
+    )
+
+    response = await async_client.get("/channels/", params={"group_id": str(group_id)})
+    assert response.status_code == 200
+    assert [c["id"] for c in response.json()] == [str(public_channel.id)]
+
+
+async def test_list_channels_hides_private_channel_from_non_member(async_client, monkeypatch, as_fake_user):
+    group_id = uuid.uuid4()
+    private_channel = _make_channel(group_id=group_id, is_private=True)
+    monkeypatch.setattr(channel_router.service, "list_by_group", AsyncMock(return_value=[private_channel]))
+    monkeypatch.setattr(
+        permissions.groups_service,
+        "get_member",
+        AsyncMock(return_value=_group_member(group_id, as_fake_user.id, role=GroupMemberRole.MEMBER)),
+    )
+    monkeypatch.setattr(permissions.channels_service, "get_member", AsyncMock(return_value=None))
+
+    response = await async_client.get("/channels/", params={"group_id": str(group_id)}, headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+async def test_list_channels_shows_private_channel_to_channel_member(async_client, monkeypatch, as_fake_user):
+    group_id = uuid.uuid4()
+    private_channel = _make_channel(group_id=group_id, is_private=True)
+    monkeypatch.setattr(channel_router.service, "list_by_group", AsyncMock(return_value=[private_channel]))
+    monkeypatch.setattr(
+        permissions.groups_service,
+        "get_member",
+        AsyncMock(return_value=_group_member(group_id, as_fake_user.id, role=GroupMemberRole.MEMBER)),
+    )
+    monkeypatch.setattr(
+        permissions.channels_service,
+        "get_member",
+        AsyncMock(return_value=_channel_member(private_channel.id, as_fake_user.id)),
+    )
+
+    response = await async_client.get("/channels/", params={"group_id": str(group_id)}, headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    assert [c["id"] for c in response.json()] == [str(private_channel.id)]
+
+
+async def test_list_channels_shows_private_channel_to_group_manager_without_explicit_member_row(
+    async_client, monkeypatch, as_fake_user
+):
+    """A group owner/moderator sees a private channel even without their own channel_members
+    row (e.g. right after creating it) -- mirrors _require_channel_member_access's manager
+    branch."""
+    group_id = uuid.uuid4()
+    private_channel = _make_channel(group_id=group_id, is_private=True)
+    monkeypatch.setattr(channel_router.service, "list_by_group", AsyncMock(return_value=[private_channel]))
+    monkeypatch.setattr(
+        permissions.groups_service,
+        "get_member",
+        AsyncMock(return_value=_group_member(group_id, as_fake_user.id, role=GroupMemberRole.OWNER)),
+    )
+    channel_member_mock = AsyncMock()
+    monkeypatch.setattr(permissions.channels_service, "get_member", channel_member_mock)
+
+    response = await async_client.get("/channels/", params={"group_id": str(group_id)}, headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    assert [c["id"] for c in response.json()] == [str(private_channel.id)]
+    channel_member_mock.assert_not_awaited()
+
+
+async def test_list_channels_hides_private_channel_after_group_membership_lost_despite_stale_channel_member_row(
+    async_client, monkeypatch, as_fake_user
+):
+    """A stale channel_members row must not outlive the caller's Group membership --
+    can_access_channel checks is_active_group_member first and short-circuits, so this must
+    be denied even though a channel_members row for this user still exists."""
+    group_id = uuid.uuid4()
+    private_channel = _make_channel(group_id=group_id, is_private=True)
+    monkeypatch.setattr(channel_router.service, "list_by_group", AsyncMock(return_value=[private_channel]))
+    # No longer an active group member (left/removed) -- but the channel_members row is stale.
+    monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock(return_value=None))
+    channel_member_mock = AsyncMock(return_value=_channel_member(private_channel.id, as_fake_user.id))
+    monkeypatch.setattr(permissions.channels_service, "get_member", channel_member_mock)
+
+    response = await async_client.get("/channels/", params={"group_id": str(group_id)}, headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    assert response.json() == []
+    channel_member_mock.assert_not_awaited()
+
+
+async def test_list_channels_public_channel_visible_alongside_hidden_private_channel(
+    async_client, monkeypatch, as_fake_user
+):
+    group_id = uuid.uuid4()
+    public_channel = _make_channel(group_id=group_id, is_private=False)
+    private_channel = _make_channel(group_id=group_id, is_private=True)
+    monkeypatch.setattr(
+        channel_router.service, "list_by_group", AsyncMock(return_value=[public_channel, private_channel])
+    )
+    monkeypatch.setattr(
+        permissions.groups_service,
+        "get_member",
+        AsyncMock(return_value=_group_member(group_id, as_fake_user.id, role=GroupMemberRole.MEMBER)),
+    )
+    monkeypatch.setattr(permissions.channels_service, "get_member", AsyncMock(return_value=None))
+
+    response = await async_client.get("/channels/", params={"group_id": str(group_id)}, headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    assert [c["id"] for c in response.json()] == [str(public_channel.id)]
 
 
 async def test_list_channels_excludes_deleted(async_client, monkeypatch):

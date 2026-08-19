@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { ChevronDown, ChevronRight, UserPlus, Users, ArrowRight } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { getGroups, listGroupMembers, createGroup, joinGroup } from '../../lib/group.api';
+import { getGroups, getMyGroups, listGroupMembers, createGroup, joinGroup } from '../../lib/group.api';
 import { ApiError } from '../../lib/apiClient';
 import { JoinByCodeModal } from '../../components/invitations/JoinByCodeModal';
 import type { Group, GroupMember, GroupMemberRole } from '../../lib/group.types';
@@ -75,8 +75,12 @@ export function StudyRooms() {
         };
     }, []);
 
-    // Real groups from GET /groups (public_only=true), enriched with real membership
-    // from GET /groups/{id}/members so "Nhóm học của tôi" vs "Khám phá" reflects backend truth.
+    // Discovery groups from GET /groups (public_only=true) merged with "My Groups" from
+    // GET /groups/mine (active membership, public OR private -- see group.api.ts), enriched
+    // with real membership from GET /groups/{id}/members so "Nhóm học của tôi" vs "Khám phá"
+    // reflects backend truth. /groups/mine is what makes a Private Group the caller actively
+    // belongs to still show up here after it's switched to private (it used to disappear
+    // because only the public-discovery list was ever fetched).
     const [groups, setGroups] = useState<GroupWithMembership[] | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
@@ -85,9 +89,24 @@ export function StudyRooms() {
         setIsLoading(true);
         setLoadError(null);
         try {
-            const list = await getGroups(true);
+            const publicGroups = await getGroups(true);
+            let myGroups: Group[] = [];
+            if (currentUserId) {
+                try {
+                    myGroups = await getMyGroups();
+                } catch {
+                    // My Groups is supplementary to the public discovery list here; a failure
+                    // to load it shouldn't block the page -- it just means an active private
+                    // membership won't show until the next successful load.
+                }
+            }
+            const myGroupIds = new Set(myGroups.map((g) => g.id));
+            const merged = new Map<string, Group>();
+            for (const group of publicGroups) merged.set(group.id, group);
+            for (const group of myGroups) merged.set(group.id, group);
+
             const enriched = await Promise.all(
-                list.map(async (group): Promise<GroupWithMembership> => {
+                Array.from(merged.values()).map(async (group): Promise<GroupWithMembership> => {
                     let members: GroupMember[] = [];
                     try {
                         members = await listGroupMembers(group.id);
@@ -100,7 +119,7 @@ export function StudyRooms() {
                     return {
                         group,
                         activeMembersCount: activeMembers.length,
-                        isMember: !!mine,
+                        isMember: myGroupIds.has(group.id) || !!mine,
                         role: mine?.role ?? null,
                     };
                 })

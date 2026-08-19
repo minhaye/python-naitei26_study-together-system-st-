@@ -166,6 +166,43 @@ async def test_list_groups_remains_public(async_client, monkeypatch):
     assert response.status_code == 200
 
 
+# --- My Groups: active membership, independent of is_public ---
+
+
+async def test_list_my_groups_requires_auth(async_client):
+    response = await async_client.get("/groups/mine")
+    assert response.status_code == 401
+
+
+async def test_list_my_groups_returns_active_memberships_public_and_private(
+    async_client, monkeypatch, as_fake_user
+):
+    """A Private Group must stay in "My Groups" for an active member -- is_public governs
+    discoverability, not whether an active member keeps seeing their own Group."""
+    public_group = _make_group(is_public=True)
+    private_group = _make_group(is_public=False)
+    list_mock = AsyncMock(return_value=[public_group, private_group])
+    monkeypatch.setattr(group_router.service, "list_by_member", list_mock)
+
+    response = await async_client.get("/groups/mine", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    ids = {g["id"] for g in response.json()}
+    assert ids == {str(public_group.id), str(private_group.id)}
+    assert list_mock.await_args.args[1] == as_fake_user.id
+
+
+async def test_list_my_groups_route_not_shadowed_by_group_id_route(async_client, monkeypatch, as_fake_user):
+    """"/groups/mine" must resolve to list_my_groups, not be captured by the "/{group_id}"
+    route with group_id="mine" -- route registration order matters here."""
+    get_by_id_mock = AsyncMock()
+    monkeypatch.setattr(group_router.service, "get_by_id", get_by_id_mock)
+    monkeypatch.setattr(group_router.service, "list_by_member", AsyncMock(return_value=[]))
+
+    response = await async_client.get("/groups/mine", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    get_by_id_mock.assert_not_awaited()
+
+
 # --- Update/Delete: owner-only ---
 
 
@@ -212,6 +249,16 @@ async def test_update_group_not_found(async_client, monkeypatch, as_fake_user):
 
     response = await async_client.put(f"/groups/{uuid.uuid4()}", json={"name": "New"}, headers=AUTH_HEADERS)
     assert response.status_code == 404
+
+
+async def test_update_group_rejects_empty_name(async_client, monkeypatch, as_fake_user):
+    """GroupUpdate.name has min_length=1 -- an empty string must be rejected by request
+    validation before it ever reaches the owner-authority check or the service layer."""
+    group = _make_group(owner_id=as_fake_user.id)
+    monkeypatch.setattr(group_router.service, "get_by_id", AsyncMock(return_value=group))
+
+    response = await async_client.put(f"/groups/{group.id}", json={"name": ""}, headers=AUTH_HEADERS)
+    assert response.status_code == 422
 
 
 async def test_delete_group_requires_auth(async_client):
@@ -340,6 +387,29 @@ async def test_non_manager_cannot_add_another_user(async_client, monkeypatch, as
     target_id = uuid.uuid4()
     monkeypatch.setattr(group_router.service, "get_by_id", AsyncMock(return_value=group))
     monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock(return_value=None))
+
+    response = await async_client.post(
+        f"/groups/{group.id}/members", json={"user_id": str(target_id)}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 403
+
+
+async def test_inactive_moderator_cannot_add_another_user(async_client, monkeypatch, as_fake_user):
+    """is_group_manager requires status == ACTIVE -- a moderator who has left/been banned
+    must not retain manager authority just because their row's role is still 'moderator'."""
+    group = _make_group(is_public=False, owner_id=uuid.uuid4())
+    target_id = uuid.uuid4()
+    monkeypatch.setattr(group_router.service, "get_by_id", AsyncMock(return_value=group))
+    monkeypatch.setattr(group_router.service, "get_member", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        permissions.groups_service,
+        "get_member",
+        AsyncMock(
+            return_value=_group_member(
+                group.id, as_fake_user.id, role=GroupMemberRole.MODERATOR, status=MemberStatus.LEFT
+            )
+        ),
+    )
 
     response = await async_client.post(
         f"/groups/{group.id}/members", json={"user_id": str(target_id)}, headers=AUTH_HEADERS
