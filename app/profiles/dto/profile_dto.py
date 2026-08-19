@@ -19,6 +19,20 @@ class ProfileUpdate(BaseModel):
     bio: str | None = None
 
 
+class AvatarUploadUrlRequest(BaseModel):
+    content_type: str
+    file_size: int = Field(gt=0, le=5 * 1024 * 1024)
+
+    def model_post_init(self, __context: object) -> None:
+        if self.content_type not in {"image/jpeg", "image/png", "image/webp", "image/gif"}:
+            raise ValueError("Avatar must be a JPEG, PNG, WebP, or GIF image")
+
+
+class AvatarUploadUrlResponse(BaseModel):
+    path: str
+    upload_url: str
+
+
 class ProfileResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
