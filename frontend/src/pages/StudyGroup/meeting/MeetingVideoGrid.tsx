@@ -44,7 +44,7 @@ interface MeetingVideoGridProps {
 }
 
 export function MeetingVideoGrid({ members, currentUserId, currentUserName, unavailableReason }: MeetingVideoGridProps) {
-  const { status, error, retry, connected } = useMeetingContext();
+  const { status, error, retry, connected, liveKitError } = useMeetingContext();
 
   if (unavailableReason) {
     return <MeetingStatusMessage icon={<VideoOff size={32} />} title={unavailableReason} />;
@@ -61,6 +61,17 @@ export function MeetingVideoGrid({ members, currentUserId, currentUserName, unav
         title="Không thể kết nối cuộc gọi"
         subtitle={error?.message}
         action={{ label: 'Thử lại', onClick: retry }}
+      />
+    );
+  }
+
+  if (liveKitError) {
+    return (
+      <MeetingStatusMessage
+        icon={<AlertTriangle size={32} color="#F87171" />}
+        title="Không thể kết nối máy chủ video"
+        subtitle={liveKitError.message || 'Lỗi LiveKit. Vui lòng kiểm tra cấu hình hoặc kết nối mạng.'}
+        action={{ label: 'Thử lại', onClick: () => window.location.reload() }}
       />
     );
   }

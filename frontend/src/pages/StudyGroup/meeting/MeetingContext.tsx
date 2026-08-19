@@ -8,6 +8,7 @@ export interface MeetingContextValue {
   retry: () => void;
   /** True once the LiveKit room connection itself is established (after a 'ready' token). */
   connected: boolean;
+  liveKitError: Error | null;
 }
 
 export const MeetingContext = createContext<MeetingContextValue>({
@@ -15,6 +16,7 @@ export const MeetingContext = createContext<MeetingContextValue>({
   error: null,
   retry: () => {},
   connected: false,
+  liveKitError: null,
 });
 
 export const useMeetingContext = () => useContext(MeetingContext);

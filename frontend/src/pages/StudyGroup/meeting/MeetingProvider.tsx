@@ -21,17 +21,18 @@ interface MeetingProviderProps {
 export function MeetingProvider({ roomId, enabled, children }: MeetingProviderProps) {
   const { status, data, error, retry } = useMeetingToken(roomId, enabled);
   const [connected, setConnected] = useState(false);
+  const [liveKitError, setLiveKitError] = useState<Error | null>(null);
 
   if (status !== 'ready' || !data) {
     return (
-      <MeetingContext.Provider value={{ status, error, retry, connected: false }}>
+      <MeetingContext.Provider value={{ status, error, retry, connected: false, liveKitError: null }}>
         {children}
       </MeetingContext.Provider>
     );
   }
 
   return (
-    <MeetingContext.Provider value={{ status, error, retry, connected }}>
+    <MeetingContext.Provider value={{ status, error, retry, connected, liveKitError }}>
       {/* display:contents keeps LiveKitRoom's wrapper <div> out of the page's flex layout. */}
       <LiveKitRoom
         serverUrl={data.server_url}
@@ -39,9 +40,15 @@ export function MeetingProvider({ roomId, enabled, children }: MeetingProviderPr
         connect
         audio
         video
-        onConnected={() => setConnected(true)}
+        onConnected={() => {
+          setConnected(true);
+          setLiveKitError(null);
+        }}
         onDisconnected={() => setConnected(false)}
-        onError={() => setConnected(false)}
+        onError={(err) => {
+          setConnected(false);
+          setLiveKitError(err);
+        }}
         style={{ display: 'contents' }}
       >
         <RoomAudioRenderer />
