@@ -4,6 +4,7 @@ import { ApiError } from '../lib/apiClient';
 import { createNote, deleteNote, listGroupNotes, updateNote } from '../lib/note.api';
 import { NOTE_CONTENT_MAX_LENGTH, NOTE_TITLE_MAX_LENGTH } from '../lib/note.types';
 import type { Note } from '../lib/note.types';
+import { useGroupNotesRealtime } from './useGroupNotesRealtime';
 
 export interface NoteError {
   status: number | null;
@@ -56,6 +57,11 @@ export function useGroupNotes(groupId: string | undefined) {
   const createInFlight = useRef(false);
   const editInFlight = useRef<Set<string>>(new Set());
   const deleteInFlight = useRef<Set<string>>(new Set());
+  // Tracks which note the open editor belongs to, independent of `focusedNote` (which can
+  // shift to a different note the instant a remote delete removes the currently-focused one)
+  // -- lets a remote delete of the note being edited close the editor instead of leaving it
+  // open against whatever note the focus happened to land on afterward.
+  const editingNoteIdRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     if (!groupId || !isLoggedIn) {
@@ -162,10 +168,12 @@ export function useGroupNotes(groupId: string | undefined) {
     setEditingTitleState(focusedNote.title ?? '');
     setEditingContentState(focusedNote.content);
     setEditError(null);
+    editingNoteIdRef.current = focusedNote.id;
     setIsEditing(true);
   }, [focusedNote]);
 
   const cancelEdit = useCallback(() => {
+    editingNoteIdRef.current = null;
     setIsEditing(false);
     setEditError(null);
   }, []);
@@ -179,6 +187,7 @@ export function useGroupNotes(groupId: string | undefined) {
     try {
       const updated = await updateNote(noteId, { title: editingTitle.trim() || null, content: editingContent.trim() });
       setNotes((prev) => prev.map((n) => (n.id === noteId ? updated : n)));
+      editingNoteIdRef.current = null;
       setIsEditing(false);
       return updated;
     } catch (err) {
@@ -199,6 +208,10 @@ export function useGroupNotes(groupId: string | undefined) {
     try {
       await deleteNote(noteId);
       setNotes((prev) => prev.filter((n) => n.id !== noteId));
+      if (editingNoteIdRef.current === noteId) {
+        editingNoteIdRef.current = null;
+        setIsEditing(false);
+      }
     } catch (err) {
       setDeleteError(toNoteError(err));
       throw err;
@@ -207,6 +220,33 @@ export function useGroupNotes(groupId: string | undefined) {
       setPendingDeleteId(null);
     }
   }, [focusedNote]);
+
+  // Live-syncs Channels/Study Rooms' sibling sidebar section, Group Notes, as other members
+  // create/edit/delete them (see useGroupNotesRealtime.ts for the RLS/hydration/DELETE-payload
+  // rationale this relies on). Reconciles into the same `notes` state REST reads/writes use --
+  // no separate "remote notes" list -- so `sortedNotes`/`focusedIndex` above apply uniformly
+  // regardless of whether a note arrived via REST or Realtime.
+  const handleRemoteUpsert = useCallback((note: Note) => {
+    setNotes((prev) => {
+      const idx = prev.findIndex((n) => n.id === note.id);
+      if (idx === -1) return [...prev, note];
+      if (prev[idx] === note) return prev;
+      const next = [...prev];
+      next[idx] = note;
+      return next;
+    });
+  }, []);
+
+  const handleRemoteDelete = useCallback((noteId: string) => {
+    setNotes((prev) => (prev.some((n) => n.id === noteId) ? prev.filter((n) => n.id !== noteId) : prev));
+    if (editingNoteIdRef.current === noteId) {
+      editingNoteIdRef.current = null;
+      setIsEditing(false);
+      setEditError(null);
+    }
+  }, []);
+
+  useGroupNotesRealtime(groupId ?? null, { onUpsert: handleRemoteUpsert, onDelete: handleRemoteDelete });
 
   const goToPrev = useCallback(() => setFocusedIndex((i) => Math.max(0, i - 1)), []);
   const goToNext = useCallback(

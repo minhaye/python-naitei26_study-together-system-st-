@@ -205,6 +205,57 @@ async def test_list_notes_forbidden_inactive_member(async_client, monkeypatch, a
     assert response.status_code == 403
 
 
+# --- get: any active Group member can read (Realtime hydration) ---
+
+
+async def test_get_note_success_for_member(async_client, monkeypatch, as_fake_user):
+    group_id = uuid.uuid4()
+    note = _make_note(group_id, uuid.uuid4(), content="Hello")
+    monkeypatch.setattr(note_router.service, "get_by_id", AsyncMock(return_value=note))
+    _grant_group_access(monkeypatch, as_fake_user.id, role=GroupMemberRole.MEMBER, group_id=group_id)
+
+    response = await async_client.get(f"/notes/{note.id}", headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == str(note.id)
+    assert body["content"] == "Hello"
+    assert body["author"]["id"] == str(note.author_id)
+
+
+async def test_get_note_not_found(async_client, monkeypatch, as_fake_user):
+    monkeypatch.setattr(note_router.service, "get_by_id", AsyncMock(return_value=None))
+
+    response = await async_client.get(f"/notes/{uuid.uuid4()}", headers=AUTH_HEADERS)
+    assert response.status_code == 404
+
+
+async def test_get_note_forbidden_non_member(async_client, monkeypatch, as_fake_user):
+    group_id = uuid.uuid4()
+    note = _make_note(group_id, uuid.uuid4(), content="Hello")
+    monkeypatch.setattr(note_router.service, "get_by_id", AsyncMock(return_value=note))
+    _deny_group_access(monkeypatch)
+
+    response = await async_client.get(f"/notes/{note.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize("status", [MemberStatus.LEFT, MemberStatus.BANNED])
+async def test_get_note_forbidden_inactive_member(async_client, monkeypatch, as_fake_user, status):
+    group_id = uuid.uuid4()
+    note = _make_note(group_id, uuid.uuid4(), content="Hello")
+    monkeypatch.setattr(note_router.service, "get_by_id", AsyncMock(return_value=note))
+    _grant_group_access(monkeypatch, as_fake_user.id, role=GroupMemberRole.MEMBER, status=status, group_id=group_id)
+
+    response = await async_client.get(f"/notes/{note.id}", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_get_note_requires_auth(async_client):
+    response = await async_client.get(f"/notes/{uuid.uuid4()}")
+    assert response.status_code == 401
+
+
 # --- update: manager-only, independent of note authorship ---
 
 

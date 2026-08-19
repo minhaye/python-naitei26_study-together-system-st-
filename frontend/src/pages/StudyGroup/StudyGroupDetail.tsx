@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useChannelMessagesRealtime } from '../../hooks/useChannelMessagesRealtime';
+import { useGroupTableRealtime } from '../../hooks/useGroupTableRealtime';
 import { useGroupResources } from '../../hooks/useGroupResources';
 import { useGroupNotes } from '../../hooks/useGroupNotes';
 import { NotesStackPanel } from './NotesStackPanel';
@@ -27,8 +28,8 @@ import { InviteModal } from '../../components/invitations/InviteModal';
 import { JoinByCodeModal } from '../../components/invitations/JoinByCodeModal';
 import { GroupSettingsModal } from '../../components/groups/GroupSettingsModal';
 import { GroupMembersPanel } from '../../components/groups/GroupMembersPanel';
-import { createChannel, deleteChannel, listChannelsByGroup } from '../../lib/channel.api';
-import { createStudyRoom, deleteStudyRoom, listStudyRoomsByGroup } from '../../lib/studyRoom.api';
+import { createChannel, deleteChannel, getChannel, listChannelsByGroup } from '../../lib/channel.api';
+import { createStudyRoom, deleteStudyRoom, getStudyRoom, listStudyRoomsByGroup } from '../../lib/studyRoom.api';
 import { listConversationMessages, sendConversationMessage } from '../../lib/message.api';
 import type { Group, GroupMember } from '../../lib/group.types';
 import type { Channel } from '../../lib/channel.types';
@@ -160,6 +161,55 @@ export function StudyGroupDetail() {
       cancelled = true;
     };
   }, [groupId]);
+
+  // Live-syncs Channels/Study Rooms as other Group members create/rename/edit them, on top of
+  // the REST load above (see useGroupTableRealtime.ts). Both hydrate every INSERT/UPDATE via
+  // GET /channels/{id} / GET /study-rooms/{id}: `conversation_id` on both Channel and StudyRoom
+  // is a backend-computed field (a Python @property joined from the row's related Conversation,
+  // not a real `channels`/`study_rooms` column), so the raw Realtime row can never be cast
+  // directly to these types -- same reason Group Notes (useGroupNotesRealtime.ts) and messages
+  // (useChannelMessagesRealtime.ts) hydrate instead of using the raw row. INSERT/UPDATE only:
+  // both tables are soft-deleted via UPDATE, and Realtime does not reliably deliver an UPDATE
+  // that flips a row from visible to invisible under RLS -- see useGroupTableRealtime.ts's
+  // header for why that gap is deliberately not worked around here. The `deleted_at` branches
+  // below are defense in depth for the rare case such an event *does* arrive and *does*
+  // hydrate, not the primary removal path.
+  useGroupTableRealtime<Channel>('channels', group?.id ?? null, getChannel, {
+    onInsert: (channel) => {
+      if (channel.deleted_at) return;
+      setChannels((prev) => (prev.some((c) => c.id === channel.id) ? prev : [...prev, channel]));
+    },
+    onUpdate: (channel) => {
+      setChannels((prev) => {
+        if (channel.deleted_at) return prev.filter((c) => c.id !== channel.id);
+        const idx = prev.findIndex((c) => c.id === channel.id);
+        if (idx === -1) return [...prev, channel]; // e.g. newly visible: is_private flipped to false
+        const next = [...prev];
+        next[idx] = channel;
+        return next;
+      });
+      if (channel.deleted_at) {
+        setActiveChannel((prev) => (prev === channel.id ? '' : prev));
+      }
+    },
+  });
+
+  useGroupTableRealtime<StudyRoom>('study_rooms', group?.id ?? null, getStudyRoom, {
+    onInsert: (room) => {
+      if (room.deleted_at) return;
+      setStudyRooms((prev) => (prev.some((r) => r.id === room.id) ? prev : [...prev, room]));
+    },
+    onUpdate: (room) => {
+      setStudyRooms((prev) => {
+        if (room.deleted_at) return prev.filter((r) => r.id !== room.id);
+        const idx = prev.findIndex((r) => r.id === room.id);
+        if (idx === -1) return [...prev, room];
+        const next = [...prev];
+        next[idx] = room;
+        return next;
+      });
+    },
+  });
 
   const activeMembers = groupMembers.filter((m) => m.status === 'active');
   const isOwner = !!group && !!currentUserId && group.owner_id === currentUserId;
