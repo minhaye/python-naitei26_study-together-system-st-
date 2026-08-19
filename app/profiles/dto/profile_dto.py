@@ -10,6 +10,7 @@ class ProfileCreate(BaseModel):
     display_name: str | None = None
     avatar_url: str | None = None
     bio: str | None = None
+    organization: str | None = Field(default=None, max_length=120)
 
 
 class ProfileUpdate(BaseModel):
@@ -17,6 +18,11 @@ class ProfileUpdate(BaseModel):
     display_name: str | None = None
     avatar_url: str | None = None
     bio: str | None = None
+    organization: str | None = Field(default=None, max_length=120)
+
+
+class AvatarConfirm(BaseModel):
+    path: str
 
 
 class ProfileResponse(BaseModel):
@@ -27,6 +33,7 @@ class ProfileResponse(BaseModel):
     display_name: str | None
     avatar_url: str | None
     bio: str | None
+    organization: str | None
     created_at: datetime
     updated_at: datetime
 
