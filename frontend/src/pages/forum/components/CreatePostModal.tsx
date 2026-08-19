@@ -5,18 +5,19 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronDown, Check } from 'lucide-react';
+import { ChevronDown, Check, X } from 'lucide-react';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { EditTextTool } from '../../../components/ui/EditTextTool';
 import { FORUM_COLORS } from '../constants/colors';
 import { forumApi } from '../lib/forum.api';
-import type { ForumCategoryResponse } from '../types/forum.types';
+import type { ForumCategoryResponse, TagResponse } from '../types/forum.types';
+import { useCaretPosition } from '../hooks/useCaretPosition';
 
 interface CreatePostModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (payload: { category_id: string; title: string; content: string }) => Promise<void> | void;
+  onSubmit: (payload: { category_id: string; title: string; content: string }, categoryName?: string) => Promise<void> | void;
 }
 
 export const CreatePostModal: React.FC<CreatePostModalProps> = ({
@@ -28,9 +29,53 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
   const [categoryId, setCategoryId] = useState<string>('');
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [editorKey, setEditorKey] = useState(0);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
+  const [tagSuggestions, setTagSuggestions] = useState<TagResponse[]>([]);
+  const [showTagSuggestions, setShowTagSuggestions] = useState(false);
+
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const tagSuggestionsRef = useRef<HTMLDivElement>(null);
+  const editorContainerRef = useRef<HTMLDivElement>(null);
+
+  const { position: suggestionPos, updateCaretPosition } = useCaretPosition();
+
+  // Gợi ý Hashtag tự động khi gõ ký tự # (Hỗ trợ tiếng Việt Unicode)
+  useEffect(() => {
+    const cleanText = content.replace(/<[^>]*>/g, '');
+    const match = cleanText.match(/#([\w\u00C0-\u024F\u1EA0-\u1EF9]*)$/);
+    if (match) {
+      const q = match[1];
+      forumApi.searchTags(q).then((tags) => {
+        setTagSuggestions(tags);
+        if (tags.length > 0) {
+          updateCaretPosition(editorContainerRef.current);
+          setShowTagSuggestions(true);
+        } else {
+          setShowTagSuggestions(false);
+        }
+      });
+    } else {
+      setShowTagSuggestions(false);
+    }
+  }, [content, updateCaretPosition]);
+
+  const handleSelectTagSuggestion = (tagName: string) => {
+    const cleanText = content.replace(/<[^>]*>/g, '');
+    const match = cleanText.match(/#([\w\u00C0-\u024F\u1EA0-\u1EF9]*)$/);
+    if (match) {
+      const targetTag = match[0];
+      const newTagStr = `#${tagName} `;
+      const lastIdx = content.lastIndexOf(targetTag);
+      if (lastIdx !== -1) {
+        const updated = content.slice(0, lastIdx) + newTagStr + content.slice(lastIdx + targetTag.length);
+        setContent(updated);
+        setEditorKey((prev) => prev + 1);
+      }
+    }
+    setShowTagSuggestions(false);
+  };
 
   // Nạp danh sách môn học khi mở Modal
   useEffect(() => {
@@ -44,15 +89,30 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
     }
   }, [isOpen]);
 
-  // Đóng dropdown khi click ra ngoài
+  // Đóng dropdown & tag suggestions khi click ra ngoài hoặc bấm Esc
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsDropdownOpen(false);
       }
+      if (tagSuggestionsRef.current && !tagSuggestionsRef.current.contains(event.target as Node)) {
+        setShowTagSuggestions(false);
+      }
     };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowTagSuggestions(false);
+        setIsDropdownOpen(false);
+      }
+    };
+
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
   const hasContent = (html: string) => {
@@ -64,17 +124,22 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const selectedCategory = categories.find((cat) => cat.id === categoryId);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !hasContent(content) || !categoryId || isSubmitting) return;
     
     setIsSubmitting(true);
     try {
-      await onSubmit({
-        category_id: categoryId,
-        title: title.trim(),
-        content: content.trim(),
-      });
+      await onSubmit(
+        {
+          category_id: categoryId,
+          title: title.trim(),
+          content: content.trim(),
+        },
+        selectedCategory?.name
+      );
       setTitle('');
       setContent('');
       setIsDropdownOpen(false);
@@ -82,8 +147,6 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
       setIsSubmitting(false);
     }
   };
-
-  const selectedCategory = categories.find((cat) => cat.id === categoryId);
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Đặt câu hỏi mới">
@@ -207,16 +270,90 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
         </div>
 
         {/* Nội dung với Trình soạn thảo EditTextTool (TipTap) */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div ref={editorContainerRef} style={{ display: 'flex', flexDirection: 'column', gap: 6, position: 'relative' }}>
           <label style={{ fontSize: 13, fontWeight: '600', color: FORUM_COLORS.textSecondary }}>
             Nội dung chi tiết (hỗ trợ công thức Toán, bảng, ảnh & định dạng)
           </label>
           <EditTextTool
+            key={editorKey}
             content={content}
             onChange={setContent}
-            placeholder="Mô tả chi tiết câu hỏi hoặc thắc mắc của bạn..."
+            placeholder="Mô tả chi tiết câu hỏi hoặc thắc mắc của bạn... Nhập # để thêm hashtag"
             minHeight={140}
           />
+          {/* Autocomplete Hashtag Dropdown - Floating theo con trỏ chuột (Caret position) */}
+          {showTagSuggestions && tagSuggestions.length > 0 && (
+            <div
+              ref={tagSuggestionsRef}
+              style={{
+                position: 'absolute',
+                top: suggestionPos.top,
+                left: suggestionPos.left,
+                width: 280,
+                background: 'white',
+                border: '1px solid #CBD5E1',
+                borderRadius: 10,
+                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15)',
+                zIndex: 99,
+                maxHeight: 180,
+                overflowY: 'auto',
+                padding: '6px 0',
+                transition: 'top 0.1s ease, left 0.1s ease',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '6px 12px',
+                  borderBottom: '1px solid #F1F5F9',
+                }}
+              >
+                <span style={{ fontSize: 11, fontWeight: '700', color: '#94A3B8', letterSpacing: '0.05em' }}>
+                  GỢI Ý HASHTAG (#)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowTagSuggestions(false)}
+                  style={{
+                    border: 'none',
+                    background: 'transparent',
+                    cursor: 'pointer',
+                    color: '#94A3B8',
+                    padding: 2,
+                    display: 'flex',
+                    alignItems: 'center',
+                  }}
+                  title="Đóng gợi ý (Esc)"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              {tagSuggestions.map((t) => (
+                <div
+                  key={t.id}
+                  onClick={() => handleSelectTagSuggestion(t.name)}
+                  style={{
+                    padding: '8px 14px',
+                    fontSize: 13,
+                    color: '#2563EB',
+                    fontWeight: '500',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    transition: 'background 0.15s ease',
+                  }}
+                  onMouseOver={(e) => (e.currentTarget.style.background = '#EFF6FF')}
+                  onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <span>#{t.name}</span>
+                  <span style={{ fontSize: 11, color: '#94A3B8' }}>{t.post_count} bài viết</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Buttons */}

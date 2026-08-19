@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Text, UniqueConstraint, text
+from sqlalchemy import DateTime, ForeignKey, Integer, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -48,6 +48,36 @@ class ForumPost(Base):
     comments: Mapped[list["Comment"]] = relationship(back_populates="post")
     likes: Mapped[list["PostLike"]] = relationship(back_populates="post")
     notifications: Mapped[list["Notification"]] = relationship(back_populates="post")
+    post_tags: Mapped[list["PostTag"]] = relationship(back_populates="post", cascade="all, delete-orphan")
+
+
+class Tag(Base):
+    __tablename__ = "tags"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    name: Mapped[str] = mapped_column(Text, unique=True)
+    post_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
+
+    post_tags: Mapped[list["PostTag"]] = relationship(back_populates="tag", cascade="all, delete-orphan")
+
+
+class PostTag(Base):
+    __tablename__ = "post_tags"
+
+    post_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("forum_posts.id", ondelete="CASCADE"), primary_key=True
+    )
+    tag_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
+
+    post: Mapped["ForumPost"] = relationship(back_populates="post_tags")
+    tag: Mapped["Tag"] = relationship(back_populates="post_tags")
+
 
 
 class Comment(Base):

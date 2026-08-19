@@ -129,3 +129,23 @@ h1, h2, h3, h4, h5, h6, p {
   box-shadow: none !important;
 }
 
+.forum-hashtag-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  margin: 3px 2px;
+  background: #F1F5F9;
+  color: #3B82F6;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+  vertical-align: baseline;
+}
+
+.forum-hashtag-pill:hover {
+  background: #DBEAFE;
+  color: #1D4ED8;
+}
