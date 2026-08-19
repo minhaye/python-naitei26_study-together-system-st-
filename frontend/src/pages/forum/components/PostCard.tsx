@@ -6,17 +6,19 @@
 
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ThumbsUp, MessageSquare, Share2 } from 'lucide-react';
-import type { Post } from '../types/forum.types';
+import { ThumbsUp, MessageSquare, Share2, Loader2, AlertCircle, RefreshCw, Trash2 } from 'lucide-react';
+import type { Post, ForumPostCreate } from '../types/forum.types';
 import { CommentSection } from './CommentSection';
 import { Avatar } from '../../../components/ui/Avatar';
-import { Hashtag } from '../../../components/ui/Hashtag';
 import { RichContentView } from '../../../components/ui/RichContentView';
 import { extractHashtags } from '../lib/hashtagUtils';
+import { useForumState } from '../context/ForumStateContext';
 
 interface PostCardProps {
   post: Post;
   onToggleLike: (postId: string) => void;
+  onRetryPost?: (post: Post, payload: Omit<ForumPostCreate, 'author_id'>) => void;
+  onDiscardPost?: (postId: string) => void;
   defaultShowComments?: boolean;
   isDetailPage?: boolean;
 }
@@ -24,10 +26,13 @@ interface PostCardProps {
 export const PostCard: React.FC<PostCardProps> = ({
   post,
   onToggleLike,
+  onRetryPost,
+  onDiscardPost,
   defaultShowComments = false,
   isDetailPage = false,
 }) => {
   const navigate = useNavigate();
+  const { setSelectedTag } = useForumState();
   const [showComments, setShowComments] = useState(defaultShowComments);
   const [hoveredButton, setHoveredButton] = useState<'like' | 'comment' | 'share' | null>(null);
 
@@ -53,9 +58,10 @@ export const PostCard: React.FC<PostCardProps> = ({
     setLocalCommentsCount((prev) => prev + 1);
   };
 
-  // Tự động bóc tách Hashtags có trong nội dung bài viết
-  const extractedTags = extractHashtags(post.content);
-  const tags = extractedTags.length > 0 ? extractedTags : ['#Toán12', '#GiảiTích'];
+  // Ưu tiên hiển thị tags từ Backend DB (fallback sang Regex bóc tách client nếu cần)
+  const displayTags = (post.tags && post.tags.length > 0)
+    ? post.tags
+    : extractHashtags(post.content);
 
   // Bóc tách ảnh và văn bản riêng để tính độ dài chữ chuẩn kiểu Facebook (không tính chuỗi Base64 ảnh)
   const imgMatches = post.content.match(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi) || [];
@@ -93,11 +99,79 @@ export const PostCard: React.FC<PostCardProps> = ({
         background: 'white',
         borderRadius: 16,
         padding: '24px 24px 0px 24px',
-        border: '1px solid #E2E8F0',
+        border: post.status === 'error' ? '1px solid #FCA5A5' : '1px solid #E2E8F0',
         boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
         overflow: 'hidden',
+        opacity: post.status === 'sending' ? 0.75 : 1,
+        transition: 'opacity 0.3s ease, border-color 0.3s ease',
       }}
     >
+      {/* Banner Optimistic UI — Trạng thái Đang đăng */}
+      {post.status === 'sending' && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          background: '#F0F9FF',
+          color: '#0369A1',
+          fontSize: 13,
+          fontWeight: '600',
+          padding: '8px 12px',
+          borderRadius: 8,
+          marginBottom: 12,
+        }}>
+          <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+          <span>Đang đăng bài viết...</span>
+        </div>
+      )}
+      {/* Banner Optimistic UI — Trạng thái Lỗi */}
+      {post.status === 'error' && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: '#FEF2F2',
+          color: '#DC2626',
+          fontSize: 13,
+          fontWeight: '600',
+          padding: '8px 12px',
+          borderRadius: 8,
+          marginBottom: 12,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <AlertCircle size={14} />
+            <span>Không thể đăng bài. Kiểm tra kết nối và thử lại.</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {onRetryPost && (
+              <button
+                onClick={() => onRetryPost(post, { category_id: post.categoryId, title: post.title, content: post.content })}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  padding: '4px 10px', borderRadius: 6, border: 'none',
+                  background: '#DC2626', color: 'white', cursor: 'pointer',
+                  fontSize: 12, fontWeight: '600',
+                }}
+              >
+                <RefreshCw size={12} /> Thử lại
+              </button>
+            )}
+            {onDiscardPost && (
+              <button
+                onClick={() => onDiscardPost(post.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  padding: '4px 10px', borderRadius: 6, border: '1px solid #FCA5A5',
+                  background: 'transparent', color: '#DC2626', cursor: 'pointer',
+                  fontSize: 12, fontWeight: '600',
+                }}
+              >
+                <Trash2 size={12} /> Bỏ qua
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {/* Post Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
@@ -126,7 +200,10 @@ export const PostCard: React.FC<PostCardProps> = ({
 
       {/* Post Content với RichContentView (Render KaTeX Math, Ảnh & định dạng HTML đẹp mắt) */}
       <div style={{ marginBottom: 16 }}>
-        <RichContentView content={displayContent} />
+        <RichContentView
+          content={displayContent}
+          onTagClick={(t) => setSelectedTag(t.replace(/^#/, ''))}
+        />
         {isContentLong && (
           <div style={{ marginTop: 6 }}>
             <span style={{ color: '#64748B' }}>... </span>
@@ -164,13 +241,6 @@ export const PostCard: React.FC<PostCardProps> = ({
           />
         </div>
       )}
-
-      {/* Tags (Render qua component <Hashtag />) */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        {tags.map((tag) => (
-          <Hashtag key={tag} tag={tag} onClick={(t) => alert(`Lọc bài viết theo thẻ ${t}`)} />
-        ))}
-      </div>
 
       {/* Actions (Thanh Facebook Action Bar tràn viền sát đáy card) */}
       <div

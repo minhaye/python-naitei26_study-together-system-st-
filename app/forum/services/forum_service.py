@@ -1,9 +1,10 @@
+import re
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.forum.entities.forum_entity import Comment, CommentLike, ForumCategory, ForumPost, PostLike
+from app.forum.entities.forum_entity import Comment, CommentLike, ForumCategory, ForumPost, PostLike, PostTag, Tag
 from app.forum.dto.forum_dto import (
     CommentCreate,
     CommentUpdate,
@@ -15,6 +16,42 @@ from app.forum.dto.forum_dto import (
 
 
 class ForumService:
+    @staticmethod
+    def parse_hashtags(content: str) -> list[str]:
+        if not content:
+            return []
+        matches = re.findall(r'#([\w\u00C0-\u024F]+)', content)
+        return list(dict.fromkeys([m.lower() for m in matches if m.strip()]))
+
+    async def _sync_post_tags(self, session: AsyncSession, post_id: uuid.UUID, tag_names: list[str]) -> None:
+        existing_tags_res = await session.execute(select(Tag).where(Tag.name.in_(tag_names))) if tag_names else None
+        existing_tags = {t.name: t for t in existing_tags_res.scalars().all()} if existing_tags_res else {}
+
+        tag_objs: list[Tag] = []
+        for name in tag_names:
+            if name in existing_tags:
+                tag_objs.append(existing_tags[name])
+            else:
+                new_tag = Tag(name=name)
+                session.add(new_tag)
+                await session.flush()
+                tag_objs.append(new_tag)
+
+        current_pt_res = await session.execute(select(PostTag).where(PostTag.post_id == post_id))
+        current_pts = current_pt_res.scalars().all()
+        current_tag_ids = {pt.tag_id for pt in current_pts}
+        new_tag_ids = {t.id for t in tag_objs}
+
+        for pt in current_pts:
+            if pt.tag_id not in new_tag_ids:
+                await session.delete(pt)
+
+        for t in tag_objs:
+            if t.id not in current_tag_ids:
+                session.add(PostTag(post_id=post_id, tag_id=t.id))
+
+        await session.flush()
+
     # --- Categories ---
 
     async def create_category(self, session: AsyncSession, data: ForumCategoryCreate) -> ForumCategory:
@@ -48,13 +85,22 @@ class ForumService:
         post = ForumPost(**data.model_dump())
         session.add(post)
         await session.flush()
+        
+        tag_names = self.parse_hashtags(data.content)
+        await self._sync_post_tags(session, post.id, tag_names)
+        
         return post
 
     async def get_post_by_id(self, session: AsyncSession, post_id: uuid.UUID) -> ForumPost | None:
         return await session.get(ForumPost, post_id)
 
     async def list_posts_by_category(
-        self, session: AsyncSession, category_id: uuid.UUID | None, skip: int = 0, limit: int = 50
+        self,
+        session: AsyncSession,
+        category_id: uuid.UUID | None,
+        tag: str | None = None,
+        skip: int = 0,
+        limit: int = 50,
     ) -> list[ForumPost]:
         from sqlalchemy import func
         from sqlalchemy.orm import selectinload
@@ -78,11 +124,16 @@ class ForumService:
             likes_count_subq.label("likes_count")
         ).options(
             selectinload(ForumPost.category),
-            selectinload(ForumPost.author)
+            selectinload(ForumPost.author),
+            selectinload(ForumPost.post_tags).selectinload(PostTag.tag)
         ).where(ForumPost.deleted_at.is_(None))
         
         if category_id:
             stmt = stmt.where(ForumPost.category_id == category_id)
+
+        if tag:
+            clean_tag = tag.lstrip("#").lower().strip()
+            stmt = stmt.join(ForumPost.post_tags).join(PostTag.tag).where(Tag.name == clean_tag)
             
         stmt = stmt.order_by(ForumPost.created_at.desc()).offset(skip).limit(limit)
         
@@ -96,6 +147,7 @@ class ForumService:
             post.likes_count = l_count
             post.comments_count = c_count
             post.is_liked = False # Could be calculated if user_id passed
+            post.tags = [f"#{pt.tag.name}" for pt in post.post_tags if pt.tag]
             posts.append(post)
             
         return posts
@@ -104,12 +156,34 @@ class ForumService:
         for field, value in data.model_dump(exclude_unset=True).items():
             setattr(post, field, value)
         await session.flush()
+        
+        if data.content is not None:
+            tag_names = self.parse_hashtags(data.content)
+            await self._sync_post_tags(session, post.id, tag_names)
+            
         return post
 
     async def soft_delete_post(self, session: AsyncSession, post: ForumPost) -> ForumPost:
         post.deleted_at = datetime.now(timezone.utc)
+        # Clear post_tags so trigger decrements tag post_count
+        await self._sync_post_tags(session, post.id, [])
         await session.flush()
         return post
+
+    # --- Tags ---
+
+    async def get_trending_tags(self, session: AsyncSession, limit: int = 10) -> list[Tag]:
+        stmt = select(Tag).where(Tag.post_count > 0).order_by(Tag.post_count.desc(), Tag.name.asc()).limit(limit)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def search_tags(self, session: AsyncSession, query: str, limit: int = 10) -> list[Tag]:
+        clean_q = query.lstrip("#").lower().strip()
+        if not clean_q:
+            return await self.get_trending_tags(session, limit=limit)
+        stmt = select(Tag).where(Tag.name.ilike(f"%{clean_q}%")).order_by(Tag.post_count.desc(), Tag.name.asc()).limit(limit)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
 
     # --- Comments ---
 

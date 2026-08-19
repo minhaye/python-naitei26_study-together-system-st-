@@ -28,8 +28,8 @@
 --      role, bypasses RLS) is the sole reader and writer, same precedent
 --      as invitations' write side (013).
 --
--- Read docs/db/migrations/016_preflight.sql and its output BEFORE running
--- this. Read docs/db/migrations/016_verify.sql AFTER running this.
+-- Read docs/db/migrations/019_preflight.sql and its output BEFORE running
+-- this. Read docs/db/migrations/019_verify.sql AFTER running this.
 --
 -- Safety:
 --   - Single transaction. Any error aborts the whole migration -- nothing

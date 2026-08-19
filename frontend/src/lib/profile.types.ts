@@ -11,6 +11,7 @@ export interface UserSummary {
 
 export interface Profile extends UserSummary {
   bio: string | null;
+  organization: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -20,6 +21,7 @@ export interface ProfileUpdate {
   display_name?: string | null;
   avatar_url?: string | null;
   bio?: string | null;
+  organization?: string | null;
 }
 
 export interface ProfileCreate {
@@ -28,4 +30,5 @@ export interface ProfileCreate {
   display_name?: string | null;
   avatar_url?: string | null;
   bio?: string | null;
+  organization?: string | null;
 }

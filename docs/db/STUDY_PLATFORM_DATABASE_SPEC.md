@@ -2169,7 +2169,7 @@ luôn đồng bộ.
 18. conversations              -- migration 004, đã live — xem § 12; 2 cột direct_user_min_id/max_id thêm bởi migration 006 — xem § 14
 19. conversation_members       -- migration 004, đã live — xem § 12
 20. invitations                -- migration 013, đã chạy live và verify thành công 2026-08-18 — xem docs/invitations.md
-21. group_notes                -- migration 016, đã chạy live và verify thành công 2026-08-19 — Ghi chú dùng chung theo Group (không theo Study Room), quyền đọc cho mọi active member, quyền tạo/sửa/xóa chỉ Owner/Moderator — xem docs/db/migrations/README.md
+21. group_notes                -- migration 019 (đánh số lại từ 016 khi merge origin/master vào feat/notes-persistence, do origin/master đã dùng 016-018 cho forum-hashtag/profile), đã chạy live và verify thành công 2026-08-19 — Ghi chú dùng chung theo Group (không theo Study Room), quyền đọc cho mọi active member, quyền tạo/sửa/xóa chỉ Owner/Moderator — xem docs/db/migrations/README.md
 ```
 
 Tổng cộng:
