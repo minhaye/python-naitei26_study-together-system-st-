@@ -101,29 +101,46 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
 
   const handleToggleLike = (postId: string) => {
     requireAuth(async () => {
-      const current = await forumApi.getPosts(null, 0, 9999)
-        .then((all) => all.find((p) => p.id === postId));
-      const isCurrentlyLiked = current?.isLiked ?? false;
+      let isCurrentlyLiked = false;
 
-      if (isCurrentlyLiked) {
-        await forumApi.unlikePost(postId, currentUser.id);
-      } else {
-        await forumApi.likePost(postId, currentUser.id);
-      }
+      // 1. Cập nhật UI ngay lập tức (Optimistic UI - 0ms)
+      setPosts((prev) => {
+        const target = prev.find((p) => p.id === postId);
+        if (!target) return prev;
+        isCurrentlyLiked = target.isLiked;
+        const nextLiked = !isCurrentlyLiked;
+        const nextCount = nextLiked ? target.likesCount + 1 : Math.max(0, target.likesCount - 1);
 
-      setPosts((prev) =>
-        prev.map((p) =>
+        return prev.map((p) =>
           p.id === postId
-            ? {
-                ...p,
-                isLiked: !isCurrentlyLiked,
-                likesCount: isCurrentlyLiked ? Math.max(0, p.likesCount - 1) : p.likesCount + 1,
-              }
+            ? { ...p, isLiked: nextLiked, likesCount: nextCount }
             : p
-        )
-      );
+        );
+      });
 
-      window.dispatchEvent(new CustomEvent('post_liked_toggled'));
+      // 2. Gửi API song song lên backend ở background
+      try {
+        if (isCurrentlyLiked) {
+          await forumApi.unlikePost(postId, currentUser.id);
+        } else {
+          await forumApi.likePost(postId, currentUser.id);
+        }
+        window.dispatchEvent(new CustomEvent('post_liked_toggled'));
+      } catch (error) {
+        console.error('Failed to toggle like', error);
+        // 3. Rollback UI nếu API gặp sự cố
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === postId
+              ? {
+                  ...p,
+                  isLiked: isCurrentlyLiked,
+                  likesCount: isCurrentlyLiked ? p.likesCount + 1 : Math.max(0, p.likesCount - 1),
+                }
+              : p
+          )
+        );
+      }
     });
   };
 
