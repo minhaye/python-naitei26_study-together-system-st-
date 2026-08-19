@@ -8,11 +8,8 @@ import {
     Send,
     UserPlus,
     ChevronDown,
-    Shield,
-    Globe,
     Lock,
     LogOut,
-    Users,
     Plus,
     MoreVertical,
     Trash2,
@@ -23,9 +20,11 @@ import { useAuth } from '../../hooks/useAuth';
 import { useChannelMessagesRealtime } from '../../hooks/useChannelMessagesRealtime';
 import { useGroupResources } from '../../hooks/useGroupResources';
 import { ApiError } from '../../lib/apiClient';
-import { getGroup, listGroupMembers, leaveGroup, updateGroup } from '../../lib/group.api';
+import { getGroup, listGroupMembers, leaveGroup, removeMember, updateMemberRole } from '../../lib/group.api';
 import { InviteModal } from '../../components/invitations/InviteModal';
 import { JoinByCodeModal } from '../../components/invitations/JoinByCodeModal';
+import { GroupSettingsModal } from '../../components/groups/GroupSettingsModal';
+import { GroupMembersPanel } from '../../components/groups/GroupMembersPanel';
 import { createChannel, deleteChannel, listChannelsByGroup } from '../../lib/channel.api';
 import { createStudyRoom, deleteStudyRoom, listStudyRoomsByGroup } from '../../lib/studyRoom.api';
 import { listConversationMessages, sendConversationMessage } from '../../lib/message.api';
@@ -70,11 +69,17 @@ export function StudyGroupDetail() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<{ status: number | null; message: string } | null>(null);
 
-  // Leave-group and public/private-toggle mutation state
+  // Leave-group mutation state
   const [isLeaving, setIsLeaving] = useState(false);
   const [leaveError, setLeaveError] = useState<string | null>(null);
-  const [isTogglingPublic, setIsTogglingPublic] = useState(false);
-  const [toggleError, setToggleError] = useState<string | null>(null);
+
+  // Group Settings modal state
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+
+  // Member role-change / removal mutation state -- a single pending action at a time,
+  // mirrors the single-flag pattern used by isDeletingChannel/isDeletingRoom below.
+  const [memberActionPendingId, setMemberActionPendingId] = useState<string | null>(null);
+  const [memberActionError, setMemberActionError] = useState<string | null>(null);
 
   // Create Study Room modal state
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
@@ -229,17 +234,49 @@ export function StudyGroupDetail() {
     }
   }
 
-  async function handleTogglePublic() {
-    if (!group || isTogglingPublic) return;
-    setIsTogglingPublic(true);
-    setToggleError(null);
+  // Owner-only; backend independently re-checks owner authority on both endpoints
+  // (group_router.update_member_role / remove_member) -- these UI gates are UX-only.
+  async function handlePromoteMember(member: GroupMember) {
+    if (!group || memberActionPendingId) return;
+    setMemberActionPendingId(member.id);
+    setMemberActionError(null);
     try {
-      const updated = await updateGroup(group.id, { is_public: !group.is_public });
-      setGroup(updated);
+      const updated = await updateMemberRole(group.id, member.user_id, 'moderator');
+      setGroupMembers((prev) => prev.map((m) => (m.id === member.id ? updated : m)));
     } catch (err) {
-      setToggleError(err instanceof ApiError ? err.message : 'Không thể đổi chế độ công khai/riêng tư.');
+      setMemberActionError(err instanceof ApiError ? err.message : 'Không thể thăng cấp thành viên.');
     } finally {
-      setIsTogglingPublic(false);
+      setMemberActionPendingId(null);
+    }
+  }
+
+  async function handleDemoteMember(member: GroupMember) {
+    if (!group || memberActionPendingId) return;
+    setMemberActionPendingId(member.id);
+    setMemberActionError(null);
+    try {
+      const updated = await updateMemberRole(group.id, member.user_id, 'member');
+      setGroupMembers((prev) => prev.map((m) => (m.id === member.id ? updated : m)));
+    } catch (err) {
+      setMemberActionError(err instanceof ApiError ? err.message : 'Không thể hạ cấp điều hành viên.');
+    } finally {
+      setMemberActionPendingId(null);
+    }
+  }
+
+  async function handleRemoveMember(member: GroupMember) {
+    if (!group || memberActionPendingId) return;
+    const display = memberDisplay(member);
+    if (!window.confirm(`Bạn có chắc muốn xóa "${display.name}" khỏi nhóm học?`)) return;
+    setMemberActionPendingId(member.id);
+    setMemberActionError(null);
+    try {
+      await removeMember(group.id, member.user_id);
+      setGroupMembers((prev) => prev.filter((m) => m.id !== member.id));
+    } catch (err) {
+      setMemberActionError(err instanceof ApiError ? err.message : 'Không thể xóa thành viên.');
+    } finally {
+      setMemberActionPendingId(null);
     }
   }
 
@@ -554,40 +591,17 @@ export function StudyGroupDetail() {
                                 gap: 2
                             }}
                         >
-                            <div
-                                onClick={() => { alert('Mở bảng Cài đặt nhóm học'); setShowGroupMenu(false); }}
-                                style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#1E293B', cursor: 'pointer'}}
-                                onMouseOver={e => e.currentTarget.style.background = '#F1F5F9'}
-                                onMouseOut={e => e.currentTarget.style.background = 'transparent'}
-                            >
-                                <Settings size={16} color="#475569" /> Cài đặt nhóm
-                            </div>
-
+                            {/* Group settings (name/description/visibility) are owner-only -- the backend
+                                rejects PUT /groups/{id} for anyone else (is_group_owner). */}
                             {isOwner && (
-                                <>
-                                    <div
-                                        onClick={() => { alert('Phân quyền và quản lý danh sách vai trò'); setShowGroupMenu(false); }}
-                                        style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#1E293B', cursor: 'pointer'}}
-                                        onMouseOver={e => e.currentTarget.style.background = '#F1F5F9'}
-                                        onMouseOut={e => e.currentTarget.style.background = 'transparent'}
-                                    >
-                                        <Shield size={16} color="#475569" /> Phân quyền & Vai trò
-                                    </div>
-
-                                    <div
-                                        onClick={() => {
-                                            if (isTogglingPublic) return;
-                                            setShowGroupMenu(false);
-                                            handleTogglePublic();
-                                        }}
-                                        style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: isTogglingPublic ? '#94A3B8' : '#1E293B', cursor: isTogglingPublic ? 'not-allowed' : 'pointer'}}
-                                        onMouseOver={e => !isTogglingPublic && (e.currentTarget.style.background = '#F1F5F9')}
-                                        onMouseOut={e => !isTogglingPublic && (e.currentTarget.style.background = 'transparent')}
-                                    >
-                                        {group.is_public ? <Lock size={16} color="#475569" /> : <Globe size={16} color="#475569" />}
-                                        {isTogglingPublic ? 'Đang cập nhật...' : group.is_public ? 'Chuyển sang Riêng tư' : 'Chuyển sang Công khai'}
-                                    </div>
-                                </>
+                                <div
+                                    onClick={() => { setIsSettingsModalOpen(true); setShowGroupMenu(false); }}
+                                    style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#1E293B', cursor: 'pointer'}}
+                                    onMouseOver={e => e.currentTarget.style.background = '#F1F5F9'}
+                                    onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                                >
+                                    <Settings size={16} color="#475569" /> Cài đặt nhóm
+                                </div>
                             )}
 
                             <div
@@ -617,9 +631,9 @@ export function StudyGroupDetail() {
                     )}
                 </div>
 
-                {(leaveError || toggleError) && (
+                {leaveError && (
                     <div style={{ margin: '12px 12px 0 12px', padding: '10px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, color: '#B91C1C', fontSize: 12.5 }}>
-                        {leaveError || toggleError}
+                        {leaveError}
                     </div>
                 )}
 
@@ -1182,87 +1196,19 @@ export function StudyGroupDetail() {
             )}
 
             {/* Right Sidebar - Members (real backend group members) */}
-            <div style={{width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', background: '#F8FAFC', borderLeft: '1px solid #E2E8F0'}}>
-
-                {/* Header */}
-                <div style={{padding: '16px 20px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white'}}>
-                    <div style={{color: '#0F172A', fontWeight: '700', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%'}}>
-                        <Users size={18} color="#00236F" /> Thành viên ({activeMembers.length})
-                    </div>
-                </div>
-
-                {/* Members List */}
-                <div style={{flex: 1, overflowY: 'auto', padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: 24}}>
-
-                    {/* Role Group: Owner */}
-                    <div>
-                        <div style={{color: '#64748B', fontSize: 11, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase', marginBottom: 12}}>Trưởng nhóm</div>
-                        <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
-                            {activeMembers.filter(m => m.role === 'owner').map((member) => {
-                                const display = memberDisplay(member);
-                                return (
-                                    <div key={member.id} style={{display: 'flex', alignItems: 'center', gap: 12, padding: '8px', borderRadius: 6, cursor: 'default'}} onMouseOver={e => e.currentTarget.style.background = '#E2E8F0'} onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
-                                        {display.avatarUrl ? (
-                                            <img src={display.avatarUrl} alt={display.name} style={{width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0}} />
-                                        ) : (
-                                            <div style={{width: 36, height: 36, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: '700', fontSize: 13}}>
-                                                {display.initials}
-                                            </div>
-                                        )}
-                                        <div style={{flex: 1}}>
-                                            <div style={{color: '#0F172A', fontSize: 14, fontWeight: '600'}}>{display.name}</div>
-                                            <div style={{color: '#64748B', fontSize: 12}}>Host</div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-
-                    {/* Role Group: Members */}
-                    <div>
-                        <div style={{color: '#64748B', fontSize: 11, fontFamily: 'Inter', fontWeight: '700', textTransform: 'uppercase', marginBottom: 12}}>Thành viên</div>
-                        <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
-                            {activeMembers.filter(m => m.role !== 'owner').length === 0 && (
-                                <div style={{color: '#94A3B8', fontSize: 13, padding: '8px'}}>Chưa có thành viên khác.</div>
-                            )}
-                            {activeMembers.filter(m => m.role !== 'owner').map((member) => {
-                                const display = memberDisplay(member);
-                                return (
-                                    <div key={member.id} style={{display: 'flex', alignItems: 'center', gap: 12, padding: '8px', borderRadius: 6, cursor: 'default'}} onMouseOver={e => e.currentTarget.style.background = '#E2E8F0'} onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
-                                        {display.avatarUrl ? (
-                                            <img src={display.avatarUrl} alt={display.name} style={{width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0}} />
-                                        ) : (
-                                            <div style={{width: 36, height: 36, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: '700', fontSize: 13}}>
-                                                {display.initials}
-                                            </div>
-                                        )}
-                                        <div style={{flex: 1}}>
-                                            <div style={{color: '#0F172A', fontSize: 14, fontWeight: '600'}}>{display.name}</div>
-                                            {member.role === 'moderator' && <div style={{color: '#7C3AED', fontSize: 12}}>Điều hành viên</div>}
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-
-                </div>
-
-                {/* Invite Button -- only an active group owner/moderator may create
-                    invitations (backend rule, is_group_manager on POST /invitations/); this
-                    is UX-only, the endpoint independently re-checks the same rule. */}
-                {isGroupManager && (
-                    <div style={{padding: '16px', borderTop: '1px solid #E2E8F0', background: 'white'}}>
-                        <button
-                            onClick={() => setIsInviteModalOpen(true)}
-                            style={{width: '100%', padding: '10px', background: '#00236F', color: 'white', border: 'none', borderRadius: 6, fontWeight: '600', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, cursor: 'pointer'}}
-                        >
-                            <UserPlus size={18} /> Mời thêm người
-                        </button>
-                    </div>
-                )}
-            </div>
+            <GroupMembersPanel
+                members={activeMembers}
+                currentUserId={currentUserId}
+                currentUser={currentUser}
+                isOwner={isOwner}
+                isGroupManager={isGroupManager}
+                pendingMemberId={memberActionPendingId}
+                error={memberActionError}
+                onPromote={handlePromoteMember}
+                onDemote={handleDemoteMember}
+                onRemove={handleRemoveMember}
+                onInviteClick={() => setIsInviteModalOpen(true)}
+            />
 
         </div>
 
@@ -1272,6 +1218,15 @@ export function StudyGroupDetail() {
                 onClose={() => setIsInviteModalOpen(false)}
                 target={{ groupId: group.id }}
                 targetLabel={group.name}
+            />
+        )}
+
+        {group && isOwner && (
+            <GroupSettingsModal
+                isOpen={isSettingsModalOpen}
+                onClose={() => setIsSettingsModalOpen(false)}
+                group={group}
+                onUpdated={(updated) => setGroup(updated)}
             />
         )}
 

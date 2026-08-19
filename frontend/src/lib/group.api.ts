@@ -1,5 +1,5 @@
 import { apiClient } from './apiClient';
-import type { Group, GroupCreate, GroupMember, GroupMemberCreate, GroupUpdate } from './group.types';
+import type { Group, GroupCreate, GroupMember, GroupMemberCreate, GroupMemberRole, GroupUpdate } from './group.types';
 
 export function getGroups(publicOnly: boolean): Promise<Group[]> {
   return apiClient.get<Group[]>(`/groups/?public_only=${publicOnly}`);
@@ -33,4 +33,16 @@ export function joinGroup(groupId: string): Promise<GroupMember> {
 /** Self-leave: the caller's own membership status becomes `left`. Cannot affect another member. */
 export function leaveGroup(groupId: string, userId: string): Promise<GroupMember> {
   return apiClient.put<GroupMember>(`/groups/${groupId}/members/${userId}/status?member_status=left`);
+}
+
+/** Owner-only; promotes/demotes a member between `member` and `moderator`. The backend
+ * rejects `role=owner` and rejects changing the owner's own row -- see group_router.update_member_role. */
+export function updateMemberRole(groupId: string, userId: string, role: GroupMemberRole): Promise<GroupMember> {
+  return apiClient.put<GroupMember>(`/groups/${groupId}/members/${userId}/role?role=${role}`);
+}
+
+/** Owner-only hard removal ("kick"); backend rejects this for the caller's own row (self-leave
+ * must go through leaveGroup instead) -- see group_router.remove_member. */
+export function removeMember(groupId: string, userId: string): Promise<void> {
+  return apiClient.delete<void>(`/groups/${groupId}/members/${userId}`);
 }
