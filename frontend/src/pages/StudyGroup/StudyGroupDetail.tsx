@@ -22,6 +22,7 @@ import { useChannelMessagesRealtime } from '../../hooks/useChannelMessagesRealti
 import { useMessageImageAttachment, ALLOWED_IMAGE_ACCEPT } from '../../hooks/useMessageImageAttachment';
 import { MessageAttachmentImage } from '../../components/chat/MessageAttachmentImage';
 import { SelectedImagePreview } from '../../components/chat/SelectedImagePreview';
+import { ErrorBoundary } from '../../components/ui/ErrorBoundary';
 import { useGroupTableRealtime } from '../../hooks/useGroupTableRealtime';
 import { useGroupResources } from '../../hooks/useGroupResources';
 import { useGroupNotes } from '../../hooks/useGroupNotes';
@@ -1016,32 +1017,44 @@ export function StudyGroupDetail() {
                                 <div style={{fontSize: 14}}>Đây là sự khởi đầu của kênh #{activeChannelObj.name}.</div>
                             </div>
                         ) : (
-                            messages.map((msg) => {
-                                const display = senderDisplay(msg);
-                                return (
-                                    <div key={msg.id} style={{display: 'flex', gap: 16}}>
-                                        {display.avatarUrl ? (
-                                            <img src={display.avatarUrl} alt={display.name} style={{width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', flexShrink: 0}} />
-                                        ) : (
-                                            <div style={{width: 40, height: 40, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flexShrink: 0}}>
-                                                {display.initials}
-                                            </div>
-                                        )}
-                                        <div>
-                                            <div style={{display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4}}>
-                                                <span style={{color: '#0F172A', fontSize: 15, fontWeight: '600'}}>{display.name}</span>
-                                                <span style={{color: '#94A3B8', fontSize: 12}}>{formatMessageTime(msg.created_at)}</span>
-                                            </div>
-                                            {msg.content && (
-                                                <div style={{color: '#334155', fontSize: 15, lineHeight: '1.5', wordBreak: 'break-word', marginBottom: msg.attachment_path ? 8 : 0}}>
-                                                    {msg.content}
+                            // Keyed by channel so a crash here (and the boundary it trips) resets
+                            // on channel change instead of showing the fallback forever -- see
+                            // ErrorBoundary.tsx.
+                            <ErrorBoundary
+                                key={activeChannelObj.conversation_id ?? activeChannel}
+                                fallback={
+                                    <div style={{margin: '16px 0', padding: '12px 16px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, color: '#B91C1C', fontSize: 13.5}}>
+                                        Không thể hiển thị tin nhắn trong kênh này.
+                                    </div>
+                                }
+                            >
+                                {messages.map((msg) => {
+                                    const display = senderDisplay(msg);
+                                    return (
+                                        <div key={msg.id} style={{display: 'flex', gap: 16}}>
+                                            {display.avatarUrl ? (
+                                                <img src={display.avatarUrl} alt={display.name} style={{width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', flexShrink: 0}} />
+                                            ) : (
+                                                <div style={{width: 40, height: 40, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flexShrink: 0}}>
+                                                    {display.initials}
                                                 </div>
                                             )}
-                                            {msg.attachment_path && <MessageAttachmentImage messageId={msg.id} />}
+                                            <div>
+                                                <div style={{display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4}}>
+                                                    <span style={{color: '#0F172A', fontSize: 15, fontWeight: '600'}}>{display.name}</span>
+                                                    <span style={{color: '#94A3B8', fontSize: 12}}>{formatMessageTime(msg.created_at)}</span>
+                                                </div>
+                                                {msg.content && (
+                                                    <div style={{color: '#334155', fontSize: 15, lineHeight: '1.5', wordBreak: 'break-word', marginBottom: msg.attachment_path ? 8 : 0}}>
+                                                        {msg.content}
+                                                    </div>
+                                                )}
+                                                {msg.attachment_path && <MessageAttachmentImage messageId={msg.id} />}
+                                            </div>
                                         </div>
-                                    </div>
-                                );
-                            })
+                                    );
+                                })}
+                            </ErrorBoundary>
                         )}
                         <div ref={chatEndRef} />
                     </div>

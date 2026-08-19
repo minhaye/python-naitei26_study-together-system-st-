@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../lib/apiClient';
 import { createMessageAttachmentUploadUrl, uploadMessageAttachmentFile } from '../lib/attachment.api';
 
@@ -59,6 +59,15 @@ export function useMessageImageAttachment() {
     previewUrlRef.current = url;
     setPreviewUrl(url);
     setFile(picked);
+  }, []);
+
+  // Revokes whatever preview blob URL is still outstanding when the composer unmounts (e.g.
+  // navigating away with an image selected but not sent) -- selectImage/clearImage already
+  // revoke on replace/clear, but neither runs on unmount itself.
+  useEffect(() => {
+    return () => {
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    };
   }, []);
 
   const clearImage = useCallback(() => {

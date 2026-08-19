@@ -66,6 +66,31 @@ function ConnectedControls({ disabled }: MeetingControlsProps) {
   // track publish/unpublish actually resolves, so without this a fast double-click could
   // trigger two concurrent picker prompts.
   const [isScreenSharePending, setIsScreenSharePending] = useState(false);
+  // Surfaces a denied permission / unavailable device for mic or camera -- LiveKit's own
+  // `setMicrophoneEnabled`/`setCameraEnabled` reject in that case (see livekit-client's
+  // `setTrackEnabled`, which already serializes concurrent calls to the same source
+  // internally, so this only needs to catch the rejection, not guard against races). Without
+  // this the rejection was unhandled and the user got no feedback at all -- the button itself
+  // never gets stuck since it reflects the real (unchanged) LiveKit track state either way.
+  const [mediaError, setMediaError] = useState<string | null>(null);
+
+  const handleToggleMicrophone = async () => {
+    setMediaError(null);
+    try {
+      await localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled);
+    } catch {
+      setMediaError('Không thể truy cập micro. Vui lòng kiểm tra quyền truy cập thiết bị.');
+    }
+  };
+
+  const handleToggleCamera = async () => {
+    setMediaError(null);
+    try {
+      await localParticipant.setCameraEnabled(!isCameraEnabled);
+    } catch {
+      setMediaError('Không thể truy cập camera. Vui lòng kiểm tra quyền truy cập thiết bị.');
+    }
+  };
 
   const handleToggleScreenShare = async () => {
     if (isScreenSharePending) return;
@@ -84,8 +109,32 @@ function ConnectedControls({ disabled }: MeetingControlsProps) {
 
   return (
     <>
+      {mediaError && (
+        <div
+          onClick={() => setMediaError(null)}
+          title="Bấm để ẩn thông báo"
+          style={{
+            position: 'fixed',
+            bottom: 88,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: '#450A0A',
+            border: '1px solid #7F1D1D',
+            color: '#FCA5A5',
+            padding: '8px 16px',
+            borderRadius: 8,
+            fontSize: 12.5,
+            cursor: 'pointer',
+            zIndex: 50,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {mediaError}
+        </div>
+      )}
+
       <button
-        onClick={() => localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled)}
+        onClick={handleToggleMicrophone}
         disabled={disabled}
         style={{
           ...buttonBaseStyle,
@@ -100,7 +149,7 @@ function ConnectedControls({ disabled }: MeetingControlsProps) {
       </button>
 
       <button
-        onClick={() => localParticipant.setCameraEnabled(!isCameraEnabled)}
+        onClick={handleToggleCamera}
         disabled={disabled}
         style={{
           ...buttonBaseStyle,
