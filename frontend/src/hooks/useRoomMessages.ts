@@ -82,14 +82,17 @@ export function useRoomMessages(conversationId: string | null) {
   });
 
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, attachmentPath?: string | null) => {
       const trimmed = content.trim();
-      if (!trimmed || !conversationId || isSending) return;
+      if ((!trimmed && !attachmentPath) || !conversationId || isSending) return;
       const targetConversationId = conversationId;
       setIsSending(true);
       setSendError(null);
       try {
-        const sent = await sendConversationMessage(targetConversationId, { content: trimmed });
+        const sent = await sendConversationMessage(targetConversationId, {
+          content: trimmed || null,
+          attachment_path: attachmentPath ?? null,
+        });
         if (conversationRef.current === targetConversationId) {
           setMessages((prev) => appendMessageDeduped(prev, sent));
         }
