@@ -14,10 +14,14 @@ import {
     MoreVertical,
     Trash2,
     Ticket,
-    Download
+    Download,
+    Image as ImageIcon
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useChannelMessagesRealtime } from '../../hooks/useChannelMessagesRealtime';
+import { useMessageImageAttachment, ALLOWED_IMAGE_ACCEPT } from '../../hooks/useMessageImageAttachment';
+import { MessageAttachmentImage } from '../../components/chat/MessageAttachmentImage';
+import { SelectedImagePreview } from '../../components/chat/SelectedImagePreview';
 import { useGroupTableRealtime } from '../../hooks/useGroupTableRealtime';
 import { useGroupResources } from '../../hooks/useGroupResources';
 import { useGroupNotes } from '../../hooks/useGroupNotes';
@@ -436,6 +440,8 @@ export function StudyGroupDetail() {
   const [messagesError, setMessagesError] = useState<string | null>(null);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [sendMessageError, setSendMessageError] = useState<string | null>(null);
+  const imageAttachment = useMessageImageAttachment();
+  const chatImageInputRef = useRef<HTMLInputElement | null>(null);
   // Tracks the channel each in-flight request belongs to, so a response for a channel the
   // user has since navigated away from is discarded instead of leaking into the new view.
   const activeChannelRef = useRef(activeChannel);
@@ -501,13 +507,16 @@ export function StudyGroupDetail() {
   const handleSendMessage = async () => {
     const trimmed = chatInput.trim();
     const conversationId = activeChannelObj?.conversation_id ?? null;
-    if (!trimmed || !conversationId || isSendingMessage) return;
+    if ((!trimmed && !imageAttachment.hasImage) || !conversationId || isSendingMessage || imageAttachment.isUploading) return;
 
     const targetChannelId = activeChannel;
     setIsSendingMessage(true);
     setSendMessageError(null);
     try {
-      const sent = await sendConversationMessage(conversationId, { content: trimmed });
+      // Upload first, create the message second -- a failed upload must never produce an
+      // orphaned/misleading message record (see useMessageImageAttachment.uploadImage).
+      const attachmentPath = imageAttachment.hasImage ? await imageAttachment.uploadImage(conversationId) : null;
+      const sent = await sendConversationMessage(conversationId, { content: trimmed || null, attachment_path: attachmentPath });
       // Only reflect it in the visible list if the user hasn't switched channels while
       // the request was in flight; the message is still persisted either way. Deduped
       // against appendMessageDeduped since Realtime may also deliver this same row.
@@ -515,11 +524,18 @@ export function StudyGroupDetail() {
         setMessages((prev) => appendMessageDeduped(prev, sent));
       }
       setChatInput('');
+      imageAttachment.clearImage();
     } catch (err) {
       setSendMessageError(err instanceof ApiError ? err.message : 'Không thể gửi tin nhắn.');
     } finally {
       setIsSendingMessage(false);
     }
+  };
+
+  const handleChatImageSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = e.target.files?.[0];
+    if (picked) imageAttachment.selectImage(picked);
+    e.target.value = '';
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -1016,9 +1032,12 @@ export function StudyGroupDetail() {
                                                 <span style={{color: '#0F172A', fontSize: 15, fontWeight: '600'}}>{display.name}</span>
                                                 <span style={{color: '#94A3B8', fontSize: 12}}>{formatMessageTime(msg.created_at)}</span>
                                             </div>
-                                            <div style={{color: '#334155', fontSize: 15, lineHeight: '1.5', wordBreak: 'break-word'}}>
-                                                {msg.content ?? (msg.attachment_path ? '(tệp đính kèm)' : '')}
-                                            </div>
+                                            {msg.content && (
+                                                <div style={{color: '#334155', fontSize: 15, lineHeight: '1.5', wordBreak: 'break-word', marginBottom: msg.attachment_path ? 8 : 0}}>
+                                                    {msg.content}
+                                                </div>
+                                            )}
+                                            {msg.attachment_path && <MessageAttachmentImage messageId={msg.id} />}
                                         </div>
                                     </div>
                                 );
@@ -1029,12 +1048,35 @@ export function StudyGroupDetail() {
 
                     {/* Chat Input */}
                     <div style={{padding: '0 24px 24px 24px'}}>
-                        {sendMessageError && (
+                        {(sendMessageError || imageAttachment.uploadError || imageAttachment.pickError) && (
                             <div style={{marginBottom: 8, padding: '8px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, color: '#B91C1C', fontSize: 12.5}}>
-                                {sendMessageError}
+                                {sendMessageError || imageAttachment.uploadError?.message || imageAttachment.pickError}
                             </div>
                         )}
-                        <div style={{background: '#F1F5F9', borderRadius: 8, display: 'flex', alignItems: 'center', padding: '12px 16px', border: '1px solid #E2E8F0', transition: 'border-color 0.2s'}}>
+                        {imageAttachment.previewUrl && (
+                            <SelectedImagePreview
+                                previewUrl={imageAttachment.previewUrl}
+                                onRemove={imageAttachment.clearImage}
+                                disabled={isSendingMessage || imageAttachment.isUploading}
+                            />
+                        )}
+                        <div style={{background: '#F1F5F9', borderRadius: 8, display: 'flex', alignItems: 'center', padding: '12px 16px', border: '1px solid #E2E8F0', transition: 'border-color 0.2s', gap: 8}}>
+                            <input
+                                type="file"
+                                accept={ALLOWED_IMAGE_ACCEPT}
+                                ref={chatImageInputRef}
+                                onChange={handleChatImageSelected}
+                                style={{display: 'none'}}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => chatImageInputRef.current?.click()}
+                                disabled={!activeChannelObj?.conversation_id || isSendingMessage}
+                                style={{background: 'transparent', border: 'none', padding: 0, display: 'flex', cursor: (!activeChannelObj?.conversation_id || isSendingMessage) ? 'not-allowed' : 'pointer', opacity: (!activeChannelObj?.conversation_id || isSendingMessage) ? 0.5 : 1}}
+                                aria-label="Đính kèm ảnh"
+                            >
+                              <ImageIcon size={20} color="#64748B" />
+                            </button>
                             <input
                                 type="text"
                                 value={chatInput}
@@ -1046,8 +1088,8 @@ export function StudyGroupDetail() {
                             />
                             <button
                                 onClick={handleSendMessage}
-                                disabled={!chatInput.trim() || !activeChannelObj?.conversation_id || isSendingMessage}
-                                style={{background: 'transparent', border: 'none', padding: 0, display: 'flex', cursor: (chatInput.trim() && !isSendingMessage) ? 'pointer' : 'not-allowed', opacity: (chatInput.trim() && !isSendingMessage) ? 1 : 0.5}}
+                                disabled={(!chatInput.trim() && !imageAttachment.hasImage) || !activeChannelObj?.conversation_id || isSendingMessage || imageAttachment.isUploading}
+                                style={{background: 'transparent', border: 'none', padding: 0, display: 'flex', cursor: ((chatInput.trim() || imageAttachment.hasImage) && !isSendingMessage && !imageAttachment.isUploading) ? 'pointer' : 'not-allowed', opacity: ((chatInput.trim() || imageAttachment.hasImage) && !isSendingMessage && !imageAttachment.isUploading) ? 1 : 0.5}}
                             >
                               <Send size={20} color="#00236F" />
                             </button>

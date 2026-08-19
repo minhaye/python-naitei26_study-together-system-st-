@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { Track } from 'livekit-client';
 import { MeetingVideoGrid } from './MeetingVideoGrid';
 import { MeetingContext } from './MeetingContext';
 import type { MeetingContextValue } from './MeetingContext';
@@ -13,13 +14,20 @@ interface FakeParticipant {
   isSpeaking: boolean;
 }
 
+interface FakeTrackRef {
+  participant: { identity: string };
+  publication: { trackSid: string; isMuted: boolean };
+}
+
 const mockParticipants: FakeParticipant[] = [];
+const mockCameraTrackRefs: FakeTrackRef[] = [];
+const mockScreenShareTrackRefs: FakeTrackRef[] = [];
 
 vi.mock('@livekit/components-react', () => ({
   useParticipants: () => mockParticipants,
-  useTracks: () => [],
-  isTrackReference: () => false,
-  VideoTrack: () => null,
+  useTracks: (sources: unknown[]) => (sources[0] === Track.Source.ScreenShare ? mockScreenShareTrackRefs : mockCameraTrackRefs),
+  isTrackReference: (trackRef: unknown) => !!trackRef && typeof trackRef === 'object' && 'publication' in trackRef,
+  VideoTrack: ({ trackRef }: { trackRef: FakeTrackRef }) => <div data-testid={`video-track-${trackRef.publication.trackSid}`}>{trackRef.participant.identity}</div>,
 }));
 
 const members: StudyRoomMember[] = [
@@ -46,6 +54,8 @@ function renderGrid(contextValue: Partial<MeetingContextValue>, unavailableReaso
 describe('MeetingVideoGrid', () => {
   beforeEach(() => {
     mockParticipants.length = 0;
+    mockCameraTrackRefs.length = 0;
+    mockScreenShareTrackRefs.length = 0;
   });
 
   it('shows the ended-room message without waiting on a token request', () => {
@@ -101,5 +111,43 @@ describe('MeetingVideoGrid', () => {
 
     expect(screen.getByText('Người dùng')).toBeInTheDocument();
     expect(screen.queryByText(/user-unknown/)).not.toBeInTheDocument();
+  });
+
+  it('renders an active screen-share track in its own spotlight tile, separate from the camera grid', () => {
+    mockParticipants.push({ identity: 'user-2', name: 'David Chen', isMicrophoneEnabled: false, isSpeaking: false });
+    mockScreenShareTrackRefs.push({ participant: { identity: 'user-2' }, publication: { trackSid: 'screen-1', isMuted: false } });
+
+    renderGrid({ status: 'ready', connected: true });
+
+    expect(screen.getByTestId('video-track-screen-1')).toBeInTheDocument();
+    expect(screen.getByText('David Chen đang chia sẻ màn hình')).toBeInTheDocument();
+  });
+
+  it('does not render a screen-share spotlight when no one is sharing', () => {
+    mockParticipants.push({ identity: 'user-1', name: 'Minh Anh', isMicrophoneEnabled: true, isSpeaking: false });
+
+    renderGrid({ status: 'ready', connected: true });
+
+    expect(screen.queryByText(/đang chia sẻ màn hình/)).not.toBeInTheDocument();
+  });
+
+  it('keeps a muted (stopped) screen-share publication out of the spotlight', () => {
+    mockParticipants.push({ identity: 'user-2', name: 'David Chen', isMicrophoneEnabled: false, isSpeaking: false });
+    mockScreenShareTrackRefs.push({ participant: { identity: 'user-2' }, publication: { trackSid: 'screen-1', isMuted: true } });
+
+    renderGrid({ status: 'ready', connected: true });
+
+    expect(screen.queryByTestId('video-track-screen-1')).not.toBeInTheDocument();
+  });
+
+  it('renders both a camera tile and a screen-share spotlight when the same participant publishes both', () => {
+    mockParticipants.push({ identity: 'user-2', name: 'David Chen', isMicrophoneEnabled: true, isSpeaking: false });
+    mockCameraTrackRefs.push({ participant: { identity: 'user-2' }, publication: { trackSid: 'camera-1', isMuted: false } });
+    mockScreenShareTrackRefs.push({ participant: { identity: 'user-2' }, publication: { trackSid: 'screen-1', isMuted: false } });
+
+    renderGrid({ status: 'ready', connected: true });
+
+    expect(screen.getByTestId('video-track-camera-1')).toBeInTheDocument();
+    expect(screen.getByTestId('video-track-screen-1')).toBeInTheDocument();
   });
 });

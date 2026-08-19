@@ -21,7 +21,9 @@ export interface MessageListResponse {
 }
 
 /** Mirrors MessageCreate -- no sender_id/user_id: the backend always derives the sender
- * from the authenticated caller (see message_router.create_message). */
+ * from the authenticated caller (see message_router.create_message). Requires content OR
+ * attachment_path (enforced server-side too); both may be set for a text+image message. */
 export interface MessageCreate {
-  content: string;
+  content?: string | null;
+  attachment_path?: string | null;
 }

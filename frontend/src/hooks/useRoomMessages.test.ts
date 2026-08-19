@@ -106,10 +106,59 @@ describe('useRoomMessages', () => {
       await result.current.sendMessage('hi there');
     });
 
-    expect(mockedSend).toHaveBeenCalledWith('conv-1', { content: 'hi there' });
+    expect(mockedSend).toHaveBeenCalledWith('conv-1', { content: 'hi there', attachment_path: null });
     expect(result.current.messages.map((m) => m.id)).toEqual(['msg-new']);
     expect(result.current.isSending).toBe(false);
     expect(result.current.sendError).toBeNull();
+  });
+
+  it('sends an attachment_path alongside content when provided', async () => {
+    mockedList.mockResolvedValue({ items: [], next_cursor: null });
+    const sent = makeMessage({ id: 'msg-img', content: 'check this out', attachment_path: 'study-rooms/room-1/user-1/obj/photo.png' });
+    mockedSend.mockResolvedValue(sent);
+
+    const { result } = renderHook(() => useRoomMessages('conv-1'));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.sendMessage('check this out', 'study-rooms/room-1/user-1/obj/photo.png');
+    });
+
+    expect(mockedSend).toHaveBeenCalledWith('conv-1', {
+      content: 'check this out',
+      attachment_path: 'study-rooms/room-1/user-1/obj/photo.png',
+    });
+    expect(result.current.messages.map((m) => m.id)).toEqual(['msg-img']);
+  });
+
+  it('sends an image-only message (no text) when attachment_path is provided with blank content', async () => {
+    mockedList.mockResolvedValue({ items: [], next_cursor: null });
+    const sent = makeMessage({ id: 'msg-img-only', content: null, attachment_path: 'study-rooms/room-1/user-1/obj/photo.png' });
+    mockedSend.mockResolvedValue(sent);
+
+    const { result } = renderHook(() => useRoomMessages('conv-1'));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.sendMessage('', 'study-rooms/room-1/user-1/obj/photo.png');
+    });
+
+    expect(mockedSend).toHaveBeenCalledWith('conv-1', {
+      content: null,
+      attachment_path: 'study-rooms/room-1/user-1/obj/photo.png',
+    });
+    expect(result.current.messages.map((m) => m.id)).toEqual(['msg-img-only']);
+  });
+
+  it('is a no-op when both content and attachment_path are blank', async () => {
+    mockedList.mockResolvedValue({ items: [], next_cursor: null });
+    const { result } = renderHook(() => useRoomMessages('conv-1'));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.sendMessage('   ', null);
+    });
+    expect(mockedSend).not.toHaveBeenCalled();
   });
 
   it('surfaces a send error without adding a message', async () => {
