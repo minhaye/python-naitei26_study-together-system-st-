@@ -1302,6 +1302,8 @@ forum-images
 avatars
 ```
 
+**Trạng thái live (2026-08-19):** bucket `group-resources` (private, signed upload/download URL qua `app/resources/services/resource_storage_service.py`, cùng cơ chế với `message-attachments`) đã được tạo bởi migration `014_create_group_resources_bucket.sql` — **đã áp dụng live và verify thành công**. Khoảng 20 row `resources` là dữ liệu seed cũ (`mock-resource-<n>-<m>.<ext>`, không có object Storage tương ứng — xem `docs/db/migrations/README.md` mục 015 để biết nguồn gốc) đã được dọn bởi migration `015_cleanup_stale_mock_resources.sql` — **đã áp dụng live và verify thành công**, giữ nguyên toàn bộ 3 row `resources` thật (không phải seed) và không đụng tới `resource_folders`. Chi tiết trạng thái từng migration: `docs/db/migrations/README.md`.
+
 ---
 
 # 25. forum_categories — Danh mục diễn đàn

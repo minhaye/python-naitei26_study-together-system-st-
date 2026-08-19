@@ -306,6 +306,7 @@ def test_validate_direct_ownership_rejects_malformed_path():
 
 
 async def test_create_signed_upload_url(monkeypatch):
+    monkeypatch.setattr(settings, "supabase_secret_key", None)
     monkeypatch.setattr(settings, "supabase_service_role_key", "fake-service-role-key")
     monkeypatch.setattr(
         httpx.AsyncClient,
@@ -322,13 +323,56 @@ async def test_create_signed_upload_url(monkeypatch):
 
 
 async def test_create_signed_upload_url_not_configured(monkeypatch):
+    monkeypatch.setattr(settings, "supabase_secret_key", None)
     monkeypatch.setattr(settings, "supabase_service_role_key", None)
     service = AttachmentsService()
     with pytest.raises(AttachmentServiceNotConfigured):
         await service.create_signed_upload_url("some/path")
 
 
+async def test_create_signed_upload_url_secret_key_sends_apikey_only(monkeypatch):
+    """SUPABASE_SECRET_KEY (current Supabase key model) is preferred over the legacy
+    SUPABASE_SERVICE_ROLE_KEY when both are set -- see Settings.supabase_storage_headers.
+    sb_secret_... is not a JWT, so it must NOT be sent as Authorization: Bearer, only apikey."""
+    monkeypatch.setattr(settings, "supabase_secret_key", "sb_secret_fake")
+    monkeypatch.setattr(settings, "supabase_service_role_key", "legacy-jwt-fake")
+    captured_headers = {}
+
+    async def fake_post(self, url, headers=None, json=None):
+        captured_headers.update(headers or {})
+        return _FakeResponse({"url": "/object/upload/sign/message-attachments/some/path?token=abc123"})
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+
+    service = AttachmentsService()
+    await service.create_signed_upload_url("some/path")
+
+    assert captured_headers["apikey"] == "sb_secret_fake"
+    assert "Authorization" not in captured_headers
+
+
+async def test_create_signed_upload_url_legacy_fallback_sends_bearer_jwt(monkeypatch):
+    """The legacy service_role key IS a JWT -- Storage still needs it as both apikey and
+    Authorization: Bearer, same as before this change."""
+    monkeypatch.setattr(settings, "supabase_secret_key", None)
+    monkeypatch.setattr(settings, "supabase_service_role_key", "legacy-jwt-fake")
+    captured_headers = {}
+
+    async def fake_post(self, url, headers=None, json=None):
+        captured_headers.update(headers or {})
+        return _FakeResponse({"url": "/object/upload/sign/message-attachments/some/path?token=abc123"})
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+
+    service = AttachmentsService()
+    await service.create_signed_upload_url("some/path")
+
+    assert captured_headers["apikey"] == "legacy-jwt-fake"
+    assert captured_headers["Authorization"] == "Bearer legacy-jwt-fake"
+
+
 async def test_create_signed_download_url(monkeypatch):
+    monkeypatch.setattr(settings, "supabase_secret_key", None)
     monkeypatch.setattr(settings, "supabase_service_role_key", "fake-service-role-key")
     monkeypatch.setattr(
         httpx.AsyncClient,
@@ -344,6 +388,7 @@ async def test_create_signed_download_url(monkeypatch):
 
 
 async def test_object_exists_true_and_false(monkeypatch):
+    monkeypatch.setattr(settings, "supabase_secret_key", None)
     monkeypatch.setattr(settings, "supabase_service_role_key", "fake-service-role-key")
     service = AttachmentsService()
 
