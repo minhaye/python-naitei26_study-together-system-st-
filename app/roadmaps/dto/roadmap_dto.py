@@ -1,0 +1,70 @@
+import uuid
+from datetime import date, datetime
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+class RoadmapPhaseCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+    @field_validator('name')
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError('Phase name must not be blank')
+        return value
+
+
+class RoadmapCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    goal: str = Field(min_length=1, max_length=500)
+    due_date: date | None = None
+    phases: list[RoadmapPhaseCreate] = Field(default_factory=list, max_length=20)
+
+    @field_validator('title', 'goal')
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError('Value must not be blank')
+        return value
+
+
+class RoadmapUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    goal: str | None = Field(default=None, min_length=1, max_length=500)
+    due_date: date | None = None
+
+    @field_validator('title', 'goal')
+    @classmethod
+    def strip_text(cls, value: str | None) -> str | None:
+        return RoadmapCreate.strip_text(value) if value is not None else value
+
+    @model_validator(mode='after')
+    def has_change(self):
+        if not self.model_fields_set:
+            raise ValueError('Provide at least one roadmap field')
+        return self
+
+
+class RoadmapPhaseUpdate(BaseModel):
+    progress: int = Field(ge=0, le=100)
+
+
+class RoadmapPhaseResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    name: str
+    position: int
+    progress: int
+
+
+class RoadmapResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    title: str
+    goal: str
+    due_date: date | None
+    created_at: datetime
+    phases: list[RoadmapPhaseResponse]

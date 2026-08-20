@@ -42,3 +42,4 @@ where schemaname = 'public' and tablename = 'group_notes' and 'authenticated' = 
 select 'function_exists:is_group_member' as check, pg_get_function_identity_arguments(oid) as detail
 from pg_proc
 where proname = 'is_group_member' and pronamespace = 'public'::regnamespace;
+
