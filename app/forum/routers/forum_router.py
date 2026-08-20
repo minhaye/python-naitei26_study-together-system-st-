@@ -149,8 +149,12 @@ async def create_post(data: ForumPostCreate, session: AsyncSession = Depends(get
 
 
 @router.get("/posts/{post_id}", response_model=ForumPostResponse)
-async def get_post(post_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)):
-    post = await service.get_post_by_id(session, post_id)
+async def get_post(
+    post_id: uuid.UUID,
+    user_id: uuid.UUID | None = None,
+    session: AsyncSession = Depends(get_db_session)
+):
+    post = await service.get_post_by_id(session, post_id, user_id=user_id)
     if not post:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -163,11 +167,12 @@ async def get_post(post_id: uuid.UUID, session: AsyncSession = Depends(get_db_se
 async def list_posts(
     category_id: uuid.UUID | None = None,
     tag: str | None = None,
+    user_id: uuid.UUID | None = None,
     skip: int = 0,
     limit: int = 50,
     session: AsyncSession = Depends(get_db_session)
 ):
-    return await service.list_posts_by_category(session, category_id, tag=tag, skip=skip, limit=limit)
+    return await service.list_posts_by_category(session, category_id, tag=tag, user_id=user_id, skip=skip, limit=limit)
 
 
 # --- Tags ---
@@ -257,8 +262,12 @@ async def get_comment(comment_id: uuid.UUID, session: AsyncSession = Depends(get
 
 
 @router.get("/comments", response_model=list[CommentResponse])
-async def list_comments(post_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)):
-    return await service.list_comments_by_post(session, post_id)
+async def list_comments(
+    post_id: uuid.UUID,
+    user_id: uuid.UUID | None = None,
+    session: AsyncSession = Depends(get_db_session)
+):
+    return await service.list_comments_by_post(session, post_id, user_id=user_id)
 
 
 @router.put("/comments/{comment_id}", response_model=CommentResponse)

@@ -14,10 +14,16 @@ import {
     MoreVertical,
     Trash2,
     Ticket,
-    Download
+    Download,
+    Image as ImageIcon
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useChannelMessagesRealtime } from '../../hooks/useChannelMessagesRealtime';
+import { useMessageImageAttachment, ALLOWED_IMAGE_ACCEPT } from '../../hooks/useMessageImageAttachment';
+import { MessageAttachmentImage } from '../../components/chat/MessageAttachmentImage';
+import { SelectedImagePreview } from '../../components/chat/SelectedImagePreview';
+import { ErrorBoundary } from '../../components/ui/ErrorBoundary';
+import { useGroupTableRealtime } from '../../hooks/useGroupTableRealtime';
 import { useGroupResources } from '../../hooks/useGroupResources';
 import { useGroupNotes } from '../../hooks/useGroupNotes';
 import { NotesStackPanel } from './NotesStackPanel';
@@ -27,8 +33,8 @@ import { InviteModal } from '../../components/invitations/InviteModal';
 import { JoinByCodeModal } from '../../components/invitations/JoinByCodeModal';
 import { GroupSettingsModal } from '../../components/groups/GroupSettingsModal';
 import { GroupMembersPanel } from '../../components/groups/GroupMembersPanel';
-import { createChannel, deleteChannel, listChannelsByGroup } from '../../lib/channel.api';
-import { createStudyRoom, deleteStudyRoom, listStudyRoomsByGroup } from '../../lib/studyRoom.api';
+import { createChannel, deleteChannel, getChannel, listChannelsByGroup } from '../../lib/channel.api';
+import { createStudyRoom, deleteStudyRoom, getStudyRoom, listStudyRoomsByGroup } from '../../lib/studyRoom.api';
 import { listConversationMessages, sendConversationMessage } from '../../lib/message.api';
 import type { Group, GroupMember } from '../../lib/group.types';
 import type { Channel } from '../../lib/channel.types';
@@ -160,6 +166,55 @@ export function StudyGroupDetail() {
       cancelled = true;
     };
   }, [groupId]);
+
+  // Live-syncs Channels/Study Rooms as other Group members create/rename/edit them, on top of
+  // the REST load above (see useGroupTableRealtime.ts). Both hydrate every INSERT/UPDATE via
+  // GET /channels/{id} / GET /study-rooms/{id}: `conversation_id` on both Channel and StudyRoom
+  // is a backend-computed field (a Python @property joined from the row's related Conversation,
+  // not a real `channels`/`study_rooms` column), so the raw Realtime row can never be cast
+  // directly to these types -- same reason Group Notes (useGroupNotesRealtime.ts) and messages
+  // (useChannelMessagesRealtime.ts) hydrate instead of using the raw row. INSERT/UPDATE only:
+  // both tables are soft-deleted via UPDATE, and Realtime does not reliably deliver an UPDATE
+  // that flips a row from visible to invisible under RLS -- see useGroupTableRealtime.ts's
+  // header for why that gap is deliberately not worked around here. The `deleted_at` branches
+  // below are defense in depth for the rare case such an event *does* arrive and *does*
+  // hydrate, not the primary removal path.
+  useGroupTableRealtime<Channel>('channels', group?.id ?? null, getChannel, {
+    onInsert: (channel) => {
+      if (channel.deleted_at) return;
+      setChannels((prev) => (prev.some((c) => c.id === channel.id) ? prev : [...prev, channel]));
+    },
+    onUpdate: (channel) => {
+      setChannels((prev) => {
+        if (channel.deleted_at) return prev.filter((c) => c.id !== channel.id);
+        const idx = prev.findIndex((c) => c.id === channel.id);
+        if (idx === -1) return [...prev, channel]; // e.g. newly visible: is_private flipped to false
+        const next = [...prev];
+        next[idx] = channel;
+        return next;
+      });
+      if (channel.deleted_at) {
+        setActiveChannel((prev) => (prev === channel.id ? '' : prev));
+      }
+    },
+  });
+
+  useGroupTableRealtime<StudyRoom>('study_rooms', group?.id ?? null, getStudyRoom, {
+    onInsert: (room) => {
+      if (room.deleted_at) return;
+      setStudyRooms((prev) => (prev.some((r) => r.id === room.id) ? prev : [...prev, room]));
+    },
+    onUpdate: (room) => {
+      setStudyRooms((prev) => {
+        if (room.deleted_at) return prev.filter((r) => r.id !== room.id);
+        const idx = prev.findIndex((r) => r.id === room.id);
+        if (idx === -1) return [...prev, room];
+        const next = [...prev];
+        next[idx] = room;
+        return next;
+      });
+    },
+  });
 
   const activeMembers = groupMembers.filter((m) => m.status === 'active');
   const isOwner = !!group && !!currentUserId && group.owner_id === currentUserId;
@@ -386,6 +441,8 @@ export function StudyGroupDetail() {
   const [messagesError, setMessagesError] = useState<string | null>(null);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [sendMessageError, setSendMessageError] = useState<string | null>(null);
+  const imageAttachment = useMessageImageAttachment();
+  const chatImageInputRef = useRef<HTMLInputElement | null>(null);
   // Tracks the channel each in-flight request belongs to, so a response for a channel the
   // user has since navigated away from is discarded instead of leaking into the new view.
   const activeChannelRef = useRef(activeChannel);
@@ -451,13 +508,16 @@ export function StudyGroupDetail() {
   const handleSendMessage = async () => {
     const trimmed = chatInput.trim();
     const conversationId = activeChannelObj?.conversation_id ?? null;
-    if (!trimmed || !conversationId || isSendingMessage) return;
+    if ((!trimmed && !imageAttachment.hasImage) || !conversationId || isSendingMessage || imageAttachment.isUploading) return;
 
     const targetChannelId = activeChannel;
     setIsSendingMessage(true);
     setSendMessageError(null);
     try {
-      const sent = await sendConversationMessage(conversationId, { content: trimmed });
+      // Upload first, create the message second -- a failed upload must never produce an
+      // orphaned/misleading message record (see useMessageImageAttachment.uploadImage).
+      const attachmentPath = imageAttachment.hasImage ? await imageAttachment.uploadImage(conversationId) : null;
+      const sent = await sendConversationMessage(conversationId, { content: trimmed || null, attachment_path: attachmentPath });
       // Only reflect it in the visible list if the user hasn't switched channels while
       // the request was in flight; the message is still persisted either way. Deduped
       // against appendMessageDeduped since Realtime may also deliver this same row.
@@ -465,11 +525,18 @@ export function StudyGroupDetail() {
         setMessages((prev) => appendMessageDeduped(prev, sent));
       }
       setChatInput('');
+      imageAttachment.clearImage();
     } catch (err) {
       setSendMessageError(err instanceof ApiError ? err.message : 'Không thể gửi tin nhắn.');
     } finally {
       setIsSendingMessage(false);
     }
+  };
+
+  const handleChatImageSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = e.target.files?.[0];
+    if (picked) imageAttachment.selectImage(picked);
+    e.target.value = '';
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -950,41 +1017,79 @@ export function StudyGroupDetail() {
                                 <div style={{fontSize: 14}}>Đây là sự khởi đầu của kênh #{activeChannelObj.name}.</div>
                             </div>
                         ) : (
-                            messages.map((msg) => {
-                                const display = senderDisplay(msg);
-                                return (
-                                    <div key={msg.id} style={{display: 'flex', gap: 16}}>
-                                        {display.avatarUrl ? (
-                                            <img src={display.avatarUrl} alt={display.name} style={{width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', flexShrink: 0}} />
-                                        ) : (
-                                            <div style={{width: 40, height: 40, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flexShrink: 0}}>
-                                                {display.initials}
-                                            </div>
-                                        )}
-                                        <div>
-                                            <div style={{display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4}}>
-                                                <span style={{color: '#0F172A', fontSize: 15, fontWeight: '600'}}>{display.name}</span>
-                                                <span style={{color: '#94A3B8', fontSize: 12}}>{formatMessageTime(msg.created_at)}</span>
-                                            </div>
-                                            <div style={{color: '#334155', fontSize: 15, lineHeight: '1.5', wordBreak: 'break-word'}}>
-                                                {msg.content ?? (msg.attachment_path ? '(tệp đính kèm)' : '')}
+                            // Keyed by channel so a crash here (and the boundary it trips) resets
+                            // on channel change instead of showing the fallback forever -- see
+                            // ErrorBoundary.tsx.
+                            <ErrorBoundary
+                                key={activeChannelObj.conversation_id ?? activeChannel}
+                                fallback={
+                                    <div style={{margin: '16px 0', padding: '12px 16px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, color: '#B91C1C', fontSize: 13.5}}>
+                                        Không thể hiển thị tin nhắn trong kênh này.
+                                    </div>
+                                }
+                            >
+                                {messages.map((msg) => {
+                                    const display = senderDisplay(msg);
+                                    return (
+                                        <div key={msg.id} style={{display: 'flex', gap: 16}}>
+                                            {display.avatarUrl ? (
+                                                <img src={display.avatarUrl} alt={display.name} style={{width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', flexShrink: 0}} />
+                                            ) : (
+                                                <div style={{width: 40, height: 40, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flexShrink: 0}}>
+                                                    {display.initials}
+                                                </div>
+                                            )}
+                                            <div>
+                                                <div style={{display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4}}>
+                                                    <span style={{color: '#0F172A', fontSize: 15, fontWeight: '600'}}>{display.name}</span>
+                                                    <span style={{color: '#94A3B8', fontSize: 12}}>{formatMessageTime(msg.created_at)}</span>
+                                                </div>
+                                                {msg.content && (
+                                                    <div style={{color: '#334155', fontSize: 15, lineHeight: '1.5', wordBreak: 'break-word', marginBottom: msg.attachment_path ? 8 : 0}}>
+                                                        {msg.content}
+                                                    </div>
+                                                )}
+                                                {msg.attachment_path && <MessageAttachmentImage messageId={msg.id} />}
                                             </div>
                                         </div>
-                                    </div>
-                                );
-                            })
+                                    );
+                                })}
+                            </ErrorBoundary>
                         )}
                         <div ref={chatEndRef} />
                     </div>
 
                     {/* Chat Input */}
                     <div style={{padding: '0 24px 24px 24px'}}>
-                        {sendMessageError && (
+                        {(sendMessageError || imageAttachment.uploadError || imageAttachment.pickError) && (
                             <div style={{marginBottom: 8, padding: '8px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, color: '#B91C1C', fontSize: 12.5}}>
-                                {sendMessageError}
+                                {sendMessageError || imageAttachment.uploadError?.message || imageAttachment.pickError}
                             </div>
                         )}
-                        <div style={{background: '#F1F5F9', borderRadius: 8, display: 'flex', alignItems: 'center', padding: '12px 16px', border: '1px solid #E2E8F0', transition: 'border-color 0.2s'}}>
+                        {imageAttachment.previewUrl && (
+                            <SelectedImagePreview
+                                previewUrl={imageAttachment.previewUrl}
+                                onRemove={imageAttachment.clearImage}
+                                disabled={isSendingMessage || imageAttachment.isUploading}
+                            />
+                        )}
+                        <div style={{background: '#F1F5F9', borderRadius: 8, display: 'flex', alignItems: 'center', padding: '12px 16px', border: '1px solid #E2E8F0', transition: 'border-color 0.2s', gap: 8}}>
+                            <input
+                                type="file"
+                                accept={ALLOWED_IMAGE_ACCEPT}
+                                ref={chatImageInputRef}
+                                onChange={handleChatImageSelected}
+                                style={{display: 'none'}}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => chatImageInputRef.current?.click()}
+                                disabled={!activeChannelObj?.conversation_id || isSendingMessage}
+                                style={{background: 'transparent', border: 'none', padding: 0, display: 'flex', cursor: (!activeChannelObj?.conversation_id || isSendingMessage) ? 'not-allowed' : 'pointer', opacity: (!activeChannelObj?.conversation_id || isSendingMessage) ? 0.5 : 1}}
+                                aria-label="Đính kèm ảnh"
+                            >
+                              <ImageIcon size={20} color="#64748B" />
+                            </button>
                             <input
                                 type="text"
                                 value={chatInput}
@@ -996,8 +1101,8 @@ export function StudyGroupDetail() {
                             />
                             <button
                                 onClick={handleSendMessage}
-                                disabled={!chatInput.trim() || !activeChannelObj?.conversation_id || isSendingMessage}
-                                style={{background: 'transparent', border: 'none', padding: 0, display: 'flex', cursor: (chatInput.trim() && !isSendingMessage) ? 'pointer' : 'not-allowed', opacity: (chatInput.trim() && !isSendingMessage) ? 1 : 0.5}}
+                                disabled={(!chatInput.trim() && !imageAttachment.hasImage) || !activeChannelObj?.conversation_id || isSendingMessage || imageAttachment.isUploading}
+                                style={{background: 'transparent', border: 'none', padding: 0, display: 'flex', cursor: ((chatInput.trim() || imageAttachment.hasImage) && !isSendingMessage && !imageAttachment.isUploading) ? 'pointer' : 'not-allowed', opacity: ((chatInput.trim() || imageAttachment.hasImage) && !isSendingMessage && !imageAttachment.isUploading) ? 1 : 0.5}}
                             >
                               <Send size={20} color="#00236F" />
                             </button>

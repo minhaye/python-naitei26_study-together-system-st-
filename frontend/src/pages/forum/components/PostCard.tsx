@@ -58,8 +58,6 @@ export const PostCard: React.FC<PostCardProps> = ({
     setLocalCommentsCount((prev) => prev + 1);
   };
 
-
-
   // Bóc tách ảnh và văn bản riêng để tính độ dài chữ chuẩn kiểu Facebook (không tính chuỗi Base64 ảnh)
   const imgMatches = post.content.match(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi) || [];
   const cleanTextContent = post.content.replace(/<img[^>]*>/gi, '');

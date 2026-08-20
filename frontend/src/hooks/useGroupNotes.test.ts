@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { ApiError } from '../lib/apiClient';
 import { useAuth } from './useAuth';
-import { createNote, deleteNote, listGroupNotes, updateNote } from '../lib/note.api';
+import { createNote, deleteNote, getNote, listGroupNotes, updateNote } from '../lib/note.api';
 import { NOTE_CONTENT_MAX_LENGTH, NOTE_TITLE_MAX_LENGTH } from '../lib/note.types';
 import { useGroupNotes } from './useGroupNotes';
+import { supabase } from '../lib/supabase';
 import type { Note } from '../lib/note.types';
 
 vi.mock('./useAuth', () => ({ useAuth: vi.fn() }));
@@ -13,6 +14,10 @@ vi.mock('../lib/note.api', () => ({
   createNote: vi.fn(),
   updateNote: vi.fn(),
   deleteNote: vi.fn(),
+  getNote: vi.fn(),
+}));
+vi.mock('../lib/supabase', () => ({
+  supabase: { channel: vi.fn(), removeChannel: vi.fn() },
 }));
 
 const mockedUseAuth = vi.mocked(useAuth);
@@ -20,6 +25,32 @@ const mockedList = vi.mocked(listGroupNotes);
 const mockedCreate = vi.mocked(createNote);
 const mockedUpdate = vi.mocked(updateNote);
 const mockedDelete = vi.mocked(deleteNote);
+const mockedGetNote = vi.mocked(getNote);
+const mockedChannel = vi.mocked(supabase.channel);
+const mockedRemoveChannel = vi.mocked(supabase.removeChannel);
+
+/** Stand-in for the real supabase-js RealtimeChannel used by useGroupNotesRealtime.ts:
+ * captures the INSERT/UPDATE/DELETE handlers passed to `.on(...)` so a test can invoke them
+ * directly with a fake payload (mirrors useChannelMessagesRealtime.test.ts's helper). */
+function createFakeChannel() {
+  const handlers: Record<string, (payload: { new?: unknown; old?: unknown }) => void> = {};
+  const fake = {
+    on: vi.fn((_event: string, filter: { event: string }, cb: (payload: { new?: unknown; old?: unknown }) => void) => {
+      handlers[filter.event] = cb;
+      return fake;
+    }),
+    subscribe: vi.fn((cb?: (status: string, err?: unknown) => void) => {
+      cb?.('SUBSCRIBED');
+      return fake;
+    }),
+  };
+  return {
+    fake,
+    triggerInsert: (row: unknown) => handlers['INSERT']({ new: row }),
+    triggerUpdate: (row: unknown) => handlers['UPDATE']({ new: row }),
+    triggerDelete: (oldRow: unknown) => handlers['DELETE']({ old: oldRow }),
+  };
+}
 
 const author = { id: 'user-1', username: 'alice', display_name: 'Alice', avatar_url: null };
 
@@ -46,6 +77,13 @@ beforeEach(() => {
   mockedCreate.mockReset();
   mockedUpdate.mockReset();
   mockedDelete.mockReset();
+  mockedGetNote.mockReset();
+  mockedChannel.mockReset();
+  mockedRemoveChannel.mockReset();
+  // Every test mounts useGroupNotes, which always subscribes via useGroupNotesRealtime --
+  // give it an inert fake channel by default so unrelated tests don't need to care. Tests
+  // that exercise realtime behavior override this per-call with their own createFakeChannel().
+  mockedChannel.mockReturnValue(createFakeChannel().fake as unknown as ReturnType<typeof supabase.channel>);
 });
 
 describe('useGroupNotes', () => {
@@ -360,5 +398,158 @@ describe('useGroupNotes', () => {
     });
 
     expect(result.current.isDeletingFocused).toBe(false);
+  });
+
+  // --- remote realtime sync (useGroupNotesRealtime) ---
+
+  describe('remote realtime sync', () => {
+    it('hydrates and appends a remote INSERT via GET /notes/{id}', async () => {
+      mockedList.mockResolvedValue([makeNote({ id: 'a' })]);
+      const { fake, triggerInsert } = createFakeChannel();
+      mockedChannel.mockReturnValue(fake as unknown as ReturnType<typeof supabase.channel>);
+      const hydrated = makeNote({ id: 'b', content: 'From another member' });
+      mockedGetNote.mockResolvedValue(hydrated);
+
+      const { result } = renderHook(() => useGroupNotes('group-1'));
+      await waitFor(() => expect(result.current.notes).toHaveLength(1));
+
+      act(() => {
+        triggerInsert({ id: 'b', group_id: 'group-1', author_id: 'user-2' });
+      });
+
+      await waitFor(() => expect(result.current.notes).toHaveLength(2));
+      expect(mockedGetNote).toHaveBeenCalledWith('b');
+      expect(result.current.notes.map((n) => n.id)).toEqual(['a', 'b']);
+    });
+
+    it('does not duplicate a note the acting user already has locally from their own REST create (sender-side echo dedup)', async () => {
+      mockedList.mockResolvedValue([]);
+      const { fake, triggerInsert } = createFakeChannel();
+      mockedChannel.mockReturnValue(fake as unknown as ReturnType<typeof supabase.channel>);
+      const created = makeNote({ id: 'b', content: 'Mine' });
+      mockedCreate.mockResolvedValue(created);
+
+      const { result } = renderHook(() => useGroupNotes('group-1'));
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      act(() => result.current.setNewContent('Mine'));
+      await act(async () => {
+        await result.current.submitCreate();
+      });
+      expect(result.current.notes.map((n) => n.id)).toEqual(['b']);
+
+      // The Realtime INSERT echo for the same row arrives after the REST response already
+      // added it -- hydration still runs (best-effort), but the upsert must not duplicate it.
+      mockedGetNote.mockResolvedValue(created);
+      act(() => {
+        triggerInsert({ id: 'b', group_id: 'group-1', author_id: 'user-1' });
+      });
+
+      await waitFor(() => expect(mockedGetNote).toHaveBeenCalledWith('b'));
+      expect(result.current.notes.map((n) => n.id)).toEqual(['b']);
+    });
+
+    it('hydrates and merges a remote UPDATE by id, preserving order', async () => {
+      mockedList.mockResolvedValue([makeNote({ id: 'a', content: 'Old' }), makeNote({ id: 'b' })]);
+      const { fake, triggerUpdate } = createFakeChannel();
+      mockedChannel.mockReturnValue(fake as unknown as ReturnType<typeof supabase.channel>);
+      const updated = makeNote({ id: 'a', content: 'Edited by someone else' });
+      mockedGetNote.mockResolvedValue(updated);
+
+      const { result } = renderHook(() => useGroupNotes('group-1'));
+      await waitFor(() => expect(result.current.notes).toHaveLength(2));
+
+      act(() => {
+        triggerUpdate({ id: 'a', group_id: 'group-1', author_id: 'user-2' });
+      });
+
+      await waitFor(() =>
+        expect(result.current.notes.find((n) => n.id === 'a')?.content).toBe('Edited by someone else')
+      );
+      expect(result.current.notes.map((n) => n.id)).toEqual(['a', 'b']); // order unchanged
+    });
+
+    it('removes a remote-deleted note by id and steps focus off it', async () => {
+      mockedList.mockResolvedValue([makeNote({ id: 'a' }), makeNote({ id: 'b' })]);
+      const { fake, triggerDelete } = createFakeChannel();
+      mockedChannel.mockReturnValue(fake as unknown as ReturnType<typeof supabase.channel>);
+
+      const { result } = renderHook(() => useGroupNotes('group-1'));
+      await waitFor(() => expect(result.current.notes).toHaveLength(2));
+      act(() => result.current.goToNext());
+      expect(result.current.focusedNote?.id).toBe('b');
+
+      act(() => {
+        triggerDelete({ id: 'b' });
+      });
+
+      await waitFor(() => expect(result.current.notes.map((n) => n.id)).toEqual(['a']));
+      expect(result.current.focusedNote?.id).toBe('a');
+    });
+
+    it('closes the editor when the note currently being edited is remote-deleted', async () => {
+      mockedList.mockResolvedValue([makeNote({ id: 'a', content: 'Old' })]);
+      const { fake, triggerDelete } = createFakeChannel();
+      mockedChannel.mockReturnValue(fake as unknown as ReturnType<typeof supabase.channel>);
+
+      const { result } = renderHook(() => useGroupNotes('group-1'));
+      await waitFor(() => expect(result.current.notes).toHaveLength(1));
+
+      act(() => result.current.startEdit());
+      expect(result.current.isEditing).toBe(true);
+
+      act(() => {
+        triggerDelete({ id: 'a' });
+      });
+
+      await waitFor(() => expect(result.current.isEditing).toBe(false));
+      expect(result.current.notes).toEqual([]);
+    });
+
+    it('ignores a DELETE for an id not present locally (e.g. a note in a different group -- DELETE is not group_id-filtered)', async () => {
+      mockedList.mockResolvedValue([makeNote({ id: 'a' })]);
+      const { fake, triggerDelete } = createFakeChannel();
+      mockedChannel.mockReturnValue(fake as unknown as ReturnType<typeof supabase.channel>);
+
+      const { result } = renderHook(() => useGroupNotes('group-1'));
+      await waitFor(() => expect(result.current.notes).toHaveLength(1));
+
+      act(() => {
+        triggerDelete({ id: 'note-from-elsewhere' });
+      });
+
+      expect(result.current.notes.map((n) => n.id)).toEqual(['a']);
+    });
+
+    it('unsubscribes on unmount and re-subscribes when groupId changes, with no cross-group leakage', async () => {
+      mockedList.mockResolvedValue([]);
+      const { fake: fakeA, triggerInsert: triggerInsertA } = createFakeChannel();
+      const { fake: fakeB } = createFakeChannel();
+      mockedChannel.mockReturnValueOnce(fakeA as unknown as ReturnType<typeof supabase.channel>);
+      mockedChannel.mockReturnValueOnce(fakeB as unknown as ReturnType<typeof supabase.channel>);
+
+      const { result, rerender, unmount } = renderHook(({ groupId }) => useGroupNotes(groupId), {
+        initialProps: { groupId: 'group-1' },
+      });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(mockedChannel).toHaveBeenCalledWith('group_notes:group:group-1');
+
+      mockedList.mockResolvedValue([]);
+      rerender({ groupId: 'group-2' });
+      expect(mockedRemoveChannel).toHaveBeenCalledWith(fakeA);
+      await waitFor(() => expect(mockedChannel).toHaveBeenCalledWith('group_notes:group:group-2'));
+
+      // A stray event on the old (group-1) subscription's handler must not leak into the
+      // group-2-scoped hook instance now mounted.
+      const hydrated = makeNote({ id: 'stale', group_id: 'group-1' });
+      mockedGetNote.mockResolvedValue(hydrated);
+      act(() => {
+        triggerInsertA({ id: 'stale', group_id: 'group-1', author_id: 'user-2' });
+      });
+      expect(result.current.notes.map((n) => n.id)).not.toContain('stale');
+
+      unmount();
+      expect(mockedRemoveChannel).toHaveBeenCalledWith(fakeB);
+    });
   });
 });

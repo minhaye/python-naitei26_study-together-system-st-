@@ -55,6 +55,23 @@ async def list_notes(
     return await service.list_by_group(session, group_id)
 
 
+@router.get("/{note_id}", response_model=NoteResponse)
+async def get_note(
+    note_id: uuid.UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Single-note lookup, primarily for Realtime hydration on the frontend (a raw
+    `group_notes` postgres_changes row has `author_id` but not the joined `author:
+    UserSummary` -- same reason useChannelMessagesRealtime.ts hydrates messages via
+    GET /messages/{id}). Read access mirrors list_notes: any active Group member."""
+    note = await service.get_by_id(session, note_id)
+    if not note:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Note not found")
+    await _require_group_member(session, note.group_id, current_user.id)
+    return note
+
+
 @router.put("/{note_id}", response_model=NoteResponse)
 async def update_note(
     note_id: uuid.UUID,

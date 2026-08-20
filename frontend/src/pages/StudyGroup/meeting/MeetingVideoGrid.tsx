@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { Track } from 'livekit-client';
 import { isTrackReference, useParticipants, useTracks, VideoTrack } from '@livekit/components-react';
 import type { TrackReference } from '@livekit/components-react';
-import { AlertTriangle, Loader2, Mic, MicOff, VideoOff } from 'lucide-react';
+import { AlertTriangle, Loader2, Mic, MicOff, ScreenShare, VideoOff } from 'lucide-react';
 import type { StudyRoomMember } from '../../../lib/studyRoom.types';
 import { getAvatarColor, getAvatarInitials } from '../../../utils/avatarUtils';
 import { getDisplayName } from '../../../utils/userDisplay';
@@ -86,6 +86,10 @@ export function MeetingVideoGrid({ members, currentUserId, currentUserName, unav
 function ConnectedGrid({ members, currentUserId, currentUserName }: Omit<MeetingVideoGridProps, 'unavailableReason'>) {
   const participants = useParticipants();
   const cameraTrackRefs = useTracks([Track.Source.Camera], { onlySubscribed: false });
+  // Screen-share tracks are identified via LiveKit's own `Track.Source.ScreenShare`, never by
+  // guessing from track/participant shape -- a participant can have both a camera track and a
+  // screen-share track published at the same time, and this keeps the two from colliding.
+  const screenShareTrackRefs = useTracks([Track.Source.ScreenShare], { onlySubscribed: false });
 
   const cameraTrackByIdentity = useMemo(() => {
     const map = new Map<string, TrackReference>();
@@ -95,22 +99,60 @@ function ConnectedGrid({ members, currentUserId, currentUserName }: Omit<Meeting
     return map;
   }, [cameraTrackRefs]);
 
+  const activeScreenShares = useMemo(
+    () => screenShareTrackRefs.filter((trackRef): trackRef is TrackReference => isTrackReference(trackRef) && !trackRef.publication.isMuted),
+    [screenShareTrackRefs]
+  );
+
   const memberByUserId = useMemo(() => new Map(members.map((m) => [m.user_id, m])), [members]);
+  const participantByIdentity = useMemo(() => new Map(participants.map((p) => [p.identity, p])), [participants]);
+  const nameForIdentity = (identity: string) => {
+    if (identity === currentUserId) return `${currentUserName} (Bạn)`;
+    const member = memberByUserId.get(identity);
+    if (member) return getDisplayName(member.user);
+    return participantByIdentity.get(identity)?.name || 'Người dùng';
+  };
 
   if (participants.length === 0) {
     return <MeetingStatusMessage icon={<Loader2 size={32} style={{ animation: 'spin 1s linear infinite' }} />} title="Đang tham gia cuộc gọi..." />;
   }
 
   return (
-    <div
-      style={{
-        flex: 1,
-        display: 'grid',
-        gridTemplateColumns: participants.length > 4 ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)',
-        gap: 16,
-        alignContent: 'center',
-      }}
-    >
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16, minHeight: 0 }}>
+      {activeScreenShares.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: activeScreenShares.length > 1 ? 'repeat(2, 1fr)' : '1fr', gap: 16 }}>
+          {activeScreenShares.map((trackRef) => (
+            <div
+              key={trackRef.publication.trackSid}
+              style={{
+                position: 'relative',
+                aspectRatio: '16/9',
+                background: '#000',
+                borderRadius: 16,
+                border: '2px solid #2563EB',
+                boxShadow: '0 0 16px rgba(37, 99, 235, 0.35)',
+                overflow: 'hidden',
+              }}
+            >
+              <VideoTrack trackRef={trackRef} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              <div style={{ position: 'absolute', top: 12, left: 12, background: 'rgba(37, 99, 235, 0.9)', padding: '4px 12px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 6, color: 'white', fontSize: 12, fontWeight: '600' }}>
+                <ScreenShare size={14} />
+                <span>{nameForIdentity(trackRef.participant.identity)} đang chia sẻ màn hình</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div
+        style={{
+          flex: 1,
+          display: 'grid',
+          gridTemplateColumns: participants.length > 4 ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)',
+          gap: 16,
+          alignContent: 'center',
+        }}
+      >
       {participants.map((p) => {
         const isSelf = p.identity === currentUserId;
         const member = memberByUserId.get(p.identity);
@@ -176,6 +218,7 @@ function ConnectedGrid({ members, currentUserId, currentUserName }: Omit<Meeting
           </div>
         );
       })}
+      </div>
     </div>
   );
 }

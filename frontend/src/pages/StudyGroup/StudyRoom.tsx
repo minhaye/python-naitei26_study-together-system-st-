@@ -21,12 +21,17 @@ import {
   ShieldOff,
   UserPlus,
   Pencil,
-  Trash2
+  Trash2,
+  Image as ImageIcon
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { useStudyRoom } from '../../hooks/useStudyRoom';
 import { useRoomMessages } from '../../hooks/useRoomMessages';
+import { useMessageImageAttachment, ALLOWED_IMAGE_ACCEPT } from '../../hooks/useMessageImageAttachment';
+import { MessageAttachmentImage } from '../../components/chat/MessageAttachmentImage';
+import { SelectedImagePreview } from '../../components/chat/SelectedImagePreview';
+import { ErrorBoundary } from '../../components/ui/ErrorBoundary';
 import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
 import { getDisplayName } from '../../utils/userDisplay';
 import { InviteModal } from '../../components/invitations/InviteModal';
@@ -262,6 +267,8 @@ export function StudyRoom() {
   const { messages, isLoading: isMessagesLoading, loadError: messagesError, isSending: isSendingMessage, sendError: sendMessageError, sendMessage } =
     useRoomMessages(room?.conversation_id ?? null);
   const [chatInput, setChatInput] = useState('');
+  const imageAttachment = useMessageImageAttachment();
+  const chatImageInputRef = useRef<HTMLInputElement | null>(null);
 
   const senderDisplay = (message: (typeof messages)[number]) => {
     const isSelf = message.sender_id === currentUserId;
@@ -285,13 +292,25 @@ export function StudyRoom() {
 
   const handleSendMessage = async () => {
     const trimmed = chatInput.trim();
-    if (!trimmed || isSendingMessage) return;
+    const conversationId = room?.conversation_id ?? null;
+    if ((!trimmed && !imageAttachment.hasImage) || !conversationId || isSendingMessage || imageAttachment.isUploading) return;
     try {
-      await sendMessage(trimmed);
+      // Upload first, create the message second -- a failed upload must never produce an
+      // orphaned/misleading message record (see useMessageImageAttachment.uploadImage).
+      const attachmentPath = imageAttachment.hasImage ? await imageAttachment.uploadImage(conversationId) : null;
+      await sendMessage(trimmed, attachmentPath);
       setChatInput('');
+      imageAttachment.clearImage();
     } catch {
-      // sendMessageError is already populated by the hook; keep the draft so the user can retry.
+      // sendMessageError / imageAttachment.uploadError is already populated; keep the draft
+      // (and any selected image) so the user can retry.
     }
+  };
+
+  const handleChatImageSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = e.target.files?.[0];
+    if (picked) imageAttachment.selectImage(picked);
+    e.target.value = '';
   };
 
   // --- Loading / error / not-yet-joined states (real backend data drives all of these) ---
@@ -701,49 +720,86 @@ export function StudyRoom() {
                       <div>Hãy là người đầu tiên nói lời chào!</div>
                     </div>
                   ) : (
-                    messages.map((m) => {
-                      const display = senderDisplay(m);
-                      return (
-                        <div key={m.id} style={{display: 'flex', gap: 10, flexDirection: display.isSelf ? 'row-reverse' : 'row'}}>
-                          {display.avatarUrl ? (
-                            <img src={display.avatarUrl} alt={display.name} style={{width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flexShrink: 0}} />
-                          ) : (
-                            <div style={{width: 32, height: 32, borderRadius: '50%', background: display.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 12, flexShrink: 0}}>
-                              {display.initial}
-                            </div>
-                          )}
-                          <div style={{maxWidth: '75%', display: 'flex', flexDirection: 'column', alignItems: display.isSelf ? 'flex-end' : 'flex-start'}}>
-                            <div style={{display: 'flex', gap: 6, alignItems: 'baseline', marginBottom: 4}}>
-                              <span style={{color: '#94A3B8', fontSize: 11, fontWeight: '600'}}>{display.name}</span>
-                              <span style={{color: '#64748B', fontSize: 10}}>{formatMessageTime(m.created_at)}</span>
-                            </div>
-                            <div style={{
-                              padding: '10px 14px',
-                              borderRadius: display.isSelf ? '14px 2px 14px 14px' : '2px 14px 14px 14px',
-                              background: display.isSelf ? '#2563EB' : '#334155',
-                              color: 'white',
-                              fontSize: 13,
-                              lineHeight: '1.4',
-                              wordBreak: 'break-word'
-                            }}>
-                              {m.content ?? (m.attachment_path ? '(tệp đính kèm)' : '')}
+                    // Keyed by conversation so a crash here (and the boundary it trips) resets
+                    // on room/conversation change instead of showing the fallback forever -- and
+                    // so it can never take the sibling LiveKit meeting tree down with it (see
+                    // ErrorBoundary.tsx).
+                    <ErrorBoundary
+                      key={room?.conversation_id ?? 'none'}
+                      fallback={
+                        <div style={{margin: '16px 0', padding: '12px 14px', background: '#450A0A', border: '1px solid #7F1D1D', borderRadius: 8, color: '#FCA5A5', fontSize: 12.5}}>
+                          Không thể hiển thị tin nhắn trong phòng học này.
+                        </div>
+                      }
+                    >
+                      {messages.map((m) => {
+                        const display = senderDisplay(m);
+                        return (
+                          <div key={m.id} style={{display: 'flex', gap: 10, flexDirection: display.isSelf ? 'row-reverse' : 'row'}}>
+                            {display.avatarUrl ? (
+                              <img src={display.avatarUrl} alt={display.name} style={{width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flexShrink: 0}} />
+                            ) : (
+                              <div style={{width: 32, height: 32, borderRadius: '50%', background: display.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 12, flexShrink: 0}}>
+                                {display.initial}
+                              </div>
+                            )}
+                            <div style={{maxWidth: '75%', display: 'flex', flexDirection: 'column', alignItems: display.isSelf ? 'flex-end' : 'flex-start'}}>
+                              <div style={{display: 'flex', gap: 6, alignItems: 'baseline', marginBottom: 4}}>
+                                <span style={{color: '#94A3B8', fontSize: 11, fontWeight: '600'}}>{display.name}</span>
+                                <span style={{color: '#64748B', fontSize: 10}}>{formatMessageTime(m.created_at)}</span>
+                              </div>
+                              <div style={{
+                                padding: '10px 14px',
+                                borderRadius: display.isSelf ? '14px 2px 14px 14px' : '2px 14px 14px 14px',
+                                background: display.isSelf ? '#2563EB' : '#334155',
+                                color: 'white',
+                                fontSize: 13,
+                                lineHeight: '1.4',
+                                wordBreak: 'break-word'
+                              }}>
+                                {m.content && <div style={{marginBottom: m.attachment_path ? 6 : 0}}>{m.content}</div>}
+                                {m.attachment_path && <MessageAttachmentImage messageId={m.id} />}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      );
-                    })
+                        );
+                      })}
+                    </ErrorBoundary>
                   )}
                   <div ref={chatEndRef} />
                 </div>
 
                 {/* Chat Input */}
                 <div style={{padding: 16, background: '#0F172A', borderTop: '1px solid #334155', display: 'flex', flexDirection: 'column', gap: 8}}>
-                  {sendMessageError && (
+                  {(sendMessageError || imageAttachment.uploadError || imageAttachment.pickError) && (
                     <div style={{padding: '8px 12px', background: '#450A0A', border: '1px solid #7F1D1D', borderRadius: 8, color: '#FCA5A5', fontSize: 12}}>
-                      {sendMessageError.message}
+                      {sendMessageError?.message || imageAttachment.uploadError?.message || imageAttachment.pickError}
                     </div>
                   )}
+                  {imageAttachment.previewUrl && (
+                    <SelectedImagePreview
+                      previewUrl={imageAttachment.previewUrl}
+                      onRemove={imageAttachment.clearImage}
+                      disabled={isSendingMessage || imageAttachment.isUploading}
+                    />
+                  )}
                   <div style={{display: 'flex', gap: 8, alignItems: 'center'}}>
+                    <input
+                      type="file"
+                      accept={ALLOWED_IMAGE_ACCEPT}
+                      ref={chatImageInputRef}
+                      onChange={handleChatImageSelected}
+                      style={{display: 'none'}}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => chatImageInputRef.current?.click()}
+                      disabled={!room?.conversation_id || isSendingMessage}
+                      aria-label="Đính kèm ảnh"
+                      style={{background: '#1E293B', border: '1px solid #334155', color: '#94A3B8', padding: 10, borderRadius: 8, display: 'flex', cursor: !room?.conversation_id || isSendingMessage ? 'default' : 'pointer', opacity: !room?.conversation_id || isSendingMessage ? 0.6 : 1}}
+                    >
+                      <ImageIcon size={16} />
+                    </button>
                     <input
                       type="text"
                       placeholder="Nhập tin nhắn vào phòng học..."
@@ -755,8 +811,8 @@ export function StudyRoom() {
                     />
                     <button
                       onClick={handleSendMessage}
-                      disabled={!chatInput.trim() || !room?.conversation_id || isSendingMessage}
-                      style={{background: '#2563EB', border: 'none', color: 'white', padding: 10, borderRadius: 8, cursor: !chatInput.trim() || !room?.conversation_id || isSendingMessage ? 'default' : 'pointer', opacity: !chatInput.trim() || !room?.conversation_id || isSendingMessage ? 0.6 : 1}}
+                      disabled={(!chatInput.trim() && !imageAttachment.hasImage) || !room?.conversation_id || isSendingMessage || imageAttachment.isUploading}
+                      style={{background: '#2563EB', border: 'none', color: 'white', padding: 10, borderRadius: 8, cursor: ((!chatInput.trim() && !imageAttachment.hasImage) || !room?.conversation_id || isSendingMessage || imageAttachment.isUploading) ? 'default' : 'pointer', opacity: ((!chatInput.trim() && !imageAttachment.hasImage) || !room?.conversation_id || isSendingMessage || imageAttachment.isUploading) ? 0.6 : 1}}
                     >
                       <Send size={16} />
                     </button>
