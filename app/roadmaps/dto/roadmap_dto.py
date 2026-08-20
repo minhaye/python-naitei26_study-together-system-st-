@@ -49,7 +49,23 @@ class RoadmapUpdate(BaseModel):
 
 
 class RoadmapPhaseUpdate(BaseModel):
-    progress: int = Field(ge=0, le=100)
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    progress: int | None = Field(default=None, ge=0, le=100)
+
+    @field_validator('name')
+    @classmethod
+    def strip_name(cls, value: str | None) -> str | None:
+        if value is not None:
+            value = value.strip()
+            if not value:
+                raise ValueError('Phase name must not be blank')
+        return value
+
+    @model_validator(mode='after')
+    def has_change(self):
+        if not self.model_fields_set:
+            raise ValueError('Provide at least one phase field')
+        return self
 
 
 class RoadmapPhaseResponse(BaseModel):

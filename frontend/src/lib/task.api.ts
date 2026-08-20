@@ -6,3 +6,4 @@ export function createTask(data: Pick<StudyTask, 'title' | 'due_date' | 'priorit
 export function createTasks(data: Array<Pick<StudyTask, 'title' | 'due_date' | 'priority'>>) { return apiClient.post<StudyTask[]>('/tasks/bulk', { tasks: data }); }
 export function updateTask(id: string, data: Partial<Pick<StudyTask, 'title' | 'due_date' | 'priority'>>) { return apiClient.patch<StudyTask>(`/tasks/${id}`, data); }
 export function toggleTaskComplete(id: string) { return apiClient.patch<StudyTask>(`/tasks/${id}/complete`); }
+export function deleteTask(id: string) { return apiClient.delete<void>(`/tasks/${id}`); }
