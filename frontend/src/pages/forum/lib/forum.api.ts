@@ -6,7 +6,9 @@ import type {
   Post,
   Comment,
   ForumPostCreate,
+  ForumPostUpdate,
   CommentCreate,
+  CommentUpdate,
   TagResponse,
 } from '../types/forum.types';
 
@@ -23,7 +25,8 @@ function timeAgo(isoString: string): string {
 }
 
 /** Map ForumPostResponse (BE DTO) → Post (UI Model) */
-function mapPost(dto: ForumPostResponse & { category_name?: string; author_name?: string; likes_count?: number; comments_count?: number; is_liked?: boolean; tags?: string[] }): Post {
+function mapPost(dto: ForumPostResponse): Post {
+  const isEdited = dto.updated_at && dto.created_at && new Date(dto.updated_at).getTime() - new Date(dto.created_at).getTime() > 5000;
   return {
     id: dto.id,
     authorId: dto.author_id,
@@ -34,6 +37,8 @@ function mapPost(dto: ForumPostResponse & { category_name?: string; author_name?
     content: dto.content,
     imagePath: dto.image_path,
     createdAt: dto.created_at,
+    updatedAt: dto.updated_at,
+    isEdited: Boolean(isEdited),
     timeAgo: timeAgo(dto.created_at),
     likesCount: dto.likes_count ?? 0,
     commentsCount: dto.comments_count ?? 0,
@@ -43,7 +48,8 @@ function mapPost(dto: ForumPostResponse & { category_name?: string; author_name?
 }
 
 /** Map CommentResponse (BE DTO) → Comment (UI Model) */
-function mapComment(dto: CommentResponse & { author_name?: string; likes_count?: number; is_liked?: boolean }): Comment {
+function mapComment(dto: CommentResponse): Comment {
+  const isEdited = dto.updated_at && dto.created_at && new Date(dto.updated_at).getTime() - new Date(dto.created_at).getTime() > 5000;
   return {
     id: dto.id,
     postId: dto.post_id,
@@ -52,6 +58,8 @@ function mapComment(dto: CommentResponse & { author_name?: string; likes_count?:
     parentCommentId: dto.parent_comment_id,
     content: dto.content,
     createdAt: dto.created_at,
+    updatedAt: dto.updated_at,
+    isEdited: Boolean(isEdited),
     timeAgo: timeAgo(dto.created_at),
     likesCount: dto.likes_count ?? 0,
     isLiked: dto.is_liked ?? false,
@@ -153,6 +161,18 @@ export const forumApi = {
     });
   },
 
+  updatePost: async (postId: string, payload: ForumPostUpdate, categoryName?: string): Promise<Post> => {
+    const response = await apiClient.put<ForumPostResponse>(`/forum/posts/${postId}`, payload);
+    return mapPost({
+      ...response,
+      category_name: categoryName ?? response.category_name,
+    });
+  },
+
+  deletePost: async (postId: string): Promise<void> => {
+    await apiClient.delete(`/forum/posts/${postId}`);
+  },
+
   likePost: async (postId: string, userId?: string): Promise<void> => {
     // Backend expects user_id as query param
     await apiClient.post(`/forum/posts/${postId}/like?user_id=${userId ?? '00000000-0000-0000-0000-000000000000'}`, {});
@@ -180,6 +200,15 @@ export const forumApi = {
   createComment: async (payload: CommentCreate, authorName?: string): Promise<Comment> => {
     const response = await apiClient.post<CommentResponse>('/forum/comments', payload);
     return mapComment({ ...response, author_name: authorName ?? 'Bạn', likes_count: 0, is_liked: false });
+  },
+
+  updateComment: async (commentId: string, payload: CommentUpdate): Promise<Comment> => {
+    const response = await apiClient.put<CommentResponse>(`/forum/comments/${commentId}`, payload);
+    return mapComment(response);
+  },
+
+  deleteComment: async (commentId: string): Promise<void> => {
+    await apiClient.delete(`/forum/comments/${commentId}`);
   },
 
   likeComment: async (commentId: string, userId?: string): Promise<void> => {

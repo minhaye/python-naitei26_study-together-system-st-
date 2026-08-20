@@ -1,22 +1,20 @@
-/**
- * PostCard — Card hiển thị 1 bài viết trong danh sách Forum.
- *
- * Tích hợp RichContentView hiển thị đẹp mắt tất cả định dạng (Toán KaTeX, Ảnh, In đậm, Nghiêng, Hashtag).
- */
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ThumbsUp, MessageSquare, Share2, Loader2, AlertCircle, RefreshCw, Trash2 } from 'lucide-react';
-import type { Post, ForumPostCreate } from '../types/forum.types';
+import { ThumbsUp, MessageSquare, Share2, Loader2, AlertCircle, RefreshCw, Trash2, MoreHorizontal, Edit2 } from 'lucide-react';
+import type { Post, ForumPostCreate, ForumPostUpdate } from '../types/forum.types';
 import { CommentSection } from './CommentSection';
 import { Avatar } from '../../../components/ui/Avatar';
 import { RichContentView } from '../../../components/ui/RichContentView';
+import { EditPostModal } from './EditPostModal';
 
 import { useForumState } from '../context/ForumStateContext';
+import { useAuth } from '../../../hooks/useAuth';
 
 interface PostCardProps {
   post: Post;
   onToggleLike: (postId: string) => void;
+  onUpdatePost?: (postId: string, payload: ForumPostUpdate, categoryName?: string) => Promise<void> | void;
+  onDeletePost?: (postId: string) => Promise<void> | void;
   onRetryPost?: (post: Post, payload: Omit<ForumPostCreate, 'author_id'>) => void;
   onDiscardPost?: (postId: string) => void;
   defaultShowComments?: boolean;
@@ -26,15 +24,25 @@ interface PostCardProps {
 export const PostCard: React.FC<PostCardProps> = ({
   post,
   onToggleLike,
+  onUpdatePost,
+  onDeletePost,
   onRetryPost,
   onDiscardPost,
   defaultShowComments = false,
   isDetailPage = false,
 }) => {
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
   const { setSelectedTag } = useForumState();
+
+  const isAuthor = currentUser?.id === post.authorId;
+
   const [showComments, setShowComments] = useState(defaultShowComments);
   const [hoveredButton, setHoveredButton] = useState<'like' | 'comment' | 'share' | null>(null);
+
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   // Optimistic UI state cho Like & Comment count (0ms response)
   const [localIsLiked, setLocalIsLiked] = useState(post.isLiked);
@@ -47,6 +55,17 @@ export const PostCard: React.FC<PostCardProps> = ({
     setLocalCommentsCount(post.commentsCount);
   }, [post.isLiked, post.likesCount, post.commentsCount]);
 
+  // Đóng dropdown 3 chấm khi click bên ngoài
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const handleLikeClick = () => {
     const nextLiked = !localIsLiked;
     setLocalIsLiked(nextLiked);
@@ -56,6 +75,13 @@ export const PostCard: React.FC<PostCardProps> = ({
 
   const handleCommentAdded = () => {
     setLocalCommentsCount((prev) => prev + 1);
+  };
+
+  const handleConfirmDelete = async () => {
+    setIsMenuOpen(false);
+    if (window.confirm('Bạn có chắc chắn muốn xóa bài viết này? Hành động này không thể hoàn tác.')) {
+      await onDeletePost?.(post.id);
+    }
   };
 
   // Bóc tách ảnh và văn bản riêng để tính độ dài chữ chuẩn kiểu Facebook (không tính chuỗi Base64 ảnh)
@@ -68,7 +94,6 @@ export const PostCard: React.FC<PostCardProps> = ({
     ? cleanTextContent.slice(0, MAX_CONTENT_LENGTH) + imgMatches.join('')
     : post.content;
 
-  // GIỮ NGUYÊN 100% FE STYLES VÀ HOVER GỐC CỦA BẠN
   const actionButtonStyle = (
     btnType: 'like' | 'comment' | 'share',
     active = false
@@ -97,8 +122,9 @@ export const PostCard: React.FC<PostCardProps> = ({
         border: post.status === 'error' ? '1px solid #FCA5A5' : '1px solid #E2E8F0',
         boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
         overflow: 'hidden',
-        opacity: post.status === 'sending' ? 0.75 : 1,
+        opacity: post.status === 'sending' ? 0.85 : 1,
         transition: 'opacity 0.3s ease, border-color 0.3s ease',
+        position: 'relative',
       }}
     >
       {/* Banner Optimistic UI — Trạng thái Đang đăng */}
@@ -119,6 +145,24 @@ export const PostCard: React.FC<PostCardProps> = ({
           <span>Đang đăng bài viết...</span>
         </div>
       )}
+      {/* Banner Optimistic UI — Trạng thái Đang cập nhật */}
+      {post.status === 'updating' && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          background: '#F0FDFA',
+          color: '#0D9488',
+          fontSize: 13,
+          fontWeight: '600',
+          padding: '8px 12px',
+          borderRadius: 8,
+          marginBottom: 12,
+        }}>
+          <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+          <span>Đang cập nhật bài viết...</span>
+        </div>
+      )}
       {/* Banner Optimistic UI — Trạng thái Lỗi */}
       {post.status === 'error' && (
         <div style={{
@@ -135,7 +179,7 @@ export const PostCard: React.FC<PostCardProps> = ({
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <AlertCircle size={14} />
-            <span>Không thể đăng bài. Kiểm tra kết nối và thử lại.</span>
+            <span>Không thể thao tác. Kiểm tra kết nối và thử lại.</span>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             {onRetryPost && (
@@ -174,11 +218,102 @@ export const PostCard: React.FC<PostCardProps> = ({
           <div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <span style={{ fontWeight: '600', color: '#0F172A', fontSize: 15 }}>{post.authorName}</span>
-              <span style={{ color: '#94A3B8', fontSize: 13 }}>• {post.timeAgo}</span>
+              <span style={{ color: '#94A3B8', fontSize: 13 }}>
+                • {post.timeAgo}
+                {post.isEdited && <span style={{ marginLeft: 4 }}>• Đã chỉnh sửa</span>}
+              </span>
             </div>
             <div style={{ color: '#64748B', fontSize: 13, marginTop: 2 }}>{post.categoryName}</div>
           </div>
         </div>
+
+        {/* Menu 3 chấm (Chỉ hiển thị cho Tác giả bài viết) */}
+        {isAuthor && (
+          <div ref={menuRef} style={{ position: 'relative' }}>
+            <button
+              onClick={() => setIsMenuOpen((v) => !v)}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 6,
+                borderRadius: '50%',
+                cursor: 'pointer',
+                color: '#64748B',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'background 0.15s ease',
+              }}
+              onMouseOver={(e) => (e.currentTarget.style.background = '#F1F5F9')}
+              onMouseOut={(e) => (e.currentTarget.style.background = 'none')}
+              title="Tùy chọn bài viết"
+            >
+              <MoreHorizontal size={20} />
+            </button>
+
+            {/* Dropdown Menu Popover */}
+            {isMenuOpen && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 4px)',
+                  right: 0,
+                  background: 'white',
+                  borderRadius: 12,
+                  border: '1px solid #CBD5E1',
+                  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+                  zIndex: 90,
+                  minWidth: 160,
+                  padding: '6px 0',
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    setIsEditModalOpen(true);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '10px 16px',
+                    fontSize: 13,
+                    fontWeight: '600',
+                    color: '#1E293B',
+                    cursor: 'pointer',
+                    transition: 'background 0.15s ease',
+                  }}
+                  onMouseOver={(e) => (e.currentTarget.style.background = '#F8FAFC')}
+                  onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <Edit2 size={15} color="#3B82F6" />
+                  <span>Chỉnh sửa bài viết</span>
+                </div>
+
+                <div
+                  onClick={handleConfirmDelete}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '10px 16px',
+                    fontSize: 13,
+                    fontWeight: '600',
+                    color: '#DC2626',
+                    cursor: 'pointer',
+                    transition: 'background 0.15s ease',
+                  }}
+                  onMouseOver={(e) => (e.currentTarget.style.background = '#FEF2F2')}
+                  onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <Trash2 size={15} color="#DC2626" />
+                  <span>Xóa bài viết</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Post Title -> Links to /forum/post/:id */}
@@ -287,7 +422,7 @@ export const PostCard: React.FC<PostCardProps> = ({
         </div>
       </div>
 
-      {/* Comment Section (chỉ mở khi bấm nút "Bình luận" hoặc khi defaultShowComments = true) */}
+      {/* Comment Section */}
       {showComments && (
         <div style={{ margin: '0 -24px', padding: 24, background: '#FAFAFA', borderTop: '1px solid #F1F5F9' }}>
           <CommentSection
@@ -296,6 +431,18 @@ export const PostCard: React.FC<PostCardProps> = ({
             onCommentAdded={handleCommentAdded}
           />
         </div>
+      )}
+
+      {/* Modal Chỉnh sửa Bài viết */}
+      {isEditModalOpen && (
+        <EditPostModal
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          post={post}
+          onSave={async (payload, categoryName) => {
+            await onUpdatePost?.(post.id, payload, categoryName);
+          }}
+        />
       )}
     </div>
   );

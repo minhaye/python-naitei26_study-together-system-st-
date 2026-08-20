@@ -23,7 +23,36 @@ function updateLikeInTree(comments: Comment[], commentId: string): Comment[] {
   });
 }
 
-/** Thêm reply đệ quy vào đúng parent trong cây comment */
+/** Cập nhật đệ quy nội dung của một comment trong cây comment */
+function updateCommentInTree(comments: Comment[], commentId: string, newContent: string): Comment[] {
+  return comments.map((c) => {
+    if (c.id === commentId) {
+      return {
+        ...c,
+        content: newContent,
+        updatedAt: new Date().toISOString(),
+        isEdited: true,
+      };
+    }
+    if (c.replies.length > 0) {
+      return { ...c, replies: updateCommentInTree(c.replies, commentId, newContent) };
+    }
+    return c;
+  });
+}
+
+/** Xóa đệ quy một comment khỏi cây comment */
+function deleteCommentInTree(comments: Comment[], commentId: string): Comment[] {
+  return comments
+    .filter((c) => c.id !== commentId)
+    .map((c) => {
+      if (c.replies.length > 0) {
+        return { ...c, replies: deleteCommentInTree(c.replies, commentId) };
+      }
+      return c;
+    });
+}
+
 /** Thêm reply vào mảng replies của Root comment chuẩn Facebook */
 function appendReplyInTree(comments: Comment[], parentId: string, reply: Comment): Comment[] {
   return comments.map((c) => {
@@ -161,6 +190,40 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
   };
 
   /**
+   * Chỉnh sửa bình luận — Optimistic UI (0ms đệ quy).
+   */
+  const handleUpdateComment = (commentId: string, newContent: string) => {
+    return requireAuth(async () => {
+      // 1. Cập nhật UI ngay lập tức 0ms
+      setComments((prev) => updateCommentInTree(prev, commentId, newContent));
+
+      // 2. Gọi API ngầm ở background
+      try {
+        await forumApi.updateComment(commentId, { content: newContent });
+      } catch (error) {
+        console.error('Failed to update comment', error);
+      }
+    });
+  };
+
+  /**
+   * Xóa bình luận — Optimistic UI (0ms đệ quy).
+   */
+  const handleDeleteComment = (commentId: string) => {
+    return requireAuth(async () => {
+      // 1. Cập nhật UI ngay lập tức 0ms
+      setComments((prev) => deleteCommentInTree(prev, commentId));
+
+      // 2. Gọi API delete ở background
+      try {
+        await forumApi.deleteComment(commentId);
+      } catch (error) {
+        console.error('Failed to delete comment', error);
+      }
+    });
+  };
+
+  /**
    * Toggle thích/bỏ thích một bình luận — Optimistic UI (0ms).
    */
   const handleToggleCommentLike = (commentId: string, isLiked: boolean) => {
@@ -182,6 +245,8 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
     isLoading,
     handleAddComment,
     handleReply,
+    handleUpdateComment,
+    handleDeleteComment,
     handleToggleCommentLike,
   };
 }

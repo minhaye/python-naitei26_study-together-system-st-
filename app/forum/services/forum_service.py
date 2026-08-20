@@ -207,6 +207,7 @@ class ForumService:
     async def update_post(self, session: AsyncSession, post: ForumPost, data: ForumPostUpdate) -> ForumPost:
         for field, value in data.model_dump(exclude_unset=True).items():
             setattr(post, field, value)
+        post.updated_at = datetime.now(timezone.utc)
         await session.flush()
 
         if data.content is not None:
@@ -246,7 +247,13 @@ class ForumService:
         return comment
 
     async def get_comment_by_id(self, session: AsyncSession, comment_id: uuid.UUID) -> Comment | None:
-        return await session.get(Comment, comment_id)
+        from sqlalchemy.orm import selectinload
+        stmt = select(Comment).options(selectinload(Comment.author)).where(Comment.id == comment_id)
+        res = await session.execute(stmt)
+        cmt = res.scalar_one_or_none()
+        if cmt:
+            cmt.author_name = cmt.author.display_name if cmt.author else None
+        return cmt
 
     async def list_comments_by_post(
         self, session: AsyncSession, post_id: uuid.UUID, user_id: uuid.UUID | None = None
@@ -289,6 +296,7 @@ class ForumService:
 
     async def update_comment(self, session: AsyncSession, comment: Comment, data: CommentUpdate) -> Comment:
         comment.content = data.content
+        comment.updated_at = datetime.now(timezone.utc)
         await session.flush()
         return comment
 

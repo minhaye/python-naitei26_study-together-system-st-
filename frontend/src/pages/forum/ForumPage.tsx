@@ -49,7 +49,7 @@ export const ForumPage: React.FC = () => {
     selectedFilter,
     currentUser.id
   );
-  const { showCreateModal, setShowCreateModal, handleCreatePost, handleRetryPost, handleDiscardPost, handleToggleLike } = usePostActions(setPosts);
+  const { showCreateModal, setShowCreateModal, handleCreatePost, handleUpdatePost, handleDeletePost, handleRetryPost, handleDiscardPost, handleToggleLike } = usePostActions(setPosts);
 
   // Ref cho cột giữa (Middle Feed) để lưu & khôi phục scrollTop
   const feedRef = useRef<HTMLDivElement | null>(null);
@@ -191,6 +191,8 @@ export const ForumPage: React.FC = () => {
                 key={post.id}
                 post={post}
                 onToggleLike={handleToggleLike}
+                onUpdatePost={handleUpdatePost}
+                onDeletePost={handleDeletePost}
                 onRetryPost={handleRetryPost}
                 onDiscardPost={handleDiscardPost}
               />

@@ -1,23 +1,20 @@
-/**
- * ForumPostDetail — Trang xem chi tiết 1 bài viết / câu hỏi.
- *
- * Route: /forum/post/:id
- * Tự động mở sẵn phần bình luận khi xem chi tiết.
- */
-
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { PostCard } from './components/PostCard';
 import { ForumRightSidebar } from './components/ForumRightSidebar';
 import { forumApi } from './lib/forum.api';
-import type { Post } from './types/forum.types';
+import type { Post, ForumPostUpdate } from './types/forum.types';
 
 import { useAuth } from '../../hooks/useAuth';
+import { useForumState } from './context/ForumStateContext';
 
 export const ForumPostDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { currentUser } = useAuth();
+  const { updatePostInState, deletePostInState } = useForumState();
+
   const [post, setPost] = useState<Post | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -50,6 +47,47 @@ export const ForumPostDetail: React.FC = () => {
           }
         : null
     );
+  };
+
+  const handleUpdatePost = async (
+    postId: string,
+    payload: ForumPostUpdate,
+    categoryName?: string
+  ) => {
+    if (!post) return;
+    // Optimistic local update
+    const optimisticPost: Post = {
+      ...post,
+      title: payload.title ?? post.title,
+      content: payload.content ?? post.content,
+      categoryId: payload.category_id ?? post.categoryId,
+      categoryName: categoryName ?? post.categoryName,
+      imagePath: payload.image_path !== undefined ? payload.image_path : post.imagePath,
+      updatedAt: new Date().toISOString(),
+      isEdited: true,
+      status: 'updating',
+    };
+    setPost(optimisticPost);
+    updatePostInState(optimisticPost);
+
+    try {
+      const updated = await forumApi.updatePost(postId, payload, categoryName);
+      setPost(updated);
+      updatePostInState(updated);
+    } catch (error) {
+      console.error('Failed to update post detail', error);
+      setPost((prev) => (prev ? { ...prev, status: 'error' } : null));
+    }
+  };
+
+  const handleDeletePost = async (postId: string) => {
+    deletePostInState(postId);
+    navigate('/');
+    try {
+      await forumApi.deletePost(postId);
+    } catch (error) {
+      console.error('Failed to delete post detail', error);
+    }
   };
 
   return (
@@ -92,7 +130,14 @@ export const ForumPostDetail: React.FC = () => {
 
           {/* Post Card — Tự động mở sẵn bình luận */}
           {!isLoading && post && (
-            <PostCard post={post} onToggleLike={handleToggleLike} defaultShowComments={true} isDetailPage={true} />
+            <PostCard
+              post={post}
+              onToggleLike={handleToggleLike}
+              onUpdatePost={handleUpdatePost}
+              onDeletePost={handleDeletePost}
+              defaultShowComments={true}
+              isDetailPage={true}
+            />
           )}
 
           {/* Not Found */}

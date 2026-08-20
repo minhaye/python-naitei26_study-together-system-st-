@@ -31,7 +31,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
   onCommentAdded,
 }) => {
   const { currentUser } = useAuth();
-  const { comments, isLoading, handleAddComment, handleReply, handleToggleCommentLike } =
+  const { comments, isLoading, handleAddComment, handleReply, handleUpdateComment, handleDeleteComment, handleToggleCommentLike } =
     useComments(postId, onCommentAdded);
   const [newComment, setNewComment] = useState('');
   const [showRichEditor, setShowRichEditor] = useState(false);
@@ -172,6 +172,8 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
               key={comment.id}
               comment={comment}
               onReply={handleReply}
+              onEdit={handleUpdateComment}
+              onDelete={handleDeleteComment}
               onLike={handleToggleCommentLike}
             />
           ))}

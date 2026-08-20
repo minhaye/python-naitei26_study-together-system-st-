@@ -22,6 +22,8 @@ interface ForumState {
   setSearch: (search: string) => void;
   posts: Post[];
   setPosts: React.Dispatch<React.SetStateAction<Post[]>>;
+  updatePostInState: (updatedPost: Post) => void;
+  deletePostInState: (postId: string) => void;
   hasMore: boolean;
   setHasMore: (hasMore: boolean) => void;
   skip: number;
@@ -43,6 +45,14 @@ export const ForumStateProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [skip, setSkip] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
 
+  const updatePostInState = (updatedPost: Post) => {
+    setPosts((prev) => prev.map((p) => (p.id === updatedPost.id ? { ...p, ...updatedPost } : p)));
+  };
+
+  const deletePostInState = (postId: string) => {
+    setPosts((prev) => prev.filter((p) => p.id !== postId));
+  };
+
   return (
     <ForumStateContext.Provider
       value={{
@@ -58,6 +68,8 @@ export const ForumStateProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setSearch,
         posts,
         setPosts,
+        updatePostInState,
+        deletePostInState,
         hasMore,
         setHasMore,
         skip,
