@@ -1,11 +1,13 @@
 import uuid
+from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.conversations.entities.conversation_entity import Conversation, ConversationMember
 from app.db.enums import ConversationType
+from app.messages.entities.message_entity import Message
 
 
 class ConversationsService:
@@ -116,3 +118,44 @@ class ConversationsService:
             .order_by(Conversation.created_at.desc())
         )
         return list(result.scalars().all())
+
+    async def mark_read(self, session: AsyncSession, conversation_id: uuid.UUID, user_id: uuid.UUID) -> None:
+        result = await session.execute(
+            select(ConversationMember).where(
+                ConversationMember.conversation_id == conversation_id,
+                ConversationMember.user_id == user_id,
+            )
+        )
+        member = result.scalar_one_or_none()
+        if member is None:
+            return
+        member.last_read_at = datetime.now(timezone.utc)
+        await session.flush()
+
+    async def count_unread_for_user(
+        self, session: AsyncSession, user_id: uuid.UUID, conversation_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, int]:
+        """Batched unread count for every conversation_id at once (one query per
+        GET/POST response build, not one per conversation). Joins each conversation's
+        Message rows to the caller's own ConversationMember row (for last_read_at),
+        excludes the caller's own messages, and counts anything newer, grouped by
+        conversation."""
+        if not conversation_ids:
+            return {}
+        result = await session.execute(
+            select(Message.conversation_id, func.count(Message.id))
+            .join(
+                ConversationMember,
+                and_(
+                    ConversationMember.conversation_id == Message.conversation_id,
+                    ConversationMember.user_id == user_id,
+                ),
+            )
+            .where(
+                Message.conversation_id.in_(conversation_ids),
+                Message.sender_id != user_id,
+                Message.created_at > ConversationMember.last_read_at,
+            )
+            .group_by(Message.conversation_id)
+        )
+        return {row[0]: row[1] for row in result.all()}

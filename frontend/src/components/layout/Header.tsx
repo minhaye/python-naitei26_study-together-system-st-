@@ -4,10 +4,13 @@ import { useAuth } from '../../hooks/useAuth';
 import { useAuthContext } from '../../contexts/auth-context';
 import { supabase } from '../../lib/supabase';
 import { Avatar } from '../ui/Avatar';
+import { CountBadge } from '../ui/CountBadge';
 import { PendingInvitationsBell } from '../invitations/PendingInvitationsBell';
+import { useUnreadMessages } from '../../contexts/unread-messages-context';
 
 export function Header() {
   const { isLoggedIn, currentUser } = useAuth();
+  const { totalUnread } = useUnreadMessages();
   const { setDevSession, profile } = useAuthContext();
   const navigate = useNavigate();
 
@@ -69,7 +72,10 @@ export function Header() {
                         lineHeight: '24px', textDecoration: 'none', cursor: 'pointer',
                         transition: 'all 0.2s'
                     })}>
-                        Tin nhắn
+                        <span style={{position: 'relative', display: 'inline-block'}}>
+                            Tin nhắn
+                            <CountBadge count={totalUnread} style={{top: -6, right: -14}} />
+                        </span>
                     </NavLink>
                 </div>
             </div>
