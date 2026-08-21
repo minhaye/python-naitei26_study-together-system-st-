@@ -63,6 +63,7 @@ class ForumPostResponse(BaseModel):
     # Optional fields for UI aggregates
     category_name: str | None = None
     author_name: str | None = None
+    author_avatar_url: str | None = None
     likes_count: int = 0
     comments_count: int = 0
     is_liked: bool = False
@@ -92,6 +93,7 @@ class CommentResponse(BaseModel):
     updated_at: datetime
 
     author_name: str | None = None
+    author_avatar_url: str | None = None
     likes_count: int = 0
     is_liked: bool = False
 

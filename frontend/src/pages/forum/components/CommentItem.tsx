@@ -168,7 +168,7 @@ export const CommentItem: React.FC<CommentItemProps> = ({
 
       {/* Avatar dùng name prop đồng bộ */}
       <div style={{ position: 'relative', zIndex: 1, flexShrink: 0 }}>
-        <Avatar name={comment.authorName} size={isRoot ? 'sm' : 'xs'} />
+        <Avatar name={comment.authorName} src={comment.authorAvatarUrl} size={isRoot ? 'sm' : 'xs'} />
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>

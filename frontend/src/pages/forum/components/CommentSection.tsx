@@ -66,7 +66,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
     >
       {/* Input gửi comment mới */}
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-        <Avatar name={currentUser.name} size="sm" style={{ marginTop: 4 }} />
+        <Avatar name={currentUser.name} src={currentUser.avatarUrl} size="sm" style={{ marginTop: 4 }} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
           {!showRichEditor ? (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', width: '100%' }}>

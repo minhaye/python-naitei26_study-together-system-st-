@@ -31,6 +31,7 @@ function mapPost(dto: ForumPostResponse): Post {
     id: dto.id,
     authorId: dto.author_id,
     authorName: dto.author_name ?? 'Không rõ',
+    authorAvatarUrl: dto.author_avatar_url ?? null,
     categoryId: dto.category_id,
     categoryName: dto.category_name ?? 'Không rõ',
     title: dto.title,
@@ -55,6 +56,7 @@ function mapComment(dto: CommentResponse): Comment {
     postId: dto.post_id,
     authorId: dto.author_id,
     authorName: dto.author_name ?? 'Ẩn danh',
+    authorAvatarUrl: dto.author_avatar_url ?? null,
     parentCommentId: dto.parent_comment_id,
     content: dto.content,
     createdAt: dto.created_at,
@@ -149,12 +151,18 @@ export const forumApi = {
     return apiClient.get<TagResponse[]>(`/forum/tags/search?q=${encodeURIComponent(query)}&limit=${limit}`);
   },
 
-  createPost: async (payload: ForumPostCreate, authorName?: string, categoryName?: string): Promise<Post> => {
+  createPost: async (
+    payload: ForumPostCreate,
+    authorName?: string,
+    categoryName?: string,
+    authorAvatarUrl?: string | null
+  ): Promise<Post> => {
     const response = await apiClient.post<ForumPostResponse>('/forum/posts', payload);
     return mapPost({
       ...response,
       category_name: categoryName ?? 'Chung',
       author_name: authorName ?? 'Bạn',
+      author_avatar_url: authorAvatarUrl ?? response.author_avatar_url ?? null,
       likes_count: 0,
       comments_count: 0,
       is_liked: false,
@@ -197,9 +205,15 @@ export const forumApi = {
     return nestComments(flat);
   },
 
-  createComment: async (payload: CommentCreate, authorName?: string): Promise<Comment> => {
+  createComment: async (payload: CommentCreate, authorName?: string, authorAvatarUrl?: string | null): Promise<Comment> => {
     const response = await apiClient.post<CommentResponse>('/forum/comments', payload);
-    return mapComment({ ...response, author_name: authorName ?? 'Bạn', likes_count: 0, is_liked: false });
+    return mapComment({
+      ...response,
+      author_name: authorName ?? 'Bạn',
+      author_avatar_url: authorAvatarUrl ?? response.author_avatar_url ?? null,
+      likes_count: 0,
+      is_liked: false,
+    });
   },
 
   updateComment: async (commentId: string, payload: CommentUpdate): Promise<Comment> => {

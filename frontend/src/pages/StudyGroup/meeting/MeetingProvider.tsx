@@ -10,6 +10,13 @@ interface MeetingProviderProps {
    * page on `isCurrentUserMember && room.status !== 'ended'`. The backend still independently
    * re-checks authorization on every token request regardless of this flag. */
   enabled: boolean;
+  /** Initial mic/camera state and device picks, as chosen by the user in the pre-join lobby
+   * (see PreJoinLobby.tsx). Defaults to both on with the system default device, matching the
+   * previous hardcoded behavior, if the lobby is skipped. */
+  initialAudioEnabled?: boolean;
+  initialVideoEnabled?: boolean;
+  audioDeviceId?: string;
+  videoDeviceId?: string;
   children: ReactNode;
 }
 
@@ -18,7 +25,15 @@ interface MeetingProviderProps {
  * `children` (video grid / controls read `useMeetingContext()` to know whether a live room is
  * actually available) so the rest of the Study Room page layout never has to branch on it.
  */
-export function MeetingProvider({ roomId, enabled, children }: MeetingProviderProps) {
+export function MeetingProvider({
+  roomId,
+  enabled,
+  initialAudioEnabled = true,
+  initialVideoEnabled = true,
+  audioDeviceId,
+  videoDeviceId,
+  children,
+}: MeetingProviderProps) {
   const { status, data, error, retry } = useMeetingToken(roomId, enabled);
   const [connected, setConnected] = useState(false);
   const [liveKitError, setLiveKitError] = useState<Error | null>(null);
@@ -38,8 +53,12 @@ export function MeetingProvider({ roomId, enabled, children }: MeetingProviderPr
         serverUrl={data.server_url}
         token={data.participant_token}
         connect
-        audio
-        video
+        audio={initialAudioEnabled}
+        video={initialVideoEnabled}
+        options={{
+          audioCaptureDefaults: audioDeviceId ? { deviceId: audioDeviceId } : undefined,
+          videoCaptureDefaults: videoDeviceId ? { deviceId: videoDeviceId } : undefined,
+        }}
         onConnected={() => {
           setConnected(true);
           setLiveKitError(null);

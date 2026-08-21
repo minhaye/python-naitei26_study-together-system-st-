@@ -45,7 +45,7 @@ export function GroupMembersPanel({
       name,
       initials: isSelf ? currentUser.initials : getAvatarInitials(name),
       color: isSelf ? currentUser.color : getAvatarColor(name),
-      avatarUrl: isSelf ? null : member.user.avatar_url,
+      avatarUrl: isSelf ? currentUser.avatarUrl : member.user.avatar_url,
     };
   };
 

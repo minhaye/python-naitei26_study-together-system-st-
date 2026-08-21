@@ -75,7 +75,7 @@ export const LikedPostsModal: React.FC<LikedPostsModalProps> = ({ isOpen, onClos
           ) : (
             posts.map((post) => (
               <div key={post.id} style={{ display: 'flex', gap: 12 }}>
-                <Avatar name={post.authorName} size="sm" />
+                <Avatar name={post.authorName} src={post.authorAvatarUrl} size="sm" />
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#64748B' }}>
                     <span style={{ color: '#0F172A', fontWeight: '500' }}>{post.authorName}</span>

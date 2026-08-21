@@ -124,6 +124,7 @@ class ForumService:
         post, c_count, l_count = row
         post.category_name = post.category.name if post.category else None
         post.author_name = post.author.display_name if post.author else None
+        post.author_avatar_url = post.author.avatar_url if post.author else None
         post.likes_count = l_count
         post.comments_count = c_count
         post.is_liked = False
@@ -196,6 +197,7 @@ class ForumService:
         for post, c_count, l_count in rows:
             post.category_name = post.category.name if post.category else None
             post.author_name = post.author.display_name if post.author else None
+            post.author_avatar_url = post.author.avatar_url if post.author else None
             post.likes_count = l_count
             post.comments_count = c_count
             post.is_liked = post.id in liked_post_ids
@@ -253,6 +255,7 @@ class ForumService:
         cmt = res.scalar_one_or_none()
         if cmt:
             cmt.author_name = cmt.author.display_name if cmt.author else None
+            cmt.author_avatar_url = cmt.author.avatar_url if cmt.author else None
         return cmt
 
     async def list_comments_by_post(
@@ -288,6 +291,7 @@ class ForumService:
         comments = []
         for cmt, l_count in rows:
             cmt.author_name = cmt.author.display_name if cmt.author else None
+            cmt.author_avatar_url = cmt.author.avatar_url if cmt.author else None
             cmt.likes_count = l_count
             cmt.is_liked = cmt.id in liked_comment_ids
             comments.append(cmt)
@@ -349,6 +353,7 @@ class ForumService:
         for post, c_count, l_count in rows:
             post.category_name = post.category.name if post.category else None
             post.author_name = post.author.display_name if post.author else None
+            post.author_avatar_url = post.author.avatar_url if post.author else None
             post.likes_count = l_count
             post.comments_count = c_count
             post.is_liked = True

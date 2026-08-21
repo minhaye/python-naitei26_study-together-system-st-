@@ -227,7 +227,7 @@ export const ForumRightSidebar: React.FC = () => {
             {!isLoadingLiked &&
               visiblePosts.map((post) => (
                 <div key={post.id} style={{ alignSelf: 'stretch', gap: 12, display: 'flex' }}>
-                  <Avatar name={post.authorName} size="sm" />
+                  <Avatar name={post.authorName} src={post.authorAvatarUrl} size="sm" />
                   <div style={{ flex: 1, flexDirection: 'column', gap: 2, display: 'flex' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#64748B' }}>
                       <span style={{ color: '#0F172A', fontWeight: '500' }}>{post.authorName}</span>

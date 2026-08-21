@@ -552,7 +552,7 @@ export function StudyGroupDetail() {
       name,
       initials: isSelf ? currentUser.initials : getAvatarInitials(name),
       color: isSelf ? currentUser.color : getAvatarColor(name),
-      avatarUrl: isSelf ? null : member.user.avatar_url,
+      avatarUrl: isSelf ? currentUser.avatarUrl : member.user.avatar_url,
     };
   };
 
@@ -566,7 +566,7 @@ export function StudyGroupDetail() {
       name,
       initials: isSelf ? currentUser.initials : getAvatarInitials(name),
       color: isSelf ? currentUser.color : getAvatarColor(name),
-      avatarUrl: isSelf ? null : message.sender.avatar_url,
+      avatarUrl: isSelf ? currentUser.avatarUrl : message.sender.avatar_url,
     };
   };
 

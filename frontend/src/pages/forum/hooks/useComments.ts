@@ -120,6 +120,7 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
         postId,
         authorId: currentUser.id,
         authorName: currentUser.name,
+        authorAvatarUrl: currentUser.avatarUrl,
         parentCommentId: null,
         content,
         createdAt: new Date().toISOString(),
@@ -140,7 +141,7 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
         content,
         parent_comment_id: null,
       };
-      const realComment = await forumApi.createComment(payload, currentUser.name);
+      const realComment = await forumApi.createComment(payload, currentUser.name, currentUser.avatarUrl);
       
       // Replace tempId với real ID
       setComments((prev) =>
@@ -160,6 +161,7 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
         postId,
         authorId: currentUser.id,
         authorName: currentUser.name,
+        authorAvatarUrl: currentUser.avatarUrl,
         parentCommentId: parentId,
         content,
         createdAt: new Date().toISOString(),
@@ -180,7 +182,7 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
         content,
         parent_comment_id: parentId,
       };
-      const realReply = await forumApi.createComment(payload, currentUser.name);
+      const realReply = await forumApi.createComment(payload, currentUser.name, currentUser.avatarUrl);
 
       // Replace tempId bằng real ID đệ quy
       setComments((prev) =>
