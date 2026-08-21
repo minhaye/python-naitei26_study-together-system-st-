@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarDays, Check, LoaderCircle, Plus, Trash2 } from 'lucide-react';
+import { CalendarDays, Check, LoaderCircle, Plus, Trash2, Zap } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { ApiError } from '../lib/apiClient';
 import { createTasks, deleteTask, listTasks, toggleTaskComplete, updateTask, type StudyTask, type TaskPriority } from '../lib/task.api';
@@ -14,6 +14,76 @@ const dateKey = (date: Date) => date.toISOString().slice(0, 10);
 const dateLabel = (date: Date) => new Intl.DateTimeFormat('vi-VN', { day: 'numeric', month: 'long', year: 'numeric' }).format(date);
 const firstDayOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth(), 1);
 const monthRange = (month: Date) => ({ from: dateKey(firstDayOfMonth(month)), to: dateKey(new Date(month.getFullYear(), month.getMonth() + 1, 0)) });
+
+// ── Quick-task parser ────────────────────────────────────────────────────────
+type ParsedTask = { title: string; due_date: string; priority: TaskPriority };
+
+function parsePriorityToken(token: string, fallback: TaskPriority): TaskPriority {
+  const t = token.trim().toLowerCase();
+  if (['high', 'cao', 'h', '3'].includes(t)) return 3;
+  if (['mid', 'medium', 'trung', 'trung bình', 'm', '2'].includes(t)) return 2;
+  if (['low', 'thấp', 'thap', 'l', '1'].includes(t)) return 1;
+  return fallback;
+}
+
+function parseDateToken(token: string, todayStr: string, fallback: string): string {
+  const t = token.trim().toLowerCase();
+  if (['hôm nay', 'hom nay', 'today', 'now'].includes(t)) return todayStr;
+  if (['ngày mai', 'ngay mai', 'tomorrow'].includes(t)) {
+    const d = new Date(`${todayStr}T00:00:00`);
+    d.setDate(d.getDate() + 1);
+    return dateKey(d);
+  }
+  // dd/mm or dd/mm/yyyy
+  const shortMatch = t.match(/^(\d{1,2})\/(\d{1,2})$/);
+  if (shortMatch) {
+    const year = new Date(`${todayStr}T00:00:00`).getFullYear();
+    const month = shortMatch[2].padStart(2, '0');
+    const day = shortMatch[1].padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  const longMatch = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (longMatch) {
+    const day = longMatch[1].padStart(2, '0');
+    const month = longMatch[2].padStart(2, '0');
+    return `${longMatch[3]}-${month}-${day}`;
+  }
+  // iso yyyy-mm-dd
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+  return fallback;
+}
+
+// Detect the dominant delimiter used in the text block (|, ;, ,)
+function detectDelimiter(text: string): string | null {
+  const counts = { '|': 0, ';': 0, ',': 0 };
+  for (const ch of text) if (ch in counts) counts[ch as keyof typeof counts]++;
+  const max = Math.max(...Object.values(counts));
+  if (max === 0) return null;
+  return (Object.entries(counts).find(([, v]) => v === max) ?? [null])[0] as string | null;
+}
+
+function parseQuickTasks(
+  raw: string,
+  fallbackDate: string,
+  fallbackPriority: TaskPriority,
+  todayStr: string,
+): ParsedTask[] {
+  const delimiter = detectDelimiter(raw) ?? '|';
+  return raw
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .slice(0, 50)
+    .map(line => {
+      const parts = line.split(delimiter).map(p => p.trim());
+      const title = parts[0] ?? '';
+      const due_date = parts[1] ? parseDateToken(parts[1], todayStr, fallbackDate) : fallbackDate;
+      const priority = parts[2] ? parsePriorityToken(parts[2], fallbackPriority) : fallbackPriority;
+      return { title, due_date, priority };
+    })
+    .filter(t => t.title.length > 0);
+}
+// ────────────────────────────────────────────────────────────────────────────
 
 function friendlyError(cause: unknown): string {
   if (cause instanceof ApiError) {
@@ -65,7 +135,10 @@ export function TaskManagementSection() {
     (result[task.due_date] ??= []).push(task); return result;
   }, {}), [tasks]);
   const selectedTasks = tasksByDate[selectedDate] ?? [];
-  const parsedTitles = useMemo(() => lines.split(/\r?\n/).map(line => line.trim()).filter(Boolean).slice(0, 50), [lines]);
+  const parsedTasks = useMemo(
+    () => parseQuickTasks(lines, dueDate, priority, todayKey),
+    [lines, dueDate, priority, todayKey],
+  );
   const days = useMemo(() => {
     const first = firstDayOfMonth(month);
     const padding = (first.getDay() + 6) % 7;
@@ -77,13 +150,14 @@ export function TaskManagementSection() {
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!parsedTitles.length) { setActionError('Nhập ít nhất một công việc, mỗi dòng một việc.'); return; }
+    if (!parsedTasks.length) { setActionError('Nhập ít nhất một công việc, mỗi dòng một việc.'); return; }
     setSubmitting(true);
     setActionError(null);
     try {
-      const created = await createTasks(parsedTitles.map(title => ({ title, due_date: dueDate, priority })));
+      const created = await createTasks(parsedTasks.map(t => ({ title: t.title, due_date: t.due_date, priority: t.priority })));
       setTasks(items => [...items, ...created]);
-      setSelectedDate(dueDate);
+      // Navigate to the date of the first task
+      setSelectedDate(parsedTasks[0].due_date);
       setLines('');
       setComposerOpen(false);
     } catch (cause) {
@@ -277,41 +351,96 @@ export function TaskManagementSection() {
 
       {/* Modal: Thêm công việc nhanh */}
       <Modal isOpen={isComposerOpen} onClose={() => !submitting && setComposerOpen(false)} title="Thêm công việc nhanh">
-        <form onSubmit={submit} style={{ display: 'grid', gap: 14 }}>
-          <p style={{ margin: 0, color: '#64748B', fontSize: 13 }}>
-            Mỗi dòng sẽ trở thành một công việc. Bạn có thể dán trực tiếp từ Word, Excel hoặc Google Docs.
-          </p>
-          <textarea
-            autoFocus
-            value={lines}
-            onChange={e => setLines(e.target.value)}
-            placeholder={'Ôn chương 4\nNộp bài tập nhóm\nLàm đề Listening'}
-            rows={7}
-            maxLength={10049}
-            style={{ resize: 'vertical', padding: 12, border: '1px solid #CBD5E1', borderRadius: 8, font: 'inherit' }}
-          />
-          <small style={{ color: parsedTitles.length > 50 ? '#B91C1C' : '#64748B' }}>
-            {parsedTitles.length}/50 công việc sẽ được tạo
-          </small>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <label style={fieldLabel}>
-              Ngày
-              <input type="date" value={dueDate} required onChange={e => setDueDate(e.target.value)} style={field} />
-            </label>
-            <label style={fieldLabel}>
-              Độ ưu tiên
-              <select value={priority} onChange={e => setPriority(Number(e.target.value) as TaskPriority)} style={field}>
-                {priorities.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-              </select>
-            </label>
+        <form onSubmit={submit} style={{ display: 'grid', gap: 16 }}>
+
+          {/* Hướng dẫn cú pháp */}
+          <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, color: '#1E40AF', lineHeight: 1.7 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, marginBottom: 4 }}>
+              <Zap size={14} /> Cú pháp thêm nhanh (tách bằng <code style={{ background: '#DBEAFE', borderRadius: 4, padding: '1px 5px' }}>|</code>&nbsp;<code style={{ background: '#DBEAFE', borderRadius: 4, padding: '1px 5px' }}>;</code>&nbsp;<code style={{ background: '#DBEAFE', borderRadius: 4, padding: '1px 5px' }}>,</code>)
+            </div>
+            <div style={{ color: '#1D4ED8', fontFamily: 'monospace', fontSize: 12 }}>
+              Tên công việc | ngày | độ ưu tiên
+            </div>
+            <div style={{ color: '#3B82F6', marginTop: 3 }}>
+              Ví dụ: <em>Làm bài tập toán | hôm nay | high</em> &nbsp;·&nbsp; <em>Ôn thi | 22/8/2026 | mid</em>
+            </div>
+            <div style={{ color: '#60A5FA', marginTop: 2 }}>
+              Ngày nhận: <em>hôm nay · ngày mai · 22/8 · 22/8/2026</em>
+            </div>
+            <div style={{ color: '#60A5FA', marginTop: 2 }}>
+              Priority: <em>high · mid · low · cao · trung · thấp</em>
+            </div>
           </div>
+
+          {/* Textarea nhập liệu */}
+          <div style={{ display: 'grid', gap: 6 }}>
+            <label style={{ ...fieldLabel, fontWeight: 700 }}>
+              Danh sách công việc
+              <textarea
+                autoFocus
+                id="quick-task-input"
+                value={lines}
+                onChange={e => setLines(e.target.value)}
+                placeholder={'Làm bài tập toán | hôm nay | high\nThiết kế database | 22/8/2026 | mid\nÔn thi\nNộp bài tập nhóm | ngày mai'}
+                rows={6}
+                maxLength={10049}
+                style={{ resize: 'vertical', padding: 12, border: '1px solid #CBD5E1', borderRadius: 8, font: 'inherit', fontSize: 13, lineHeight: 1.6 }}
+              />
+            </label>
+            <small style={{ color: parsedTasks.length > 50 ? '#B91C1C' : '#64748B' }}>
+              {parsedTasks.length}/50 công việc sẽ được tạo
+            </small>
+          </div>
+
+          {/* Giá trị mặc định */}
+          <div>
+            <p style={{ margin: '0 0 8px', fontSize: 12.5, color: '#64748B', fontWeight: 600 }}>Giá trị mặc định (áp dụng cho dòng không có ngày / độ ưu tiên)</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <label style={fieldLabel}>
+                Ngày mặc định
+                <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={field} />
+              </label>
+              <label style={fieldLabel}>
+                Độ ưu tiên mặc định
+                <select value={priority} onChange={e => setPriority(Number(e.target.value) as TaskPriority)} style={field}>
+                  {priorities.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </select>
+              </label>
+            </div>
+          </div>
+
+          {/* Preview table */}
+          {parsedTasks.length > 0 && (
+            <div style={{ border: '1px solid #E2E8F0', borderRadius: 10, overflow: 'hidden' }}>
+              <div style={{ background: '#F8FAFC', padding: '7px 12px', fontSize: 12, fontWeight: 700, color: '#475569', borderBottom: '1px solid #E2E8F0', display: 'grid', gridTemplateColumns: '1fr 110px 80px', gap: 8 }}>
+                <span>Công việc</span><span>Ngày</span><span>Ưu tiên</span>
+              </div>
+              <div style={{ maxHeight: 180, overflowY: 'auto' }}>
+                {parsedTasks.map((task, i) => {
+                  const pri = priorities[task.priority - 1];
+                  return (
+                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 110px 80px', gap: 8, padding: '7px 12px', fontSize: 12.5, borderBottom: i < parsedTasks.length - 1 ? '1px solid #F1F5F9' : 'none', alignItems: 'center' }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#0F172A' }}>{task.title}</span>
+                      <span style={{ color: '#475569' }}>{task.due_date.split('-').reverse().join('/')}</span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <i style={{ width: 8, height: 8, borderRadius: 99, background: pri.color, display: 'inline-block', flexShrink: 0 }} />
+                        <span style={{ color: pri.color, fontWeight: 600 }}>{pri.label}</span>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {actionError && <p role="alert" style={{ margin: 0, color: '#B91C1C', fontSize: 13 }}>{actionError}</p>}
+
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" onClick={() => setComposerOpen(false)} disabled={submitting} style={secondaryButton}>Hủy</button>
-            <button disabled={submitting || !parsedTitles.length} style={primaryButton}>
+            <button disabled={submitting || !parsedTasks.length} style={primaryButton}>
               {submitting
                 ? <><LoaderCircle size={16} className="spin" /> Đang lưu</>
-                : <><Check size={16} /> Tạo {parsedTitles.length || ''} công việc</>
+                : <><Check size={16} /> Tạo {parsedTasks.length || ''} công việc</>
               }
             </button>
           </div>
