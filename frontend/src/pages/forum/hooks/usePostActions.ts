@@ -104,7 +104,6 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
           prev.map((p) => (p.id === postId ? { ...updatedPost, status: undefined } : p))
         );
         window.dispatchEvent(new CustomEvent('post_created'));
-        return updatedPost;
       } catch (error) {
         console.error('Failed to update post', error);
         setPosts((prev) =>
