@@ -39,6 +39,8 @@ import { MeetingProvider } from './meeting/MeetingProvider';
 import { MeetingVideoGrid } from './meeting/MeetingVideoGrid';
 import { MeetingControls } from './meeting/MeetingControls';
 import { SyncedWhiteboard } from './meeting/SyncedWhiteboard';
+import { PreJoinLobby } from './meeting/PreJoinLobby';
+import type { MediaJoinChoice } from './meeting/PreJoinLobby';
 
 interface CenteredRoomMessageProps {
   title: string;
@@ -108,6 +110,8 @@ export function StudyRoom() {
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [isDeletingRoom, setIsDeletingRoom] = useState(false);
   const [isLifecycleBusy, setIsLifecycleBusy] = useState(false);
+  const [lobbyConfirmed, setLobbyConfirmed] = useState(false);
+  const [mediaChoice, setMediaChoice] = useState<MediaJoinChoice>({ audioEnabled: true, videoEnabled: true });
 
   // Whiteboard tools (now handled internally by Tldraw)
 
@@ -369,8 +373,35 @@ export function StudyRoom() {
   const statusLabel = room.status === 'active' ? 'Đang diễn ra' : room.status === 'waiting' ? 'Chưa bắt đầu' : 'Đã kết thúc';
   const isRoomEnded = room.status === 'ended';
 
+  // Pre-join lobby: lets the user preview/toggle camera & mic (and pick a device) before the
+  // LiveKit connection is made, instead of connecting with audio/video hardcoded on immediately.
+  if (!lobbyConfirmed && !isRoomEnded) {
+    return (
+      <PreJoinLobby
+        roomName={room.name}
+        roomSubtitle={room.description || undefined}
+        userName={currentUser.name}
+        userInitial={currentUser.initials}
+        userColor={currentUser.color}
+        userAvatarUrl={currentUser.avatarUrl ?? undefined}
+        onJoin={(choice) => {
+          setMediaChoice(choice);
+          setLobbyConfirmed(true);
+        }}
+        onBack={() => navigate(`/groups/${room.group_id}`)}
+      />
+    );
+  }
+
   return (
-    <MeetingProvider roomId={roomId} enabled={isCurrentUserMember && !isRoomEnded}>
+    <MeetingProvider
+      roomId={roomId}
+      enabled={isCurrentUserMember && !isRoomEnded}
+      initialAudioEnabled={mediaChoice.audioEnabled}
+      initialVideoEnabled={mediaChoice.videoEnabled}
+      audioDeviceId={mediaChoice.audioDeviceId}
+      videoDeviceId={mediaChoice.videoDeviceId}
+    >
     <div style={{width: '100vw', height: '100vh', background: '#0F172A', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: 'Inter, sans-serif'}}>
 
       {/* Top Header Bar */}
