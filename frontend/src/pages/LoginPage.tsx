@@ -3,7 +3,48 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, ArrowRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuthContext } from '../contexts/auth-context';
-import type { Session } from '@supabase/supabase-js';
+import type { AuthError, Session } from '@supabase/supabase-js';
+
+// Only used when Supabase itself isn't configured for this environment (no URL/anon key
+// set -- see lib/supabase.ts's placeholder fallback). A REAL Supabase project rejecting a
+// login (wrong password, unconfirmed email, unknown account) must never be masked by this --
+// that previously produced a session that "looked" logged in client-side but carried a
+// non-UUID user id (`dev-user-<timestamp>`) the backend rejected on every single request
+// with 401 "Token missing subject claim", since app/auth/dependencies.py requires the
+// dev-token's suffix to parse as a UUID.
+const IS_SUPABASE_CONFIGURED = Boolean(import.meta.env.VITE_SUPABASE_URL) && Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY);
+
+const DEV_USER_MAP: Record<string, string> = {
+  'user1@study.local': '10000000-0000-0000-0000-000000000001',
+  'user2@study.local': '10000000-0000-0000-0000-000000000002',
+  'user3@study.local': '10000000-0000-0000-0000-000000000003',
+  'user4@study.local': '10000000-0000-0000-0000-000000000004',
+  'user5@study.local': '10000000-0000-0000-0000-000000000005',
+};
+
+function createDevSession(email: string): Session {
+  const userId = DEV_USER_MAP[email] || `dev-user-${Date.now()}`;
+  return {
+    access_token: `dev-token-${userId}`,
+    refresh_token: `dev-refresh-token-${userId}`,
+    expires_in: 3600,
+    token_type: 'bearer',
+    user: {
+      id: userId,
+      email: email,
+      user_metadata: { full_name: email.split('@')[0] },
+      app_metadata: {},
+      aud: 'authenticated',
+      created_at: new Date().toISOString(),
+    },
+  } as unknown as Session;
+}
+
+function describeSignInError(err: AuthError): string {
+  if (err.message.includes('Invalid login credentials')) return 'Email hoặc mật khẩu không đúng.';
+  if (err.message.includes('Email not confirmed')) return 'Email chưa được xác thực.';
+  return err.message;
+}
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -19,68 +60,32 @@ export function LoginPage() {
 
     setError(null);
     setIsSubmitting(true);
-    
+
     try {
       const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
 
       if (!signInError && data.session) {
-        setIsSubmitting(false);
         navigate('/');
         return;
       }
 
-      // If Supabase API key is invalid/placeholder or offline, fallback to dev auth session
       if (signInError) {
-        const userMap: Record<string, string> = {
-          'user1@study.local': '10000000-0000-0000-0000-000000000001',
-          'user2@study.local': '10000000-0000-0000-0000-000000000002',
-          'user3@study.local': '10000000-0000-0000-0000-000000000003',
-          'user4@study.local': '10000000-0000-0000-0000-000000000004',
-          'user5@study.local': '10000000-0000-0000-0000-000000000005',
-        };
-
-        const userId = userMap[email] || `dev-user-${Date.now()}`;
-        const mockSession = {
-          access_token: `dev-token-${userId}`,
-          refresh_token: `dev-refresh-token-${userId}`,
-          expires_in: 3600,
-          token_type: 'bearer',
-          user: {
-            id: userId,
-            email: email,
-            user_metadata: { full_name: email.split('@')[0] },
-            app_metadata: {},
-            aud: 'authenticated',
-            created_at: new Date().toISOString(),
-          },
-        } as unknown as Session;
-
-        setDevSession(mockSession);
-        setIsSubmitting(false);
-        navigate('/');
-        return;
+        if (!IS_SUPABASE_CONFIGURED) {
+          setDevSession(createDevSession(email));
+          navigate('/');
+          return;
+        }
+        setError(describeSignInError(signInError));
       }
     } catch {
-      // Fallback dev login in case of network / config error
-      const userId = `dev-user-${Date.now()}`;
-      const mockSession = {
-        access_token: `dev-token-${userId}`,
-        refresh_token: `dev-refresh-token-${userId}`,
-        expires_in: 3600,
-        token_type: 'bearer',
-        user: {
-          id: userId,
-          email: email,
-          user_metadata: { full_name: email.split('@')[0] },
-          app_metadata: {},
-          aud: 'authenticated',
-          created_at: new Date().toISOString(),
-        },
-      } as unknown as Session;
-
-      setDevSession(mockSession);
+      if (!IS_SUPABASE_CONFIGURED) {
+        setDevSession(createDevSession(email));
+        navigate('/');
+        return;
+      }
+      setError('Không thể kết nối đến máy chủ đăng nhập. Vui lòng thử lại.');
+    } finally {
       setIsSubmitting(false);
-      navigate('/');
     }
   };
 
