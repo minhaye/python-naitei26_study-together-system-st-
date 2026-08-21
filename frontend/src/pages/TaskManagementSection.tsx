@@ -168,10 +168,23 @@ export function TaskManagementSection() {
   };
 
   const toggle = async (task: StudyTask) => {
+    // Lưu lại trạng thái cũ để rollback nếu lỗi
+    const previousTasks = [...tasks];
+    
+    // Optimistic UI update: cập nhật UI ngay lập tức
+    setTasks(items => items.map(item => 
+      item.id === task.id 
+        ? { ...item, completed_at: item.completed_at ? null : new Date().toISOString() } 
+        : item
+    ));
+
     try {
       const updated = await toggleTaskComplete(task.id);
+      // Cập nhật lại data chuẩn từ server (sau khi request xong)
       setTasks(items => items.map(item => item.id === task.id ? updated : item));
     } catch (cause) {
+      // Nếu API lỗi, revert lại state cũ
+      setTasks(previousTasks);
       setActionError(friendlyError(cause));
     }
   };
@@ -262,18 +275,31 @@ export function TaskManagementSection() {
                 <div
                   key={task.id}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 10, padding: '9px 4px',
-                    opacity: task.completed_at ? 0.6 : 1,
-                    borderBottom: '1px solid #F1F5F9',
+                    display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
+                    borderRadius: 10,
+                    background: task.completed_at ? '#F0FDF4' : '#F8FAFC',
+                    border: task.completed_at ? '1px solid #BBF7D0' : '1px solid #E2E8F0',
+                    transition: 'all 0.2s',
+                    boxShadow: task.completed_at ? 'none' : '0 1px 2px rgba(0,0,0,0.02)',
                   }}
                 >
-                  <input
-                    aria-label={`Hoàn thành ${task.title}`}
-                    type="checkbox"
-                    checked={Boolean(task.completed_at)}
-                    onChange={() => void toggle(task)}
-                    style={{ cursor: 'pointer', flexShrink: 0 }}
-                  />
+                  <div
+                    role="checkbox"
+                    aria-checked={Boolean(task.completed_at)}
+                    tabIndex={0}
+                    onClick={() => void toggle(task)}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') toggle(task); }}
+                    style={{
+                      width: 20, height: 20, borderRadius: 6,
+                      border: task.completed_at ? 'none' : '2px solid #CBD5E1',
+                      background: task.completed_at ? '#22C55E' : 'white',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      cursor: 'pointer', flexShrink: 0,
+                    }}
+                  >
+                    {task.completed_at && <Check size={14} color="white" strokeWidth={3} />}
+                  </div>
+                  
                   <span
                     style={{ width: 8, height: 8, borderRadius: 99, background: priorities[task.priority - 1].color, flexShrink: 0 }}
                     title={priorities[task.priority - 1].label}
@@ -284,20 +310,27 @@ export function TaskManagementSection() {
                     onClick={() => openEditor(task)}
                     onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') openEditor(task); }}
                     title="Bấm để chỉnh sửa"
-                    style={{ flex: 1, textDecoration: task.completed_at ? 'line-through' : 'none', cursor: 'pointer', fontSize: 14 }}
+                    style={{ 
+                      flex: 1, 
+                      color: task.completed_at ? '#15803D' : '#1E293B',
+                      fontWeight: task.completed_at ? 500 : 400,
+                      cursor: 'pointer', fontSize: 14 
+                    }}
                   >
                     {task.title}
                   </span>
-                  <small style={{ color: '#64748B', flexShrink: 0 }}>{priorities[task.priority - 1].label}</small>
+                  <small style={{ color: task.completed_at ? '#16A34A' : '#64748B', flexShrink: 0, fontWeight: 500 }}>
+                    {priorities[task.priority - 1].label}
+                  </small>
                   <button
                     aria-label={`Xóa ${task.title}`}
                     onClick={() => void confirmDelete(task.id)}
                     disabled={deletingId === task.id}
-                    style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#CBD5E1', padding: '2px 4px', borderRadius: 4, flexShrink: 0, display: 'flex', alignItems: 'center' }}
+                    style={{ border: 'none', background: 'none', cursor: 'pointer', color: task.completed_at ? '#86EFAC' : '#CBD5E1', padding: '4px', borderRadius: 6, flexShrink: 0, display: 'flex', alignItems: 'center' }}
                     onMouseEnter={e => (e.currentTarget.style.color = '#EF4444')}
-                    onMouseLeave={e => (e.currentTarget.style.color = '#CBD5E1')}
+                    onMouseLeave={e => (e.currentTarget.style.color = task.completed_at ? '#86EFAC' : '#CBD5E1')}
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={15} />
                   </button>
                 </div>
               ))}
@@ -490,17 +523,31 @@ export function TaskManagementSection() {
 }
 
 function BusyDots({ tasks, selected }: { tasks: StudyTask[]; selected: boolean }) {
+  if (!tasks.length) return <span style={{ height: 5, display: 'block' }} />;
+
+  const allCompleted = tasks.every(t => t.completed_at);
+  if (allCompleted) {
+    return (
+      <span aria-hidden="true" style={{ height: 5, display: 'flex', justifyContent: 'center', alignItems: 'center', marginTop: 2 }}>
+        <i style={{ width: 5, height: 5, borderRadius: 99, background: '#22C55E' }} title="Đã hoàn thành tất cả" />
+      </span>
+    );
+  }
+
   const score = tasks.reduce((sum, task) => sum + task.priority, 0);
   const count = score >= 7 ? 3 : score >= 3 ? 2 : tasks.length ? 1 : 0;
-  const color = selected ? '#DBEAFE' : count === 3 ? '#EF4444' : count === 2 ? '#F59E0B' : '#94A3B8';
-  return count ? (
+  const topTasks = [...tasks].sort((a, b) => b.priority - a.priority).slice(0, count);
+
+  return (
     <span aria-hidden="true" style={{ height: 5, display: 'flex', justifyContent: 'center', gap: 2, marginTop: 2 }}>
-      {Array.from({ length: count }, (_, index) => (
-        <i key={index} style={{ width: 4, height: 4, borderRadius: 99, background: color }} />
-      ))}
+      {topTasks.map((task, index) => {
+        const color = task.completed_at ? '#22C55E' : 
+                      selected ? '#93C5FD' : 
+                      task.priority === 3 ? '#EF4444' : 
+                      task.priority === 2 ? '#F59E0B' : '#94A3B8';
+        return <i key={index} style={{ width: 4, height: 4, borderRadius: 99, background: color }} />;
+      })}
     </span>
-  ) : (
-    <span style={{ height: 5, display: 'block' }} />
   );
 }
 
