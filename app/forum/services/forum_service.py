@@ -225,8 +225,8 @@ class ForumService:
 
     # --- Tags ---
 
-    async def get_trending_tags(self, session: AsyncSession, limit: int = 10) -> list[Tag]:
-        stmt = select(Tag).where(Tag.post_count > 0).order_by(Tag.post_count.desc(), Tag.name.asc()).limit(limit)
+    async def get_trending_tags(self, session: AsyncSession, limit: int = 5) -> list[Tag]:
+        stmt = select(Tag).where(Tag.post_count > 0).order_by(Tag.post_count.desc(), Tag.created_at.desc()).limit(limit)
         result = await session.execute(stmt)
         return list(result.scalars().all())
 
@@ -234,7 +234,7 @@ class ForumService:
         clean_q = query.lstrip("#").lower().strip()
         if not clean_q:
             return await self.get_trending_tags(session, limit=limit)
-        stmt = select(Tag).where(Tag.name.ilike(f"%{clean_q}%")).order_by(Tag.post_count.desc(), Tag.name.asc()).limit(limit)
+        stmt = select(Tag).where(Tag.name.ilike(f"%{clean_q}%")).order_by(Tag.post_count.desc(), Tag.created_at.desc()).limit(limit)
         result = await session.execute(stmt)
         return list(result.scalars().all())
 

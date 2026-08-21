@@ -141,7 +141,7 @@ export const forumApi = {
     return response.map((p) => mapPost(p));
   },
 
-  getTrendingTags: async (limit = 10): Promise<TagResponse[]> => {
+  getTrendingTags: async (limit = 5): Promise<TagResponse[]> => {
     return apiClient.get<TagResponse[]>(`/forum/tags/trending?limit=${limit}`);
   },
 
