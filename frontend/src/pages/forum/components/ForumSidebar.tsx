@@ -12,7 +12,7 @@ import type { ForumCategoryResponse } from '../types/forum.types';
 interface ForumSidebarProps {
   selectedCategoryId: string | null;
   onSelectCategory: (id: string | null, name?: string | null) => void;
-  onSearchChange: (search: string) => void;
+  onSearchChange?: (search: string) => void;
 }
 
 // Hàm trợ giúp để gán icon cho từng chuyên mục dựa trên tên
@@ -45,7 +45,6 @@ const getCategoryIcon = (name: string, isActive: boolean) => {
 export const ForumSidebar: React.FC<ForumSidebarProps> = ({
   selectedCategoryId,
   onSelectCategory,
-  onSearchChange,
 }) => {
   const [categories, setCategories] = useState<ForumCategoryResponse[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -82,7 +81,6 @@ export const ForumSidebar: React.FC<ForumSidebarProps> = ({
 
   const handleSelectSuggestion = (catId: string, catName: string) => {
     setSearchQuery(catName);
-    onSearchChange(catName);
     setShowSuggestions(false);
     onSelectCategory(catId, catName);
 
@@ -99,13 +97,11 @@ export const ForumSidebar: React.FC<ForumSidebarProps> = ({
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setSearchQuery(val);
-    onSearchChange(val);
     setShowSuggestions(val.trim().length > 0);
   };
 
   const handleClearSearch = () => {
     setSearchQuery('');
-    onSearchChange('');
     setShowSuggestions(false);
   };
 
