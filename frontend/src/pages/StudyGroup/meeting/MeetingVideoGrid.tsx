@@ -38,12 +38,13 @@ interface MeetingVideoGridProps {
   members: StudyRoomMember[];
   currentUserId: string | null;
   currentUserName: string;
+  currentUserAvatarUrl?: string | null;
   /** Set when the meeting is known to be unavailable without asking the backend (room ended) --
    * a UX shortcut only; the backend still independently rejects the token request either way. */
   unavailableReason?: string;
 }
 
-export function MeetingVideoGrid({ members, currentUserId, currentUserName, unavailableReason }: MeetingVideoGridProps) {
+export function MeetingVideoGrid({ members, currentUserId, currentUserName, currentUserAvatarUrl, unavailableReason }: MeetingVideoGridProps) {
   const { status, error, retry, connected, liveKitError } = useMeetingContext();
 
   if (unavailableReason) {
@@ -80,10 +81,17 @@ export function MeetingVideoGrid({ members, currentUserId, currentUserName, unav
     return <MeetingStatusMessage icon={<Loader2 size={32} style={{ animation: 'spin 1s linear infinite' }} />} title="Đang thiết lập kết nối..." />;
   }
 
-  return <ConnectedGrid members={members} currentUserId={currentUserId} currentUserName={currentUserName} />;
+  return (
+    <ConnectedGrid
+      members={members}
+      currentUserId={currentUserId}
+      currentUserName={currentUserName}
+      currentUserAvatarUrl={currentUserAvatarUrl}
+    />
+  );
 }
 
-function ConnectedGrid({ members, currentUserId, currentUserName }: Omit<MeetingVideoGridProps, 'unavailableReason'>) {
+function ConnectedGrid({ members, currentUserId, currentUserName, currentUserAvatarUrl }: Omit<MeetingVideoGridProps, 'unavailableReason'>) {
   const participants = useParticipants();
   const cameraTrackRefs = useTracks([Track.Source.Camera], { onlySubscribed: false });
   // Screen-share tracks are identified via LiveKit's own `Track.Source.ScreenShare`, never by
@@ -168,7 +176,7 @@ function ConnectedGrid({ members, currentUserId, currentUserName }: Omit<Meeting
             : p.name || 'Người dùng';
         const initial = getAvatarInitials(name);
         const color = getAvatarColor(name);
-        const avatarUrl = isSelf ? null : member?.user.avatar_url ?? null;
+        const avatarUrl = isSelf ? currentUserAvatarUrl ?? null : member?.user.avatar_url ?? null;
         const cameraTrackRef = cameraTrackByIdentity.get(p.identity);
         const isCameraOn = !!cameraTrackRef && !cameraTrackRef.publication.isMuted;
         const isMicOn = p.isMicrophoneEnabled;

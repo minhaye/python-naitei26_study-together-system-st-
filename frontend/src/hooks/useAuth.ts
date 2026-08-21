@@ -7,6 +7,7 @@ export interface AuthUser {
   name: string;
   initials: string;
   color: string;
+  avatarUrl: string | null;
 }
 
 const GUEST_NAME = 'Người dùng';
@@ -15,6 +16,7 @@ const GUEST_USER: AuthUser = {
   name: GUEST_NAME,
   initials: getAvatarInitials(GUEST_NAME),
   color: getAvatarColor(GUEST_NAME),
+  avatarUrl: null,
 };
 
 /**
@@ -41,6 +43,7 @@ export function useAuth() {
         name: displayName,
         initials: getAvatarInitials(displayName),
         color: getAvatarColor(displayName),
+        avatarUrl: profile?.avatarUrl ?? null,
       }
     : GUEST_USER;
 

@@ -250,7 +250,7 @@ export function StudyRoom() {
           name,
           initial: isSelf ? currentUser.initials : getAvatarInitials(name),
           color: isSelf ? currentUser.color : getAvatarColor(name),
-          avatarUrl: isSelf ? null : m.user.avatar_url,
+          avatarUrl: isSelf ? currentUser.avatarUrl : m.user.avatar_url,
           isHost: m.role === 'host',
           isModerator: m.role === 'moderator',
           isSelf,
@@ -277,7 +277,7 @@ export function StudyRoom() {
       name,
       initial: isSelf ? currentUser.initials : getAvatarInitials(name),
       color: isSelf ? currentUser.color : getAvatarColor(name),
-      avatarUrl: isSelf ? null : message.sender.avatar_url,
+      avatarUrl: isSelf ? currentUser.avatarUrl : message.sender.avatar_url,
       isSelf,
     };
   };
@@ -560,6 +560,7 @@ export function StudyRoom() {
               members={members}
               currentUserId={currentUserId}
               currentUserName={currentUser.name}
+              currentUserAvatarUrl={currentUser.avatarUrl}
               unavailableReason={isRoomEnded ? 'Phòng học này đã kết thúc, cuộc gọi không còn khả dụng.' : undefined}
             />
           </div>

@@ -4,7 +4,7 @@ import { GroupMembersPanel } from './GroupMembersPanel';
 import type { GroupMember } from '../../lib/group.types';
 import type { AuthUser } from '../../hooks/useAuth';
 
-const currentUser: AuthUser = { id: 'me', name: 'Tôi', initials: 'T', color: '#000' };
+const currentUser: AuthUser = { id: 'me', name: 'Tôi', initials: 'T', color: '#000', avatarUrl: null };
 
 function member(overrides: Partial<GroupMember> = {}): GroupMember {
   return {
