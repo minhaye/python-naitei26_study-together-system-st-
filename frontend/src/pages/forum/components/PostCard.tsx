@@ -214,7 +214,7 @@ export const PostCard: React.FC<PostCardProps> = ({
       {/* Post Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <Avatar name={post.authorName} size="lg" />
+          <Avatar name={post.authorName} src={post.authorAvatarUrl} size="lg" />
           <div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <span style={{ fontWeight: '600', color: '#0F172A', fontSize: 15 }}>{post.authorName}</span>

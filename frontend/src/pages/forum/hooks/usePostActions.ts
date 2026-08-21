@@ -28,6 +28,7 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
         id: optimisticId,
         authorId: currentUser.id,
         authorName: currentUser.name,
+        authorAvatarUrl: currentUser.avatarUrl,
         categoryId: payload.category_id,
         categoryName: categoryName ?? 'Chung',
         title: payload.title,
@@ -51,7 +52,8 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
         const newPost = await forumApi.createPost(
           { ...payload, author_id: currentUser.id },
           currentUser.name,
-          categoryName
+          categoryName,
+          currentUser.avatarUrl
         );
 
         // Thay thế post tạm bằng post thực từ server
@@ -138,7 +140,8 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
         const newPost = await forumApi.createPost(
           { ...payload, author_id: currentUser.id },
           currentUser.name,
-          failedPost.categoryName
+          failedPost.categoryName,
+          currentUser.avatarUrl
         );
         setPosts((prev) =>
           prev.map((p) => (p.id === failedPost.id ? { ...newPost, status: undefined } : p))

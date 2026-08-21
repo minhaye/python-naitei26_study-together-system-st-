@@ -26,6 +26,7 @@ export interface ForumPostResponse {
   deleted_at: string | null;
   category_name?: string;
   author_name?: string;
+  author_avatar_url?: string | null;
   likes_count?: number;
   comments_count?: number;
   is_liked?: boolean;
@@ -41,6 +42,7 @@ export interface CommentResponse {
   created_at: string;
   updated_at: string;
   author_name?: string;
+  author_avatar_url?: string | null;
   likes_count?: number;
   is_liked?: boolean;
 }
@@ -93,6 +95,7 @@ export interface Post {
   id: string;
   authorId: string;
   authorName: string;        // Name of the author
+  authorAvatarUrl: string | null;
   categoryId: string;
   categoryName: string;      // Lấy từ ForumCategoryResponse khi join
   title: string;
@@ -114,6 +117,7 @@ export interface Comment {
   postId: string;
   authorId: string;
   authorName: string;        // Lấy từ user profile sau này
+  authorAvatarUrl: string | null;
   parentCommentId: string | null;
   content: string;
   createdAt: string;
