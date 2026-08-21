@@ -179,7 +179,7 @@ async def list_posts(
 
 
 @router.get("/tags/trending", response_model=list[TagResponse])
-async def get_trending_tags(limit: int = 10, session: AsyncSession = Depends(get_db_session)):
+async def get_trending_tags(limit: int = 5, session: AsyncSession = Depends(get_db_session)):
     return await service.get_trending_tags(session, limit=limit)
 
 

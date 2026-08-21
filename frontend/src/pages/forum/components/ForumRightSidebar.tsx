@@ -26,7 +26,7 @@ export const ForumRightSidebar: React.FC = () => {
   useEffect(() => {
     const fetchTrending = () => {
       setIsLoadingTrending(true);
-      forumApi.getTrendingTags(10)
+      forumApi.getTrendingTags(5)
         .then((tags) => setTrendingTags(tags))
         .catch(console.error)
         .finally(() => setIsLoadingTrending(false));
