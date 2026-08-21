@@ -135,6 +135,7 @@ export const EditPostModal: React.FC<EditPostModalProps> = ({
     e.preventDefault();
     if (!title.trim() || !hasContent(content) || !categoryId || isSubmitting) return;
 
+    setIsSubmitting(true);
     setIsDropdownOpen(false);
     onClose();
     onSave(
