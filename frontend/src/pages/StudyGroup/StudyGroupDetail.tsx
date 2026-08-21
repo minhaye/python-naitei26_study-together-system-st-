@@ -625,22 +625,26 @@ export function StudyGroupDetail() {
                             display: 'flex',
                             justifyContent: 'space-between',
                             alignItems: 'center',
-                            background: showGroupMenu ? '#F1F5F9' : 'transparent',
+                            background: group.background_url
+                                ? `linear-gradient(180deg, rgba(15,23,42,0.15), rgba(15,23,42,0.55)), url(${group.background_url})`
+                                : showGroupMenu ? '#F1F5F9' : 'transparent',
+                            backgroundSize: 'cover',
+                            backgroundPosition: 'center',
                             transition: 'background 0.2s'
                         }}
                     >
                         <div style={{flex: 1, minWidth: 0, paddingRight: 8}}>
-                            <div style={{color: '#0B1C30', fontSize: 16, fontFamily: 'Inter', fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>
+                            <div style={{color: group.background_url ? '#FFFFFF' : '#0B1C30', fontSize: 16, fontFamily: 'Inter', fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>
                                 {group.name}
                             </div>
-                            <div style={{color: '#64748B', fontSize: 12, fontFamily: 'Inter', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6}}>
+                            <div style={{color: group.background_url ? '#E2E8F0' : '#64748B', fontSize: 12, fontFamily: 'Inter', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6}}>
                                 <span style={{padding: '2px 6px', background: group.is_public ? '#DCFCE7' : '#FEF3C7', color: group.is_public ? '#15803D' : '#B45309', borderRadius: 4, fontSize: 10, fontWeight: '700'}}>
                                     {group.is_public ? 'Public' : 'Private'}
                                 </span>
                                 <span>• {activeMembers.length} thành viên</span>
                             </div>
                         </div>
-                        <ChevronDown size={18} color="#64748B" style={{transform: showGroupMenu ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s'}} />
+                        <ChevronDown size={18} color={group.background_url ? '#FFFFFF' : '#64748B'} style={{transform: showGroupMenu ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s'}} />
                     </div>
 
                     {/* Discord-style Dropdown Menu */}
@@ -663,9 +667,12 @@ export function StudyGroupDetail() {
                                 gap: 2
                             }}
                         >
-                            {/* Group settings (name/description/visibility) are owner-only -- the backend
-                                rejects PUT /groups/{id} for anyone else (is_group_owner). */}
-                            {isOwner && (
+                            {/* Group settings modal is reachable by owner OR active moderator -- the
+                                background-image section inside it is owner-or-moderator (POST/DELETE
+                                /groups/{id}/background), while name/description/visibility stay
+                                owner-only (backend rejects PUT /groups/{id} for anyone else,
+                                is_group_owner) and are disabled inside the modal for a non-owner. */}
+                            {isGroupManager && (
                                 <div
                                     onClick={() => { setIsSettingsModalOpen(true); setShowGroupMenu(false); }}
                                     style={{padding: '8px 12px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: '500', color: '#1E293B', cursor: 'pointer'}}
@@ -1271,11 +1278,12 @@ export function StudyGroupDetail() {
             />
         )}
 
-        {group && isOwner && (
+        {group && isGroupManager && (
             <GroupSettingsModal
                 isOpen={isSettingsModalOpen}
                 onClose={() => setIsSettingsModalOpen(false)}
                 group={group}
+                isOwner={isOwner}
                 onUpdated={(updated) => setGroup(updated)}
             />
         )}

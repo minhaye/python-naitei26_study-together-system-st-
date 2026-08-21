@@ -10,6 +10,7 @@ export interface Group {
   name: string;
   description: string | null;
   avatar_url: string | null;
+  background_url: string | null;
   owner_id: string;
   invite_code: string | null;
   is_public: boolean;
