@@ -121,7 +121,6 @@ export const ForumPage: React.FC = () => {
               setSelectedCategoryName(name ?? null);
               setSelectedTag(null);
             }}
-            onSearchChange={setSearch}
           />
         </div>
 
