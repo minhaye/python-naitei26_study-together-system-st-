@@ -10,7 +10,12 @@ const priorities: Array<{ value: TaskPriority; label: string; color: string }> =
   { value: 3, label: 'Cao', color: '#EF4444' },
 ];
 
-const dateKey = (date: Date) => date.toISOString().slice(0, 10);
+const dateKey = (date: Date) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
 const dateLabel = (date: Date) => new Intl.DateTimeFormat('vi-VN', { day: 'numeric', month: 'long', year: 'numeric' }).format(date);
 const firstDayOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth(), 1);
 const monthRange = (month: Date) => ({ from: dateKey(firstDayOfMonth(month)), to: dateKey(new Date(month.getFullYear(), month.getMonth() + 1, 0)) });

@@ -186,6 +186,7 @@ export function AimPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<Status>('Đang thực hiện');
 
   // Create form
   const [adding, setAdding] = useState(false);
@@ -326,55 +327,115 @@ export function AimPage() {
           {loading ? (
             <p style={{ color: '#64748B' }}>Đang tải lộ trình...</p>
           ) : loadError ? null : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
-              {STATUSES.map(status => (
-                <div key={status} style={{ background: '#F8FAFC', borderRadius: 12, padding: 14, minHeight: 200 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
-                    <b>{status}</b>
-                    <span style={{ color: '#64748B', fontSize: 13 }}>
-                      {roadmaps.filter(r => statusOf(r) === status).length}
-                    </span>
+            <div>
+              <style>{`
+                .custom-scrollbar::-webkit-scrollbar { height: 8px; }
+                .custom-scrollbar::-webkit-scrollbar-track { background: #F8FAFC; border-radius: 8px; }
+                .custom-scrollbar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 8px; }
+                .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+              `}</style>
+              
+              {/* Tabs */}
+              <div style={{ display: 'flex', gap: 10, marginBottom: 20, borderBottom: '1px solid #E2E8F0', paddingBottom: 16, overflowX: 'auto' }} className="custom-scrollbar">
+                {STATUSES.map(status => {
+                  const count = roadmaps.filter(r => statusOf(r) === status).length;
+                  const isActive = activeTab === status;
+                  return (
+                    <button
+                      key={status}
+                      onClick={() => setActiveTab(status)}
+                      style={{
+                        padding: '8px 16px',
+                        background: isActive ? '#1E3A8A' : 'transparent',
+                        color: isActive ? 'white' : '#64748B',
+                        border: 'none',
+                        borderRadius: 20,
+                        fontWeight: isActive ? 600 : 500,
+                        cursor: 'pointer',
+                        fontSize: 14,
+                        transition: 'all 0.2s',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        flexShrink: 0
+                      }}
+                    >
+                      {status}
+                      <span style={{ 
+                        background: isActive ? 'rgba(255,255,255,0.2)' : '#F1F5F9', 
+                        color: isActive ? 'white' : '#475569',
+                        padding: '2px 8px', borderRadius: 99, fontSize: 12 
+                      }}>
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Horizontal Scroll Content */}
+              <div 
+                className="custom-scrollbar"
+                style={{ 
+                  display: 'flex', 
+                  gap: 16, 
+                  overflowX: 'auto', 
+                  paddingBottom: 16, 
+                  scrollSnapType: 'x mandatory',
+                  minHeight: 320 // Giữ chiều cao cố định tối thiểu để thanh cuộn không bị giật lên xuống
+                }}
+              >
+                {roadmaps.filter(r => statusOf(r) === activeTab).length === 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40, width: '100%', color: '#64748B', background: '#F8FAFC', borderRadius: 12, border: '1px dashed #CBD5E1' }}>
+                    Chưa có mục tiêu nào trong trạng thái này.
                   </div>
-                  <div style={{ display: 'grid', gap: 12 }}>
-                    {roadmaps.filter(r => statusOf(r) === status).map(item => {
-                      const progress = progressOf(item);
-                      return (
-                        <article
-                          key={item.id}
-                          onClick={() => openEdit(item)}
-                          title="Bấm để chỉnh sửa lộ trình"
-                          style={{ background: 'white', border: '1px solid #E2E8F0', borderRadius: 10, padding: 14, cursor: 'pointer' }}
-                        >
-                          <b>{item.title}</b>
-                          <p style={{ fontSize: 13, color: '#64748B', margin: '6px 0' }}>{item.goal}</p>
-                          <small>
-                            Hạn: {item.due_date
-                              ? new Intl.DateTimeFormat('vi-VN').format(new Date(`${item.due_date}T00:00:00`))
-                              : 'Chưa đặt hạn'}
-                          </small>
-                          <div style={{ height: 7, background: '#E2E8F0', borderRadius: 20, overflow: 'hidden', margin: '12px 0 6px' }}>
-                            <div style={{ height: '100%', width: `${progress}%`, background: '#10B981', transition: 'width 0.3s' }} />
-                          </div>
-                          <small>{progress}% · {item.phases.filter(p => p.progress === 100).length}/{item.phases.length} chặng hoàn thành</small>
-                          <div style={{ display: 'grid', gap: 6, marginTop: 12 }}>
-                            {item.phases.map(phase => (
-                              <button
-                                key={phase.id}
-                                onClick={e => { e.stopPropagation(); openPhase(item.id, phase); }}
-                                title="Bấm để cập nhật tiến độ"
-                                style={{ ...control, padding: '7px 9px', textAlign: 'left', display: 'flex', justifyContent: 'space-between' }}
-                              >
-                                <span>{phase.name}</span>
-                                <b>{phase.progress}%</b>
-                              </button>
-                            ))}
-                          </div>
-                        </article>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
+                )}
+                
+                {roadmaps.filter(r => statusOf(r) === activeTab).map(item => {
+                  const progress = progressOf(item);
+                  return (
+                    <article
+                      key={item.id}
+                      onClick={() => openEdit(item)}
+                      title="Bấm để chỉnh sửa lộ trình"
+                      style={{ 
+                        background: 'white', border: '1px solid #E2E8F0', borderRadius: 12, padding: 20, cursor: 'pointer',
+                        minWidth: 320, maxWidth: 350, flexShrink: 0, scrollSnapAlign: 'start',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.02)', display: 'flex', flexDirection: 'column'
+                      }}
+                    >
+                      <b style={{ fontSize: 16, color: '#0F172A' }}>{item.title}</b>
+                      <p style={{ fontSize: 14, color: '#475569', margin: '8px 0 12px', flex: 1 }}>{item.goal}</p>
+                      
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 8 }}>
+                        <small style={{ color: '#64748B', fontWeight: 500 }}>
+                          Hạn: {item.due_date ? new Intl.DateTimeFormat('vi-VN').format(new Date(`${item.due_date}T00:00:00`)) : 'Chưa đặt hạn'}
+                        </small>
+                        <small style={{ color: '#0F172A', fontWeight: 700 }}>{progress}%</small>
+                      </div>
+                      
+                      <div style={{ height: 8, background: '#F1F5F9', borderRadius: 20, overflow: 'hidden', marginBottom: 6 }}>
+                        <div style={{ height: '100%', width: `${progress}%`, background: '#10B981', transition: 'width 0.4s ease-out' }} />
+                      </div>
+                      <small style={{ color: '#64748B' }}>{item.phases.filter(p => p.progress === 100).length}/{item.phases.length} chặng hoàn thành</small>
+                      
+                      <div style={{ display: 'grid', gap: 8, marginTop: 16, maxHeight: 200, overflowY: 'auto' }} className="custom-scrollbar">
+                        {item.phases.map(phase => (
+                          <button
+                            key={phase.id}
+                            onClick={e => { e.stopPropagation(); openPhase(item.id, phase); }}
+                            title="Bấm để cập nhật tiến độ"
+                            style={{ ...control, padding: '8px 12px', textAlign: 'left', display: 'flex', justifyContent: 'space-between', background: phase.progress === 100 ? '#F0FDF4' : '#F8FAFC', border: phase.progress === 100 ? '1px solid #BBF7D0' : '1px solid #E2E8F0' }}
+                          >
+                            <span style={{ color: phase.progress === 100 ? '#15803D' : '#334155', fontWeight: phase.progress === 100 ? 600 : 500 }}>{phase.name}</span>
+                            <b style={{ color: phase.progress === 100 ? '#16A34A' : '#0F172A' }}>{phase.progress}%</b>
+                          </button>
+                        ))}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
             </div>
           )}
         </section>
@@ -451,36 +512,71 @@ export function AimPage() {
 
       {/* Modal: Cập nhật tiến độ chặng */}
       <Modal isOpen={Boolean(phaseEditing)} onClose={() => !saving && setPhaseEditing(null)} title="Cập nhật tiến độ chặng">
-        <form onSubmit={savePhase} style={{ display: 'grid', gap: 16 }}>
-          <b style={{ fontSize: 14 }}>{phaseEditing?.phase.name}</b>
-          <label style={fieldLabel}>
-            Tiến độ: {phaseProgress}%
-            <input
-              type="range" min="0" max="100" step="1"
-              value={phaseProgress}
-              onChange={e => {
-                const v = Number(e.target.value);
-                setPhaseProgress(v);
-                setPhaseProgressInput(String(v));
-              }}
-            />
-          </label>
-          <label style={fieldLabel}>
-            Nhập chính xác (%)
-            <input
-              type="number" min="0" max="100"
-              value={phaseProgressInput}
-              onChange={e => {
-                setPhaseProgressInput(e.target.value);
-                const v = Math.max(0, Math.min(100, Number(e.target.value)));
-                setPhaseProgress(v);
-              }}
-              style={{ ...input, width: 80 }}
-            />
-          </label>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <form onSubmit={savePhase} style={{ display: 'grid', gap: 20 }}>
+          <b style={{ fontSize: 16, color: '#0F172A', textAlign: 'center' }}>{phaseEditing?.phase.name}</b>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+            <button 
+              type="button" 
+              onClick={() => { setPhaseProgress(0); setPhaseProgressInput('0'); }}
+              style={{ ...statusBtn, background: phaseProgress === 0 ? '#FEE2E2' : '#F8FAFC', color: phaseProgress === 0 ? '#B91C1C' : '#475569', border: phaseProgress === 0 ? '1px solid #FCA5A5' : '1px solid #E2E8F0' }}
+            >
+              <div style={{ fontSize: 18, marginBottom: 4, fontWeight: 700 }}>0%</div>
+              <div style={{ fontSize: 12 }}>Chưa bắt đầu</div>
+            </button>
+            <button 
+              type="button" 
+              onClick={() => { setPhaseProgress(50); setPhaseProgressInput('50'); }}
+              style={{ ...statusBtn, background: phaseProgress > 0 && phaseProgress < 100 ? '#FEF3C7' : '#F8FAFC', color: phaseProgress > 0 && phaseProgress < 100 ? '#B45309' : '#475569', border: phaseProgress > 0 && phaseProgress < 100 ? '1px solid #FDE68A' : '1px solid #E2E8F0' }}
+            >
+              <div style={{ fontSize: 18, marginBottom: 4, fontWeight: 700 }}>50%</div>
+              <div style={{ fontSize: 12 }}>Đang tiến hành</div>
+            </button>
+            <button 
+              type="button" 
+              onClick={() => { setPhaseProgress(100); setPhaseProgressInput('100'); }}
+              style={{ ...statusBtn, background: phaseProgress === 100 ? '#DCFCE7' : '#F8FAFC', color: phaseProgress === 100 ? '#15803D' : '#475569', border: phaseProgress === 100 ? '1px solid #86EFAC' : '1px solid #E2E8F0' }}
+            >
+              <div style={{ fontSize: 18, marginBottom: 4, fontWeight: 700 }}>100%</div>
+              <div style={{ fontSize: 12 }}>Hoàn thành</div>
+            </button>
+          </div>
+
+          <div style={{ background: '#F8FAFC', padding: '12px 16px', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <span style={{ fontSize: 13, color: '#475569', fontWeight: 600 }}>Tùy chỉnh:</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button 
+                type="button" 
+                onClick={() => { const v = Math.max(0, phaseProgress - 10); setPhaseProgress(v); setPhaseProgressInput(String(v)); }}
+                style={{ ...control, padding: '4px 10px' }}
+              >
+                -10
+              </button>
+              <input
+                type="text" inputMode="numeric"
+                value={phaseProgressInput}
+                onChange={e => {
+                  const val = e.target.value.replace(/\D/g, ''); // Chỉ cho phép nhập số
+                  setPhaseProgressInput(val);
+                  const v = Math.max(0, Math.min(100, Number(val) || 0));
+                  setPhaseProgress(v);
+                }}
+                style={{ ...input, width: 56, textAlign: 'center', fontWeight: 'bold', padding: '6px 4px' }}
+              />
+              <span style={{ fontWeight: 'bold', color: '#64748B', fontSize: 14 }}>%</span>
+              <button 
+                type="button" 
+                onClick={() => { const v = Math.min(100, phaseProgress + 10); setPhaseProgress(v); setPhaseProgressInput(String(v)); }}
+                style={{ ...control, padding: '4px 10px' }}
+              >
+                +10
+              </button>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
             <button type="button" onClick={() => setPhaseEditing(null)} disabled={saving} style={secondaryButton}>Hủy</button>
-            <button disabled={saving} style={primaryButton}>{saving ? 'Đang lưu...' : 'Lưu tiến độ'}</button>
+            <button disabled={saving} style={{...primaryButton, width: 130}}>{saving ? 'Đang lưu...' : 'Lưu tiến độ'}</button>
           </div>
         </form>
       </Modal>
@@ -493,3 +589,4 @@ const primaryButton = { display: 'inline-flex', alignItems: 'center', justifyCon
 const secondaryButton = { ...primaryButton, background: 'white', color: '#334155', border: '1px solid #CBD5E1' } as const;
 const control = { border: '1px solid #CBD5E1', background: 'white', borderRadius: 7, padding: '9px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#0F172A', display: 'inline-flex', alignItems: 'center' } as const;
 const fieldLabel = { display: 'grid', gap: 6, color: '#334155', fontSize: 13, fontWeight: 600 } as const;
+const statusBtn = { padding: '12px 8px', borderRadius: 10, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' } as const;
