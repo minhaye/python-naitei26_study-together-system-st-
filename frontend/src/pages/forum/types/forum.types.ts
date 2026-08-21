@@ -24,6 +24,11 @@ export interface ForumPostResponse {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  category_name?: string;
+  author_name?: string;
+  likes_count?: number;
+  comments_count?: number;
+  is_liked?: boolean;
   tags?: string[];
 }
 
@@ -35,6 +40,9 @@ export interface CommentResponse {
   content: string;
   created_at: string;
   updated_at: string;
+  author_name?: string;
+  likes_count?: number;
+  is_liked?: boolean;
 }
 
 export interface PostLikeResponse {
@@ -61,10 +69,21 @@ export interface ForumPostCreate {
   image_path?: string | null;
 }
 
+export interface ForumPostUpdate {
+  category_id?: string;
+  title?: string;
+  content?: string;
+  image_path?: string | null;
+}
+
 export interface CommentCreate {
   post_id: string;
   author_id: string;
   parent_comment_id?: string | null;
+  content: string;
+}
+
+export interface CommentUpdate {
   content: string;
 }
 
@@ -80,12 +99,14 @@ export interface Post {
   content: string;
   imagePath: string | null;
   createdAt: string;
+  updatedAt?: string;
+  isEdited?: boolean;
   timeAgo: string;           // Tính client-side: "2 giờ trước"
   likesCount: number;        // Số lượt thích
   commentsCount: number;     // Số lượt bình luận
   isLiked: boolean;          // Client-side toggle
   tags?: string[];           // Danh sách hashtag
-  status?: 'sending' | 'error'; // Optimistic UI: undefined = đã lưu thành công
+  status?: 'sending' | 'updating' | 'error'; // Optimistic UI: undefined = đã lưu thành công
 }
 
 export interface Comment {
@@ -96,6 +117,8 @@ export interface Comment {
   parentCommentId: string | null;
   content: string;
   createdAt: string;
+  updatedAt?: string;
+  isEdited?: boolean;
   timeAgo: string;           // Tính client-side
   likesCount: number;        // Số lượt thích của comment
   isLiked: boolean;          // Client-side toggle

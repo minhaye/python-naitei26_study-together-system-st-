@@ -1,23 +1,17 @@
-/**
- * CommentItem — Hiển thị 1 bình luận (hoặc 1 reply trong mảng replies phẳng chuẩn Facebook).
- *
- * Chuẩn Facebook Best Practice (2-Tier Layout):
- *   - DOM phẳng 2 cấp: Root Comment (Cấp 1) -> Thread Replies (Cấp 2).
- *   - Tất cả câu trả lời (dù reply cho gốc hay reply cho reply khác) đều gióng thẳng hàng 100% ở Cấp 2 (lề 32px).
- *   - Tự động gắn tag `@TênTácGiả` màu xanh đậm nổi bật khi trả lời các câu reply trong luồng.
- *   - Nút "Xem X phản hồi" / "Ẩn X phản hồi" bung danh sách trả lời.
- */
-
-import React, { useState } from 'react';
-import { ThumbsUp, CornerDownRight, Send } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { ThumbsUp, CornerDownRight, Send, Edit2, Trash2, MoreHorizontal } from 'lucide-react';
 import { Avatar } from '../../../components/ui/Avatar';
 import { RichContentView } from '../../../components/ui/RichContentView';
 import { FORUM_COLORS } from '../constants/colors';
 import type { Comment } from '../types/forum.types';
+import { EditComment } from './EditComment';
+import { useAuth } from '../../../hooks/useAuth';
 
 interface CommentItemProps {
   comment: Comment;
   onReply: (parentId: string, content: string) => void;
+  onEdit?: (commentId: string, newContent: string) => void;
+  onDelete?: (commentId: string) => void;
   onLike: (commentId: string, isLiked: boolean) => void;
   isReply?: boolean;
   nestingLevel?: number; // 0 = Gốc (Root), 1 = Reply trong luồng
@@ -27,22 +21,41 @@ interface CommentItemProps {
 export const CommentItem: React.FC<CommentItemProps> = ({
   comment,
   onReply,
+  onEdit,
+  onDelete,
   onLike,
   isReply = false,
   nestingLevel = 0,
   isLastChild = false,
 }) => {
+  const { currentUser } = useAuth();
+  const isAuthor = currentUser?.id === comment.authorId;
+
+  const [isEditing, setIsEditing] = useState(false);
   const [showReplyBox, setShowReplyBox] = useState(false);
   const [showReplies, setShowReplies] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [likeHovered, setLikeHovered] = useState(false);
   const [replyHovered, setReplyHovered] = useState(false);
+  const [isBubbleHovered, setIsBubbleHovered] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleOpenReplyBox = () => {
     const nextState = !showReplyBox;
     setShowReplyBox(nextState);
     if (nextState && !replyText) {
-      // Tự động chèn @Tag tên tác giả
       setReplyText(`@${comment.authorName} `);
     }
   };
@@ -53,7 +66,6 @@ export const CommentItem: React.FC<CommentItemProps> = ({
     let finalContent = replyText.trim();
     const mentionStr = `@${comment.authorName}`;
     if (finalContent.startsWith(mentionStr)) {
-      // Bọc thẻ span có inline style cho tag mention để lưu vào DB
       const restText = finalContent.substring(mentionStr.length);
       finalContent = `<span style="color: #1D4ED8; font-weight: 600; cursor: pointer;">${mentionStr}</span>${restText}`;
     }
@@ -61,21 +73,17 @@ export const CommentItem: React.FC<CommentItemProps> = ({
     onReply(comment.id, finalContent);
     setReplyText('');
     setShowReplyBox(false);
-    setShowReplies(true); // Tự động mở danh sách reply khi vừa trả lời
+    setShowReplies(true);
   };
 
   const isRoot = nestingLevel === 0;
-  // Đường kẻ nối L mượt mà từ Root sang các Reply
   const showConnectorLine = isReply;
 
-  // Render nội dung comment có nhận diện thẻ @Tag tác giả màu xanh nổi bật kiểu Facebook (Fallback cho các comment cũ)
   const renderFormattedContent = (text: string) => {
-    // Nếu text đã chứa thẻ span chứa mention do FE tự tạo thì hiển thị luôn
     if (text.includes('<span style="color: #1D4ED8;')) {
       return <RichContentView content={text} />;
     }
 
-    // Fallback regex cho các dữ liệu cũ (chỉ match tối đa 2 từ)
     const mentionRegex = /^(@[^\s<]+(?:\s+[^\s<]+)?)/;
     const match = text.match(mentionRegex);
 
@@ -164,79 +172,199 @@ export const CommentItem: React.FC<CommentItemProps> = ({
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        {/* Bubble chứa nội dung comment */}
-        <div
-          style={{
-            background: FORUM_COLORS.subtle,
-            borderRadius: 12,
-            padding: '10px 14px',
-            display: 'inline-block',
-            maxWidth: '100%',
-          }}
-        >
-          <span style={{ fontWeight: '600', fontSize: 13, color: FORUM_COLORS.textPrimary }}>
-            {comment.authorName}
-          </span>
-          <div style={{ marginTop: 4 }}>
-            {renderFormattedContent(comment.content)}
+        {/* Chế độ Inline Edit hoặc Bubble comment thường kèm Menu 3 chấm chuẩn Facebook */}
+        {isEditing ? (
+          <EditComment
+            initialContent={comment.content}
+            onSave={async (newContent) => {
+              onEdit?.(comment.id, newContent);
+              setIsEditing(false);
+            }}
+            onCancel={() => setIsEditing(false)}
+          />
+        ) : (
+          <div
+            onMouseEnter={() => setIsBubbleHovered(true)}
+            onMouseLeave={() => setIsBubbleHovered(false)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              maxWidth: '100%',
+              position: 'relative',
+            }}
+          >
+            <div
+              style={{
+                background: FORUM_COLORS.subtle,
+                borderRadius: 12,
+                padding: '10px 14px',
+                display: 'inline-block',
+                maxWidth: '100%',
+              }}
+            >
+              <span style={{ fontWeight: '600', fontSize: 13, color: FORUM_COLORS.textPrimary }}>
+                {comment.authorName}
+              </span>
+              <div style={{ marginTop: 4 }}>
+                {renderFormattedContent(comment.content)}
+              </div>
+            </div>
+
+            {/* Menu 3 chấm Facebook (chỉ tác giả thấy khi hover hoặc mở menu) */}
+            {isAuthor && (
+              <div ref={menuRef} style={{ position: 'relative', flexShrink: 0 }}>
+                <button
+                  type="button"
+                  onClick={() => setIsMenuOpen((v) => !v)}
+                  style={{
+                    background: isMenuOpen ? '#E2E8F0' : 'transparent',
+                    border: 'none',
+                    padding: 4,
+                    borderRadius: '50%',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: isBubbleHovered || isMenuOpen ? 1 : 0,
+                    transition: 'opacity 0.15s ease, background 0.15s ease',
+                  }}
+                  title="Tùy chọn bình luận"
+                >
+                  <MoreHorizontal size={16} color="#64748B" />
+                </button>
+
+                {/* Dropdown Popover Menu chuẩn Facebook */}
+                {isMenuOpen && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      background: 'white',
+                      border: '1px solid #CBD5E1',
+                      borderRadius: 10,
+                      boxShadow: '0 10px 20px -5px rgba(0,0,0,0.15)',
+                      zIndex: 90,
+                      minWidth: 130,
+                      padding: '4px 0',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <div
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        setIsEditing(true);
+                      }}
+                      style={{
+                        padding: '8px 12px',
+                        fontSize: 12,
+                        fontWeight: '600',
+                        color: '#1E293B',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        transition: 'background 0.15s ease',
+                      }}
+                      onMouseOver={(e) => (e.currentTarget.style.background = '#F8FAFC')}
+                      onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <Edit2 size={13} color="#3B82F6" />
+                      <span>Chỉnh sửa</span>
+                    </div>
+
+                    <div
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        if (window.confirm('Bạn có chắc chắn muốn xóa bình luận này?')) {
+                          onDelete?.(comment.id);
+                        }
+                      }}
+                      style={{
+                        padding: '8px 12px',
+                        fontSize: 12,
+                        fontWeight: '600',
+                        color: '#DC2626',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        transition: 'background 0.15s ease',
+                      }}
+                      onMouseOver={(e) => (e.currentTarget.style.background = '#FEF2F2')}
+                      onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <Trash2 size={13} color="#DC2626" />
+                      <span>Xóa</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-        </div>
+        )}
 
         {/* Meta + Actions */}
-        <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 6, paddingLeft: 4 }}>
-          <span style={{ fontSize: 11, color: FORUM_COLORS.textDisabled }}>{comment.timeAgo}</span>
+        {!isEditing && (
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 6, paddingLeft: 4 }}>
+            <span style={{ fontSize: 11, color: FORUM_COLORS.textDisabled }}>
+              {comment.timeAgo}
+              {comment.isEdited && <span style={{ marginLeft: 4 }}>• Đã chỉnh sửa</span>}
+            </span>
 
-          {/* Nút Thích */}
-          <button
-            onMouseEnter={() => setLikeHovered(true)}
-            onMouseLeave={() => setLikeHovered(false)}
-            onClick={() => onLike(comment.id, comment.isLiked)}
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: 0,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              fontSize: 12,
-              fontWeight: '600',
-              color: comment.isLiked
-                ? FORUM_COLORS.primary
-                : likeHovered
-                ? FORUM_COLORS.textPrimary
-                : FORUM_COLORS.textMuted,
-              transition: 'color 0.15s ease',
-            }}
-          >
-            <ThumbsUp size={12} fill={comment.isLiked ? FORUM_COLORS.primary : 'none'} />
-            <span>Thích</span>
-            {comment.likesCount > 0 && <span style={{ fontWeight: '500' }}>({comment.likesCount})</span>}
-          </button>
+            {/* Nút Thích */}
+            <button
+              onMouseEnter={() => setLikeHovered(true)}
+              onMouseLeave={() => setLikeHovered(false)}
+              onClick={() => onLike(comment.id, comment.isLiked)}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                fontSize: 12,
+                fontWeight: '600',
+                color: comment.isLiked
+                  ? FORUM_COLORS.primary
+                  : likeHovered
+                  ? FORUM_COLORS.textPrimary
+                  : FORUM_COLORS.textMuted,
+                transition: 'color 0.15s ease',
+              }}
+            >
+              <ThumbsUp size={12} fill={comment.isLiked ? FORUM_COLORS.primary : 'none'} />
+              <span>Thích</span>
+              {comment.likesCount > 0 && <span style={{ fontWeight: '500' }}>({comment.likesCount})</span>}
+            </button>
 
-          {/* Nút Trả lời */}
-          <button
-            onMouseEnter={() => setReplyHovered(true)}
-            onMouseLeave={() => setReplyHovered(false)}
-            onClick={handleOpenReplyBox}
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: 0,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              fontSize: 12,
-              fontWeight: '600',
-              color: replyHovered ? FORUM_COLORS.textPrimary : FORUM_COLORS.textMuted,
-              transition: 'color 0.15s ease',
-            }}
-          >
-            <CornerDownRight size={12} />
-            <span>Trả lời</span>
-          </button>
-        </div>
+            {/* Nút Trả lời */}
+            <button
+              onMouseEnter={() => setReplyHovered(true)}
+              onMouseLeave={() => setReplyHovered(false)}
+              onClick={handleOpenReplyBox}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                fontSize: 12,
+                fontWeight: '600',
+                color: replyHovered ? FORUM_COLORS.textPrimary : FORUM_COLORS.textMuted,
+                transition: 'color 0.15s ease',
+              }}
+            >
+              <CornerDownRight size={12} />
+              <span>Trả lời</span>
+            </button>
+          </div>
+        )}
 
         {/* Nút "Xem X phản hồi" / "Ẩn X phản hồi" kiểu Facebook */}
         {comment.replies.length > 0 && (
@@ -305,7 +433,7 @@ export const CommentItem: React.FC<CommentItemProps> = ({
           </div>
         )}
 
-        {/* Mảng replies phẳng chuẩn Facebook: Tất cả reply trong luồng đều gióng thẳng hàng ở Cấp 2 */}
+        {/* Mảng replies phẳng chuẩn Facebook */}
         {showReplies && comment.replies.length > 0 && (
           <div
             style={{
@@ -322,6 +450,8 @@ export const CommentItem: React.FC<CommentItemProps> = ({
                 key={reply.id}
                 comment={reply}
                 onReply={onReply}
+                onEdit={onEdit}
+                onDelete={onDelete}
                 onLike={onLike}
                 isReply
                 nestingLevel={1}

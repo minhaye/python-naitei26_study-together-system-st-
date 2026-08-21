@@ -9,7 +9,7 @@
  */
 
 import { useState } from 'react';
-import type { Post, ForumPostCreate } from '../types/forum.types';
+import type { Post, ForumPostCreate, ForumPostUpdate } from '../types/forum.types';
 import { forumApi } from '../lib/forum.api';
 import { useAuth } from '../../../hooks/useAuth';
 
@@ -67,6 +67,63 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
         setPosts((prev) =>
           prev.map((p) => (p.id === optimisticId ? { ...p, status: 'error' } : p))
         );
+      }
+    });
+  };
+
+  const handleUpdatePost = (
+    postId: string,
+    payload: ForumPostUpdate,
+    categoryName?: string
+  ) => {
+    return requireAuth(async () => {
+      // 1. Optimistic UI: Cập nhật thông tin bài viết tại chỗ và đặt status 'updating'
+      setPosts((prev) =>
+        prev.map((p) => {
+          if (p.id !== postId) return p;
+          return {
+            ...p,
+            title: payload.title ?? p.title,
+            content: payload.content ?? p.content,
+            categoryId: payload.category_id ?? p.categoryId,
+            categoryName: categoryName ?? p.categoryName,
+            imagePath: payload.image_path !== undefined ? payload.image_path : p.imagePath,
+            updatedAt: new Date().toISOString(),
+            isEdited: true,
+            status: 'updating',
+          };
+        })
+      );
+
+      try {
+        // 2. Gửi API ở background
+        const updatedPost = await forumApi.updatePost(postId, payload, categoryName);
+        setPosts((prev) =>
+          prev.map((p) => (p.id === postId ? { ...updatedPost, status: undefined } : p))
+        );
+        window.dispatchEvent(new CustomEvent('post_created'));
+        return updatedPost;
+      } catch (error) {
+        console.error('Failed to update post', error);
+        setPosts((prev) =>
+          prev.map((p) => (p.id === postId ? { ...p, status: 'error' } : p))
+        );
+        throw error;
+      }
+    });
+  };
+
+  const handleDeletePost = (postId: string) => {
+    return requireAuth(async () => {
+      // 1. Optimistic UI: Xóa khỏi danh sách ngay lập tức
+      setPosts((prev) => prev.filter((p) => p.id !== postId));
+
+      try {
+        // 2. Gửi API delete ở background
+        await forumApi.deletePost(postId);
+        window.dispatchEvent(new CustomEvent('post_created'));
+      } catch (error) {
+        console.error('Failed to delete post', error);
       }
     });
   };
@@ -148,6 +205,8 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
     showCreateModal,
     setShowCreateModal,
     handleCreatePost,
+    handleUpdatePost,
+    handleDeletePost,
     handleRetryPost,
     handleDiscardPost,
     handleToggleLike,
