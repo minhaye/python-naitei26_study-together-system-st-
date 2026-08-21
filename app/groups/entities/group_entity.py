@@ -26,6 +26,7 @@ class Group(Base):
     name: Mapped[str] = mapped_column(Text)
     description: Mapped[str | None] = mapped_column(Text)
     avatar_url: Mapped[str | None] = mapped_column(Text)
+    background_url: Mapped[str | None] = mapped_column(Text)
     owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="RESTRICT"))
     invite_code: Mapped[str | None] = mapped_column(
         Text, unique=True, server_default=text("encode(gen_random_bytes(8), 'hex'::text)")

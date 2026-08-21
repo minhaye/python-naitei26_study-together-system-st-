@@ -4,10 +4,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, get_current_user_optional
 from app.auth.dto.auth_dto import CurrentUser
+from app.core.config import settings
 from app.core.permissions import is_active_group_member, is_group_manager, is_group_owner
 from app.db.session import get_db_session
 from app.db.enums import GroupMemberRole, MemberStatus
 from app.groups.dto.group_dto import (
+    GroupBackgroundConfirm,
     GroupCreate,
     GroupMemberCreate,
     GroupMemberResponse,
@@ -105,6 +107,64 @@ async def update_group(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Could not update group: {str(e)}"
         )
+
+
+@router.post("/{group_id}/background", response_model=GroupResponse)
+async def confirm_background_upload(
+    group_id: uuid.UUID,
+    data: GroupBackgroundConfirm,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Sets the group's background image after the frontend has already uploaded the file
+    directly to the public `group-backgrounds` Storage bucket (mirrors
+    POST /profiles/me/avatar). Owner OR active moderator may call this -- deliberately
+    looser than update_group's owner-only PUT, since the background image is the one Group
+    setting leader and mod are both meant to control."""
+    group = await service.get_by_id(session, group_id)
+    if not group:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Group not found")
+    if not await is_group_manager(session, group_id, current_user.id):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Only the group owner or a moderator can change the background image"
+        )
+    prefix = f"groups/{group_id}/"
+    if not data.path.startswith(prefix) or not data.path.endswith(".bg"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid background image reference")
+    try:
+        group.background_url = (
+            f"{settings.supabase_url.rstrip('/')}/storage/v1/object/public/group-backgrounds/{data.path}"
+        )
+        await session.commit()
+        return group
+    except HTTPException:
+        raise
+    except Exception as exc:
+        await session.rollback()
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Could not save background image") from exc
+
+
+@router.delete("/{group_id}/background", response_model=GroupResponse)
+async def remove_background(
+    group_id: uuid.UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Clears the group's background image. Same owner-or-moderator authority as setting it."""
+    group = await service.get_by_id(session, group_id)
+    if not group:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Group not found")
+    if not await is_group_manager(session, group_id, current_user.id):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Only the group owner or a moderator can change the background image"
+        )
+    try:
+        group.background_url = None
+        await session.commit()
+        return group
+    except Exception as exc:
+        await session.rollback()
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Could not remove background image") from exc
 
 
 @router.delete("/{group_id}", status_code=status.HTTP_204_NO_CONTENT)

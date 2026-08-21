@@ -7,6 +7,8 @@ import type { Group } from '../../lib/group.types';
 
 vi.mock('../../lib/group.api', () => ({
   updateGroup: vi.fn(),
+  uploadGroupBackground: vi.fn(),
+  removeGroupBackground: vi.fn(),
 }));
 
 const mockedUpdateGroup = vi.mocked(updateGroup);
@@ -17,6 +19,7 @@ function baseGroup(overrides: Partial<Group> = {}): Group {
     name: 'Nhóm Python',
     description: 'Mô tả cũ',
     avatar_url: null,
+    background_url: null,
     owner_id: 'user-1',
     invite_code: 'abc123',
     is_public: true,
@@ -31,8 +34,8 @@ describe('GroupSettingsModal', () => {
     mockedUpdateGroup.mockReset();
   });
 
-  function renderModal(group = baseGroup(), onUpdated = vi.fn(), onClose = vi.fn()) {
-    render(<GroupSettingsModal isOpen group={group} onClose={onClose} onUpdated={onUpdated} />);
+  function renderModal(group = baseGroup(), onUpdated = vi.fn(), onClose = vi.fn(), isOwner = true) {
+    render(<GroupSettingsModal isOpen group={group} onClose={onClose} onUpdated={onUpdated} isOwner={isOwner} />);
     return { onUpdated, onClose };
   }
 

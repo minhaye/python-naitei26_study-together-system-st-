@@ -1,4 +1,5 @@
 import { apiClient } from './apiClient';
+import { supabase } from './supabase';
 import type { Group, GroupCreate, GroupMember, GroupMemberCreate, GroupMemberRole, GroupUpdate } from './group.types';
 
 export function getGroups(publicOnly: boolean): Promise<Group[]> {
@@ -28,6 +29,28 @@ export function createGroup(data: GroupCreate): Promise<Group> {
 /** Owner-only; caller identity/authority is enforced server-side. */
 export function updateGroup(groupId: string, data: GroupUpdate): Promise<Group> {
   return apiClient.put<Group>(`/groups/${groupId}`, data);
+}
+
+/** Owner OR active moderator; uploads directly to the public `group-backgrounds` bucket
+ * then confirms with the backend (mirrors uploadProfileAvatar / POST /profiles/me/avatar).
+ * Deliberately not part of updateGroup -- the backend authorizes this one field looser
+ * (owner-or-moderator) than the rest of Group settings (owner-only). */
+export async function uploadGroupBackground(groupId: string, file: File): Promise<Group> {
+  const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+  if (!allowedTypes.has(file.type) || file.size > 5 * 1024 * 1024) {
+    throw new Error('Ảnh phải là JPEG, PNG, WebP hoặc GIF và không quá 5 MB.');
+  }
+  const path = `groups/${groupId}/${crypto.randomUUID()}.bg`;
+  const { error } = await supabase.storage.from('group-backgrounds').upload(path, file, {
+    contentType: file.type, upsert: false,
+  });
+  if (error) throw error;
+  return apiClient.post<Group>(`/groups/${groupId}/background`, { path });
+}
+
+/** Owner OR active moderator; clears the group's background image. */
+export function removeGroupBackground(groupId: string): Promise<Group> {
+  return apiClient.delete<Group>(`/groups/${groupId}/background`);
 }
 
 /** Self-join a public group: omitting user_id means "join myself" — the backend derives the

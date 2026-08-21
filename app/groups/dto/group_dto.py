@@ -31,11 +31,16 @@ class GroupResponse(BaseModel):
     name: str
     description: str | None
     avatar_url: str | None
+    background_url: str | None
     owner_id: uuid.UUID
     invite_code: str | None
     is_public: bool
     created_at: datetime
     updated_at: datetime
+
+
+class GroupBackgroundConfirm(BaseModel):
+    path: str
 
 
 class GroupMemberCreate(BaseModel):

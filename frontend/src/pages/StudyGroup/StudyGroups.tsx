@@ -21,11 +21,17 @@ function roleLabel(role: GroupMemberRole | null): string {
     return 'Thành viên';
 }
 
-/** Group has no decorative cover image field beyond avatar_url — fall back to a
- * deterministic color block (from the group id) rather than fabricating one. */
+/** Prefers the group's custom background_url (set via GroupSettingsModal by the owner or a
+ * moderator), then falls back to avatar_url, then to a deterministic color block. */
 function GroupCover({ group }: { group: Group }) {
-    if (group.avatar_url) {
-        return <img style={{ width: '100%', height: '100%', objectFit: 'cover' }} src={group.avatar_url} alt={group.name} />;
+    if (group.background_url || group.avatar_url) {
+        return (
+            <img
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                src={group.background_url ?? group.avatar_url ?? undefined}
+                alt={group.name}
+            />
+        );
     }
     return (
         <div style={{ width: '100%', height: '100%', background: getAvatarColor(group.id), display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
