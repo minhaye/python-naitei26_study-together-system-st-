@@ -6,6 +6,7 @@ import { CommentSection } from './CommentSection';
 import { Avatar } from '../../../components/ui/Avatar';
 import { RichContentView } from '../../../components/ui/RichContentView';
 import { EditPostModal } from './EditPostModal';
+import { MessageUserTrigger } from '../../../components/messages/MessageUserTrigger';
 
 import { useForumState } from '../context/ForumStateContext';
 import { useAuth } from '../../../hooks/useAuth';
@@ -214,7 +215,9 @@ export const PostCard: React.FC<PostCardProps> = ({
       {/* Post Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <Avatar name={post.authorName} src={post.authorAvatarUrl} size="lg" />
+          <MessageUserTrigger userId={post.authorId} isSelf={isAuthor}>
+            <Avatar name={post.authorName} src={post.authorAvatarUrl} size="lg" />
+          </MessageUserTrigger>
           <div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <span style={{ fontWeight: '600', color: '#0F172A', fontSize: 15 }}>{post.authorName}</span>

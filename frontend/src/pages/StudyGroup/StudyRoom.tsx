@@ -35,6 +35,7 @@ import { ErrorBoundary } from '../../components/ui/ErrorBoundary';
 import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
 import { getDisplayName } from '../../utils/userDisplay';
 import { InviteModal } from '../../components/invitations/InviteModal';
+import { MessageUserTrigger } from '../../components/messages/MessageUserTrigger';
 import { MeetingProvider } from './meeting/MeetingProvider';
 import { MeetingVideoGrid } from './meeting/MeetingVideoGrid';
 import { MeetingControls } from './meeting/MeetingControls';
@@ -768,13 +769,15 @@ export function StudyRoom() {
                         const display = senderDisplay(m);
                         return (
                           <div key={m.id} style={{display: 'flex', gap: 10, flexDirection: display.isSelf ? 'row-reverse' : 'row'}}>
-                            {display.avatarUrl ? (
-                              <img src={display.avatarUrl} alt={display.name} style={{width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flexShrink: 0}} />
-                            ) : (
-                              <div style={{width: 32, height: 32, borderRadius: '50%', background: display.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 12, flexShrink: 0}}>
-                                {display.initial}
-                              </div>
-                            )}
+                            <MessageUserTrigger userId={m.sender_id} isSelf={display.isSelf}>
+                              {display.avatarUrl ? (
+                                <img src={display.avatarUrl} alt={display.name} style={{width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flexShrink: 0}} />
+                              ) : (
+                                <div style={{width: 32, height: 32, borderRadius: '50%', background: display.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 12, flexShrink: 0}}>
+                                  {display.initial}
+                                </div>
+                              )}
+                            </MessageUserTrigger>
                             <div style={{maxWidth: '75%', display: 'flex', flexDirection: 'column', alignItems: display.isSelf ? 'flex-end' : 'flex-start'}}>
                               <div style={{display: 'flex', gap: 6, alignItems: 'baseline', marginBottom: 4}}>
                                 <span style={{color: '#94A3B8', fontSize: 11, fontWeight: '600'}}>{display.name}</span>

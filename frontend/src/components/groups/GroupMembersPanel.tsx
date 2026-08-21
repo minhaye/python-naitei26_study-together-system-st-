@@ -3,6 +3,7 @@ import type { GroupMember } from '../../lib/group.types';
 import type { AuthUser } from '../../hooks/useAuth';
 import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
 import { getDisplayName } from '../../utils/userDisplay';
+import { MessageUserTrigger } from '../messages/MessageUserTrigger';
 
 export interface GroupMembersPanelProps {
   /** Active group members only -- callers filter by status before passing them in. */
@@ -72,19 +73,22 @@ export function GroupMembersPanel({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {owners.map((member) => {
               const display = memberDisplay(member);
+              const isSelf = member.user_id === currentUserId;
               return (
                 <div key={member.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px', borderRadius: 6, cursor: 'default' }} onMouseOver={(e) => (e.currentTarget.style.background = '#E2E8F0')} onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}>
-                  {display.avatarUrl ? (
-                    <img src={display.avatarUrl} alt={display.name} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
-                  ) : (
-                    <div style={{ width: 36, height: 36, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: '700', fontSize: 13 }}>
-                      {display.initials}
+                  <MessageUserTrigger userId={member.user_id} isSelf={isSelf} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 12 }}>
+                    {display.avatarUrl ? (
+                      <img src={display.avatarUrl} alt={display.name} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                    ) : (
+                      <div style={{ width: 36, height: 36, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: '700', fontSize: 13 }}>
+                        {display.initials}
+                      </div>
+                    )}
+                    <div style={{ flex: 1 }}>
+                      <div style={{ color: '#0F172A', fontSize: 14, fontWeight: '600' }}>{display.name}</div>
+                      <div style={{ color: '#64748B', fontSize: 12 }}>Host</div>
                     </div>
-                  )}
-                  <div style={{ flex: 1 }}>
-                    <div style={{ color: '#0F172A', fontSize: 14, fontWeight: '600' }}>{display.name}</div>
-                    <div style={{ color: '#64748B', fontSize: 12 }}>Host</div>
-                  </div>
+                  </MessageUserTrigger>
                 </div>
               );
             })}
@@ -98,19 +102,22 @@ export function GroupMembersPanel({
             {others.map((member) => {
               const display = memberDisplay(member);
               const isPending = pendingMemberId === member.id;
+              const isSelf = member.user_id === currentUserId;
               return (
                 <div key={member.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px', borderRadius: 6, cursor: 'default' }} onMouseOver={(e) => (e.currentTarget.style.background = '#E2E8F0')} onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}>
-                  {display.avatarUrl ? (
-                    <img src={display.avatarUrl} alt={display.name} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
-                  ) : (
-                    <div style={{ width: 36, height: 36, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: '700', fontSize: 13 }}>
-                      {display.initials}
+                  <MessageUserTrigger userId={member.user_id} isSelf={isSelf} style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 12 }}>
+                    {display.avatarUrl ? (
+                      <img src={display.avatarUrl} alt={display.name} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                    ) : (
+                      <div style={{ width: 36, height: 36, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: '700', fontSize: 13 }}>
+                        {display.initials}
+                      </div>
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ color: '#0F172A', fontSize: 14, fontWeight: '600' }}>{display.name}</div>
+                      {member.role === 'moderator' && <div style={{ color: '#7C3AED', fontSize: 12 }}>{isPending ? 'Đang xử lý...' : 'Điều hành viên'}</div>}
                     </div>
-                  )}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ color: '#0F172A', fontSize: 14, fontWeight: '600' }}>{display.name}</div>
-                    {member.role === 'moderator' && <div style={{ color: '#7C3AED', fontSize: 12 }}>{isPending ? 'Đang xử lý...' : 'Điều hành viên'}</div>}
-                  </div>
+                  </MessageUserTrigger>
                   {/* Role changes and removal are owner-only (backend: is_group_owner on
                       PUT .../role and DELETE .../members/{id}) -- hidden for moderators/members,
                       never the sole authorization boundary. */}
