@@ -60,6 +60,17 @@ export function Header() {
                     })}>
                         Mục tiêu
                     </NavLink>
+                    <NavLink to="/messages" style={({isActive}) => ({
+                        paddingBottom: 4,
+                        borderBottom: isActive ? '2px #00236F solid' : '2px transparent solid',
+                        justifyContent: 'center', display: 'flex', flexDirection: 'column',
+                        color: isActive ? '#00236F' : '#444651',
+                        fontSize: 16, fontFamily: 'Inter', fontWeight: isActive ? '600' : '400',
+                        lineHeight: '24px', textDecoration: 'none', cursor: 'pointer',
+                        transition: 'all 0.2s'
+                    })}>
+                        Tin nhắn
+                    </NavLink>
                 </div>
             </div>
             <div style={{justifyContent: 'flex-start', alignItems: 'center', gap: 24, display: 'flex'}}>

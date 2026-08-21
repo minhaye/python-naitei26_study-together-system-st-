@@ -10,6 +10,7 @@ import { LoginPage } from '../pages/LoginPage';
 import { RegisterPage } from '../pages/RegisterPage';
 import { AimPage } from '../pages/Aim';
 import { AccountSettingsPage } from '../pages/AccountSettingsPage';
+import { DirectMessagesPage } from '../pages/messages/DirectMessagesPage';
 import { useAuth } from '../hooks/useAuth';
 import { ForumStateProvider } from '../pages/forum/context/ForumStateContext';
 
@@ -48,6 +49,8 @@ export function AppRoutes() {
             <Route path="groups/:id" element={<StudyGroupDetail />} />
             <Route path="aim" element={<AimPage />} />
             <Route path="settings" element={<AccountSettingsPage />} />
+            <Route path="messages" element={<DirectMessagesPage />} />
+            <Route path="messages/:conversationId" element={<DirectMessagesPage />} />
           </Route>
         </Route>
       </Routes>

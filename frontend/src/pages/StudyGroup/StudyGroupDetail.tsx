@@ -33,6 +33,7 @@ import { InviteModal } from '../../components/invitations/InviteModal';
 import { JoinByCodeModal } from '../../components/invitations/JoinByCodeModal';
 import { GroupSettingsModal } from '../../components/groups/GroupSettingsModal';
 import { GroupMembersPanel } from '../../components/groups/GroupMembersPanel';
+import { MessageUserTrigger } from '../../components/messages/MessageUserTrigger';
 import { createChannel, deleteChannel, getChannel, listChannelsByGroup } from '../../lib/channel.api';
 import { createStudyRoom, deleteStudyRoom, getStudyRoom, listStudyRoomsByGroup } from '../../lib/studyRoom.api';
 import { listConversationMessages, sendConversationMessage } from '../../lib/message.api';
@@ -1037,15 +1038,18 @@ export function StudyGroupDetail() {
                             >
                                 {messages.map((msg) => {
                                     const display = senderDisplay(msg);
+                                    const isSelf = msg.sender_id === currentUserId;
                                     return (
                                         <div key={msg.id} style={{display: 'flex', gap: 16}}>
-                                            {display.avatarUrl ? (
-                                                <img src={display.avatarUrl} alt={display.name} style={{width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', flexShrink: 0}} />
-                                            ) : (
-                                                <div style={{width: 40, height: 40, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flexShrink: 0}}>
-                                                    {display.initials}
-                                                </div>
-                                            )}
+                                            <MessageUserTrigger userId={msg.sender_id} isSelf={isSelf}>
+                                                {display.avatarUrl ? (
+                                                    <img src={display.avatarUrl} alt={display.name} style={{width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', flexShrink: 0}} />
+                                                ) : (
+                                                    <div style={{width: 40, height: 40, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flexShrink: 0}}>
+                                                        {display.initials}
+                                                    </div>
+                                                )}
+                                            </MessageUserTrigger>
                                             <div>
                                                 <div style={{display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4}}>
                                                     <span style={{color: '#0F172A', fontSize: 15, fontWeight: '600'}}>{display.name}</span>
