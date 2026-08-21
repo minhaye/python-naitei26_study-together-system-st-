@@ -15,4 +15,5 @@ export interface Conversation {
   type: ConversationType;
   created_at: string;
   other_participant: ConversationParticipant | null;
+  unread_count: number;
 }

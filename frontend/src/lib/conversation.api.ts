@@ -10,7 +10,14 @@ export function createOrGetDirectConversation(userId: string): Promise<Conversat
 }
 
 /** Lists the current user's direct conversations, newest-first, each already resolved
- * with its `other_participant`. No pagination params -- the backend endpoint has none. */
+ * with its `other_participant` and `unread_count`. No pagination params -- the backend
+ * endpoint has none. */
 export function listDirectConversations(): Promise<Conversation[]> {
   return apiClient.get<Conversation[]>('/conversations/direct');
+}
+
+/** Marks a direct conversation as read for the current user (updates their
+ * conversation_members.last_read_at to now()). No response body. */
+export function markConversationRead(conversationId: string): Promise<void> {
+  return apiClient.post<void>(`/conversations/${conversationId}/read`);
 }

@@ -3,7 +3,7 @@
 Plain SQL files, run manually against Supabase (SQL Editor, or `psql`/
 `supabase db query` pointed at the project's connection string). Nothing
 here is auto-applied by the app or by CI. Status below confirmed live
-2026-08-19 (014, 015, 019), 2026-08-21 (023) — update this table whenever a migration is actually run live.
+2026-08-19 (014, 015, 019), 2026-08-21 (023, 024) — update this table whenever a migration is actually run live.
 
 | # | File | Status | What it does |
 |---|---|---|---|
@@ -30,6 +30,7 @@ here is auto-applied by the app or by CI. Status below confirmed live
 | 021 | `021_create_roadmaps.sql` | ⏳ Pending | Creates personal roadmaps and ordered phases with owner-scoped RLS. Run `021_preflight.sql`, then this migration, then `021_verify.sql`. |
 | 022 | `022_create_tasks.sql` | ⏳ Pending | Creates personal `tasks` with owner-scoped RLS policies and least-privilege authenticated grants. Run `022_preflight.sql`, then this migration, then `022_verify.sql`. |
 | 023 | `023_add_group_background.sql` | ✅ Applied live | Adds `groups.background_url` (nullable) and the public `group-backgrounds` Storage bucket for the Group background-image setting. Owner AND active moderator may set/clear it (`public.is_group_manager`, looser than `update_group`'s owner-only PUT for name/description/is_public) -- see `app/groups/routers/group_router.py` `POST`/`DELETE /groups/{group_id}/background`. Purely additive, no rollback needed. |
+| 024 | `024_add_conversation_members_last_read_at.sql` | ✅ Applied live | Adds `conversation_members.last_read_at` (timestamptz, not null, default `now()`), backfilling existing rows to `now()` so rollout doesn't surface old messages as unread. Backs the unread-DM-badge feature -- see `POST /conversations/{id}/read` and `ConversationsService.count_unread_for_user`/`mark_read`. Purely additive, no RLS change (FastAPI remains the sole writer). |
 
 Full design/rationale for 004-006: `docs/db/STUDY_PLATFORM_DATABASE_SPEC.md` § 12–15. For 007: § 37. For 008: § 8, § 34. For 009: § 9. For 010/011: § 16, § 22. For 012: § 14. For 013: `docs/invitations.md`. For 014/015: § 24. For 019 (Group Notes): `app/notes/` (see the row above; no separate design doc exists for Notes).
 

@@ -348,6 +348,9 @@ async def test_create_direct_success_returns_conversation_with_other_participant
         "list_members",
         AsyncMock(return_value=[_member(conversation.id, as_fake_user.id), _member(conversation.id, target_id)]),
     )
+    monkeypatch.setattr(
+        conversation_router.conversation_service, "count_unread_for_user", AsyncMock(return_value={conversation.id: 3})
+    )
 
     response = await async_client.post(
         "/conversations/direct", json={"user_id": str(target_id)}, headers=AUTH_HEADERS
@@ -360,6 +363,7 @@ async def test_create_direct_success_returns_conversation_with_other_participant
     assert body["other_participant"]["id"] == str(target_id)
     assert body["other_participant"]["username"] == "bob"
     assert "bio" not in body["other_participant"]
+    assert body["unread_count"] == 3
     _, called_user_a, called_user_b = get_or_create_mock.await_args.args
     assert called_user_a == as_fake_user.id
     assert called_user_b == target_id
@@ -381,6 +385,7 @@ async def test_create_direct_idempotent_repeated_calls_return_same_conversation_
         conversation_router.conversation_service, "get_or_create_direct", AsyncMock(return_value=conversation)
     )
     monkeypatch.setattr(conversation_router.conversation_service, "list_members", AsyncMock(return_value=[]))
+    monkeypatch.setattr(conversation_router.conversation_service, "count_unread_for_user", AsyncMock(return_value={}))
 
     first = await async_client.post("/conversations/direct", json={"user_id": str(target_id)}, headers=AUTH_HEADERS)
     second = await async_client.post("/conversations/direct", json={"user_id": str(target_id)}, headers=AUTH_HEADERS)
@@ -406,6 +411,7 @@ async def test_create_direct_b_to_a_returns_same_conversation_as_a_to_b(async_cl
         "list_members",
         AsyncMock(return_value=[_member(conversation.id, user_a), _member(conversation.id, as_fake_user.id)]),
     )
+    monkeypatch.setattr(conversation_router.conversation_service, "count_unread_for_user", AsyncMock(return_value={}))
 
     response = await async_client.post("/conversations/direct", json={"user_id": str(user_a)}, headers=AUTH_HEADERS)
 
@@ -455,6 +461,9 @@ async def test_list_direct_returns_only_callers_conversations(async_client, monk
         AsyncMock(return_value=[_member(conversation.id, as_fake_user.id), _member(conversation.id, other_user)]),
     )
     monkeypatch.setattr(conversation_router.profiles_service, "get_by_id", AsyncMock(return_value=other_profile))
+    monkeypatch.setattr(
+        conversation_router.conversation_service, "count_unread_for_user", AsyncMock(return_value={conversation.id: 2})
+    )
 
     response = await async_client.get("/conversations/direct", headers=AUTH_HEADERS)
 
@@ -463,3 +472,95 @@ async def test_list_direct_returns_only_callers_conversations(async_client, monk
     assert len(body) == 1
     assert body[0]["id"] == str(conversation.id)
     assert body[0]["other_participant"]["username"] == "carol"
+    assert body[0]["unread_count"] == 2
+
+
+# ============================================================================
+# ConversationsService.mark_read / count_unread_for_user
+# ============================================================================
+
+
+async def test_mark_read_updates_last_read_at_for_matching_member():
+    service = ConversationsService()
+    conversation_id, user_id = uuid.uuid4(), uuid.uuid4()
+    member = _member(conversation_id, user_id)
+    before = member.last_read_at
+    session = AsyncMock()
+    session.execute = AsyncMock(return_value=_FakeResult(member))
+
+    await service.mark_read(session, conversation_id, user_id)
+
+    assert member.last_read_at != before
+    session.flush.assert_awaited_once()
+
+
+async def test_mark_read_no_op_when_member_missing():
+    service = ConversationsService()
+    session = AsyncMock()
+    session.execute = AsyncMock(return_value=_FakeResult(None))
+
+    await service.mark_read(session, uuid.uuid4(), uuid.uuid4())
+
+    session.flush.assert_not_called()
+
+
+async def test_count_unread_for_user_returns_empty_dict_without_querying_for_empty_ids():
+    service = ConversationsService()
+
+    async def _execute_should_not_be_called(_stmt):
+        raise AssertionError("count_unread_for_user must not query when given no conversation ids")
+
+    session = AsyncMock()
+    session.execute = _execute_should_not_be_called
+
+    assert await service.count_unread_for_user(session, uuid.uuid4(), []) == {}
+
+
+# ============================================================================
+# POST /conversations/{conversation_id}/read
+# ============================================================================
+
+
+async def test_mark_conversation_read_requires_auth(async_client):
+    response = await async_client.post(f"/conversations/{uuid.uuid4()}/read")
+    assert response.status_code == 401
+
+
+async def test_mark_conversation_read_404_when_conversation_missing(async_client, monkeypatch, as_fake_user):
+    monkeypatch.setattr(conversation_router.conversation_service, "get_by_id", AsyncMock(return_value=None))
+
+    response = await async_client.post(f"/conversations/{uuid.uuid4()}/read", headers=AUTH_HEADERS)
+    assert response.status_code == 404
+
+
+async def test_mark_conversation_read_400_when_not_direct(async_client, monkeypatch, as_fake_user):
+    conversation = Conversation(id=uuid.uuid4(), type=ConversationType.CHANNEL, created_by=uuid.uuid4())
+    monkeypatch.setattr(conversation_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
+
+    response = await async_client.post(f"/conversations/{conversation.id}/read", headers=AUTH_HEADERS)
+    assert response.status_code == 400
+
+
+async def test_mark_conversation_read_403_when_not_member(async_client, monkeypatch, as_fake_user):
+    conversation = _make_direct_conversation(as_fake_user.id, uuid.uuid4())
+    monkeypatch.setattr(conversation_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
+    monkeypatch.setattr(conversation_router, "is_conversation_member", AsyncMock(return_value=False))
+
+    response = await async_client.post(f"/conversations/{conversation.id}/read", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_mark_conversation_read_success_marks_read(async_client, monkeypatch, as_fake_user):
+    other_user = uuid.uuid4()
+    conversation = _make_direct_conversation(as_fake_user.id, other_user, created_by=as_fake_user.id)
+    monkeypatch.setattr(conversation_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
+    monkeypatch.setattr(conversation_router, "is_conversation_member", AsyncMock(return_value=True))
+    mark_read_mock = AsyncMock()
+    monkeypatch.setattr(conversation_router.conversation_service, "mark_read", mark_read_mock)
+
+    response = await async_client.post(f"/conversations/{conversation.id}/read", headers=AUTH_HEADERS)
+
+    assert response.status_code == 204
+    _, called_conversation_id, called_user_id = mark_read_mock.await_args.args
+    assert called_conversation_id == conversation.id
+    assert called_user_id == as_fake_user.id

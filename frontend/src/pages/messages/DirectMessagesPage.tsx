@@ -7,6 +7,7 @@ import { listDirectConversations } from '../../lib/conversation.api';
 import { ApiError } from '../../lib/apiClient';
 import { getDisplayName } from '../../utils/userDisplay';
 import { getAvatarColor, getAvatarInitials } from '../../utils/avatarUtils';
+import { useUnreadMessages } from '../../contexts/unread-messages-context';
 import type { Conversation } from '../../lib/conversation.types';
 import type { Message } from '../../lib/message.types';
 
@@ -18,6 +19,7 @@ export function DirectMessagesPage() {
   const { conversationId } = useParams<{ conversationId?: string }>();
   const navigate = useNavigate();
   const { currentUser } = useAuth();
+  const { getUnread, markAsRead } = useUnreadMessages();
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [isLoadingList, setIsLoadingList] = useState(true);
@@ -62,7 +64,18 @@ export function DirectMessagesPage() {
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // A new message arriving via Realtime while this thread is already open doesn't change
+    // conversationId, so the effect below (keyed on conversationId) wouldn't catch it --
+    // this covers that case. markAsRead is idempotent server-side.
+    if (conversationId) markAsRead(conversationId);
+    // Intentionally excludes conversationId/markAsRead so this only reacts to new
+    // messages, not every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages]);
+
+  useEffect(() => {
+    if (conversationId) markAsRead(conversationId);
+  }, [conversationId, markAsRead]);
 
   const handleSend = async () => {
     const trimmed = chatInput.trim();
@@ -117,6 +130,7 @@ export function DirectMessagesPage() {
             const initials = getAvatarInitials(name);
             const color = getAvatarColor(name);
             const isActive = c.id === conversationId;
+            const unread = getUnread(c.id);
             return (
               <div
                 key={c.id}
@@ -138,9 +152,29 @@ export function DirectMessagesPage() {
                     {initials}
                   </div>
                 )}
-                <div style={{ minWidth: 0, color: '#0F172A', fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ minWidth: 0, flex: 1, color: '#0F172A', fontSize: 14, fontWeight: unread > 0 ? 700 : 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {name}
                 </div>
+                {unread > 0 && (
+                  <div
+                    style={{
+                      minWidth: 20,
+                      height: 20,
+                      borderRadius: 10,
+                      background: '#EF4444',
+                      color: 'white',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '0 6px',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {unread > 9 ? '9+' : unread}
+                  </div>
+                )}
               </div>
             );
           })}

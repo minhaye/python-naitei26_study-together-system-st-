@@ -29,3 +29,4 @@ class ConversationResponse(BaseModel):
     type: ConversationType
     created_at: datetime
     other_participant: ConversationParticipant | None = None
+    unread_count: int = 0

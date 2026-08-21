@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { MessageCircle } from 'lucide-react';
 import { ApiError } from '../../lib/apiClient';
 import { createOrGetDirectConversation } from '../../lib/conversation.api';
+import { useUnreadMessages } from '../../contexts/unread-messages-context';
 
 export interface MessageUserTriggerProps {
   /** Target user's id -- passed straight through to POST /conversations/direct. */
@@ -23,6 +24,7 @@ export interface MessageUserTriggerProps {
  * click-outside-close + popover styling convention this follows. */
 export function MessageUserTrigger({ userId, isSelf = false, children, style }: MessageUserTriggerProps) {
   const navigate = useNavigate();
+  const { refresh } = useUnreadMessages();
   const [isOpen, setIsOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +47,7 @@ export function MessageUserTrigger({ userId, isSelf = false, children, style }: 
     setError(null);
     try {
       const conversation = await createOrGetDirectConversation(userId);
+      refresh();
       setIsOpen(false);
       navigate(`/messages/${conversation.id}`);
     } catch (err) {

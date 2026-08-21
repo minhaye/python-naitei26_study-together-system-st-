@@ -735,7 +735,11 @@ conversation_members
 ├── id
 ├── conversation_id
 ├── user_id
-└── joined_at
+├── joined_at
+└── last_read_at   -- migration 024, đã live. NOT NULL, default now(). Cột duy nhất được
+                    -- ghi qua POST /conversations/{id}/read (ConversationsService.mark_read);
+                    -- không có RLS write policy mới -- FastAPI vẫn là writer duy nhất, giống
+                    -- mọi cột khác trên bảng này.
 ```
 
 ## Unique Rule
@@ -753,9 +757,14 @@ Race condition (A và B cùng mở DM gần như đồng thời) được xử l
 ## API layer đã triển khai
 
 ```text
-POST /conversations/direct   body: {"user_id": "<uuid>"}   -- idempotent get-or-create, luôn 200
-GET  /conversations/direct                                  -- danh sách DM của current user
+POST /conversations/direct       body: {"user_id": "<uuid>"}   -- idempotent get-or-create, luôn 200
+GET  /conversations/direct                                      -- danh sách DM của current user,
+                                                                  -- mỗi item kèm unread_count
+POST /conversations/{id}/read                                   -- đánh dấu đã đọc (chỉ type=direct),
+                                                                  -- set last_read_at = now()
 ```
+
+`unread_count` (trên mỗi item của `GET /conversations/direct`) = số `messages` của conversation đó có `sender_id != current_user_id` và `created_at > conversation_members.last_read_at` (của current user trong conversation đó) — tính bằng 1 query gộp (`ConversationsService.count_unread_for_user`), không phải N query riêng lẻ mỗi conversation.
 
 Sau khi có `conversation_id`, DM dùng chung API generic với channel/room — không có endpoint message riêng cho DM:
 
@@ -2167,7 +2176,7 @@ luôn đồng bộ.
 16. comment_likes
 17. notifications
 18. conversations              -- migration 004, đã live — xem § 12; 2 cột direct_user_min_id/max_id thêm bởi migration 006 — xem § 14
-19. conversation_members       -- migration 004, đã live — xem § 12
+19. conversation_members       -- migration 004, đã live — xem § 12; cột last_read_at thêm bởi migration 024, đã chạy live 2026-08-21 — xem § 15
 20. invitations                -- migration 013, đã chạy live và verify thành công 2026-08-18 — xem docs/invitations.md
 21. group_notes                -- migration 019 (đánh số lại từ 016 khi merge origin/master vào feat/notes-persistence, do origin/master đã dùng 016-018 cho forum-hashtag/profile), đã chạy live và verify thành công 2026-08-19 — Ghi chú dùng chung theo Group (không theo Study Room), quyền đọc cho mọi active member, quyền tạo/sửa/xóa chỉ Owner/Moderator — xem docs/db/migrations/README.md
 ```
