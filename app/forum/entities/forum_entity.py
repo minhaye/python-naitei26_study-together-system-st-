@@ -47,7 +47,6 @@ class ForumPost(Base):
     author: Mapped["Profile"] = relationship(back_populates="forum_posts")
     category: Mapped["ForumCategory"] = relationship(back_populates="posts")
     comments: Mapped[list["Comment"]] = relationship(back_populates="post")
-    reactions: Mapped[list["PostReaction"]] = relationship(back_populates="post")
     notifications: Mapped[list["Notification"]] = relationship(back_populates="post")
     post_tags: Mapped[list["PostTag"]] = relationship(back_populates="post", cascade="all, delete-orphan")
 
@@ -100,14 +99,19 @@ class Comment(Base):
     author: Mapped["Profile"] = relationship(back_populates="comments")
     parent: Mapped["Comment | None"] = relationship(remote_side=[id], back_populates="replies")
     replies: Mapped[list["Comment"]] = relationship(back_populates="parent")
-    reactions: Mapped[list["CommentReaction"]] = relationship(back_populates="comment")
     notifications: Mapped[list["Notification"]] = relationship(back_populates="comment")
 
 
 class CommentReaction(Base):
-    """Facebook-style multi-emotion reaction on a comment -- one row per (comment, user);
-    picking a new emoji replaces the previous one. Mirrors MessageReaction (see
-    app/messages/entities/message_entity.py) and 028_add_forum_reactions.sql."""
+    """One row per (comment, user): the user's current emoji reaction to that comment. Picking
+    a new emoji replaces the previous one (Messenger-style), enforced by the unique constraint
+    below doubling as the ON CONFLICT target for ForumService.set_comment_reaction's upsert.
+    No relationship()s to Comment/Profile -- nothing navigates this via the ORM, every read
+    goes through ForumService's grouped queries. Mirrors MessageReaction exactly (see
+    app/messages/entities/message_entity.py) -- a relationship() here would make
+    Comment.reactions a real ORM-managed collection, which ForumService._attach_comment_reactions
+    then can't overwrite with plain ReactionSummary DTOs without SQLAlchemy raising
+    (AttributeError: '...' object has no attribute '_sa_instance_state')."""
 
     __tablename__ = "comment_reactions"
     __table_args__ = (UniqueConstraint("comment_id", "user_id"),)
@@ -120,14 +124,12 @@ class CommentReaction(Base):
     emoji: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
 
-    comment: Mapped["Comment"] = relationship(back_populates="reactions")
-    user: Mapped["Profile"] = relationship(back_populates="comment_reactions")
-
 
 class PostReaction(Base):
-    """Facebook-style multi-emotion reaction on a post -- one row per (post, user); picking a
-    new emoji replaces the previous one. Mirrors MessageReaction (see
-    app/messages/entities/message_entity.py) and 028_add_forum_reactions.sql."""
+    """One row per (post, user): the user's current emoji reaction to that post. Picking a new
+    emoji replaces the previous one (Messenger-style), enforced by the unique constraint below
+    doubling as the ON CONFLICT target for ForumService.set_post_reaction's upsert. No
+    relationship()s to ForumPost/Profile -- see CommentReaction's docstring for why."""
 
     __tablename__ = "post_reactions"
     __table_args__ = (UniqueConstraint("post_id", "user_id"),)
@@ -139,6 +141,3 @@ class PostReaction(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="CASCADE"))
     emoji: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
-
-    post: Mapped["ForumPost"] = relationship(back_populates="reactions")
-    user: Mapped["Profile"] = relationship(back_populates="post_reactions")
