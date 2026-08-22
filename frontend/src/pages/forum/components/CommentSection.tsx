@@ -24,6 +24,12 @@ interface CommentSectionProps {
   onCommentAdded?: () => void;
 }
 
+const getPlainText = (html: string) => {
+  if (!html) return '';
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  return doc.body.textContent || '';
+};
+
 export const CommentSection: React.FC<CommentSectionProps> = ({
   postId,
   isDetailPage = false,
@@ -77,7 +83,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
           {!showRichEditor ? (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', width: '100%' }}>
               <input
-                value={newComment}
+                value={getPlainText(newComment)}
                 readOnly={!isLoggedIn}
                 onFocus={handleFocusInput}
                 onChange={(e) => setNewComment(e.target.value)}
