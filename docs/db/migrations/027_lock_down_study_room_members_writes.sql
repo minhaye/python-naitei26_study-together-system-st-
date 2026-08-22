@@ -1,0 +1,106 @@
+-- Removes an authorization bypass on `study_room_members` found while reviewing 026 (Realtime).
+--
+-- ============================================================================
+-- Why
+-- ============================================================================
+-- 026's verify run surfaced four `authenticated` policies on study_room_members that this repo
+-- had never captured or reviewed before (010's header explicitly flagged this table's base
+-- policies as unknown). Their exact bodies, captured live via 027_preflight.sql:
+--
+--   study_room_members_select  SELECT  USING (EXISTS (
+--     SELECT 1 FROM study_rooms sr WHERE sr.id = study_room_members.room_id
+--       AND is_group_member(sr.group_id)))
+--   study_room_members_insert  INSERT  WITH CHECK (user_id = auth.uid() OR is_room_manager(room_id))
+--   study_room_members_update  UPDATE  USING/WITH CHECK (user_id = auth.uid() OR is_room_manager(room_id))
+--   study_room_members_delete  DELETE  USING (user_id = auth.uid() OR is_room_manager(room_id))
+--
+-- Two separate problems, both fixed here:
+--
+-- 1. WRITE BYPASS (the serious one): study_room_members_insert/update/delete let any
+--    authenticated user write directly via Supabase/PostgREST, entirely bypassing FastAPI's
+--    authorization:
+--      - `user_id = auth.uid()` lets anyone self-INSERT/UPDATE/DELETE their own row directly --
+--        skipping join_room's is_active_group_member + can_join_room(room) checks, and
+--        leave_room's soft-delete-only semantics (StudyRoomsService.leave sets left_at; a direct
+--        DELETE here physically removes the row instead, which nothing else in this schema
+--        expects -- moderation-log joins, host bookkeeping, etc. all assume the row persists).
+--      - `is_room_manager(room_id)` lets anyone that (uncaptured, unaudited) function returns
+--        true for write ANY member's row directly -- bypassing can_manage_room's is_group_manager
+--        (CURRENT active Group owner/moderator) check that study_room_router.py's KICK/
+--        role-change endpoints enforce. There is no confirmed guarantee is_room_manager()
+--        implements that same current-role rule; migration 011 already had to fix an
+--        equivalent stale host_id-based rule for read access (can_access_room_conversation) --
+--        this may be the same class of staleness on the write side, just never audited before.
+--    A repo-wide search (frontend/src) confirms nothing in the current app writes to
+--    study_room_members directly -- every join/leave/role-change/kick goes through FastAPI,
+--    which uses a Postgres role that bypasses RLS entirely (this repo's established connection
+--    model). These three policies are therefore a bypass with no legitimate caller today, not a
+--    feature being removed. This migration drops all three, bringing study_room_members in line
+--    with this repo's established post-013 convention (messages/channels/invitations/
+--    notifications/group_notes: FastAPI is the sole writer, no authenticated write policy).
+--
+-- 2. READ PARITY GAP (lower severity, fixed for consistency): study_room_members_select is
+--    broader than 026's study_room_members_select_room_participant -- it grants SELECT to ANY
+--    active Group member, not just an active participant of THIS room (no left_at check, no
+--    can_access_room_conversation parity). Since permissive policies are OR'd together, this
+--    broader one -- not 026's -- currently governs actual SELECT access, making 026's own
+--    addition a no-op. This mirrors exactly the Python/SQL parity gap migration 011 closed for
+--    can_access_room_conversation() (host_id treated as a standing grant instead of requiring
+--    current participation) -- here it's "any group member" instead of "any host", same shape of
+--    bug. FastAPI's own list_members endpoint (study_room_router.py) already enforces the
+--    narrower can_access_room() rule; nothing in the frontend calls listStudyRoomMembers from a
+--    context where the caller isn't already a room participant (confirmed via grep -- its only
+--    caller is useStudyRoom.ts, gated by the Study Room page itself). Dropping the broader
+--    policy leaves study_room_members_select_room_participant (026) as the only SELECT policy,
+--    closing the gap.
+--
+-- Deliberately NOT touched:
+-- - `is_room_manager()` itself -- it is also used by room_moderation_actions' room_moderation_select
+--   policy (see 007), a wider blast radius than this migration's scope. Its body is captured for
+--   the record in 027_preflight.sql's output; auditing/fixing it (if it does turn out to be
+--   host_id-based) is a separate, not-yet-scoped follow-up.
+-- - study_room_members_block_when_room_deleted (010's RESTRICTIVE policy) -- untouched, still
+--   narrows on top of whatever permissive policy remains.
+-- - study_room_members_select_room_participant (026) -- untouched, becomes the sole SELECT
+--   policy after this runs.
+-- - No column, table, or row is added, dropped, or modified -- policy objects only.
+--
+-- Read docs/db/migrations/027_preflight.sql and its output BEFORE running this. Read
+-- docs/db/migrations/027_verify.sql AFTER running this.
+--
+-- Safety:
+--   - Single transaction. Any error aborts the whole thing -- nothing partial is left behind.
+--   - Every DROP uses IF EXISTS -- idempotent, safe to re-run.
+--   - Purely subtractive (policy objects only) -- no data is read, written, or deleted by this
+--     migration itself.
+--   - No rollback script: the exact bodies being dropped are captured verbatim above and in
+--     027_preflight.sql's output, so recreating them (if this migration is ever found to be
+--     wrong) is a short manual `create policy` using those bodies -- not worth a companion
+--     script for what amounts to reinstating a bypass on purpose (same reasoning 013 used for
+--     dropping notifications_update_own/notifications_delete_own without a rollback file).
+
+begin;
+
+drop policy if exists study_room_members_insert on public.study_room_members;
+drop policy if exists study_room_members_update on public.study_room_members;
+drop policy if exists study_room_members_delete on public.study_room_members;
+drop policy if exists study_room_members_select on public.study_room_members;
+
+commit;
+
+-- ============================================================================
+-- After this migration:
+--   - No `authenticated` INSERT/UPDATE/DELETE policy exists on study_room_members anywhere --
+--     FastAPI (`postgres` role, bypasses RLS) is now the sole writer, matching messages/
+--     channels/invitations/notifications/group_notes.
+--   - study_room_members_select_room_participant (026) is the only SELECT policy left:
+--     `authenticated` gets direct read access ONLY where can_access_room_conversation(room_id)
+--     allows it -- i.e. only rows belonging to a room the caller is themselves an active,
+--     non-left member of (current Group membership + room's not soft-deleted), matching
+--     FastAPI's can_access_room() exactly.
+--   - study_room_members_block_when_room_deleted (010) is untouched, still applies on top.
+--   - RLS remains enabled; no row is added, changed, or removed.
+--   - Realtime (enabled by 026) now only ever broadcasts study_room_members events to a
+--     subscriber the narrower policy actually allows -- consistent with what FastAPI already
+--     enforces, closing the parity gap #2 above described.
+-- ============================================================================

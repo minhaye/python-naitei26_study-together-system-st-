@@ -271,6 +271,16 @@ export function StudyRoom() {
   // /conversations/{id}/messages REST API + Realtime subscription as Channel chat --
   // see useRoomMessages.ts). `room.conversation_id` is null only in the brief instant
   // before `room` has loaded; the chat panel treats that the same as "not ready yet".
+  //
+  // Gated on `isCurrentUserMember`, not just `room?.conversation_id`: the room GET has no
+  // membership check, so conversation_id is available (and this hook would start fetching)
+  // before the join API call has actually committed a study_room_members row. Fetching that
+  // early hits the backend's can_access_room 403 ("You do not have access to this
+  // conversation") and, since the hook only re-fetches when conversationId itself changes,
+  // that error used to stick around even after join succeeded -- only a full reload (which
+  // re-fetches after membership already exists) cleared it. Gating here makes conversationId
+  // flip from null to real only once membership is actually confirmed, so the fetch is
+  // correctly deferred instead of firing-then-erroring.
   const {
     messages,
     isLoading: isMessagesLoading,
@@ -279,7 +289,7 @@ export function StudyRoom() {
     sendError: sendMessageError,
     sendMessage,
     updateMessageReactions,
-  } = useRoomMessages(room?.conversation_id ?? null);
+  } = useRoomMessages(isCurrentUserMember ? room?.conversation_id ?? null : null);
   const handleReactionSelect = useMessageReactionActions(updateMessageReactions);
   const [chatInput, setChatInput] = useState('');
   const imageAttachment = useMessageImageAttachment();
