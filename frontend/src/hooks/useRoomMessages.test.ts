@@ -32,6 +32,7 @@ function makeMessage(overrides: Partial<Message> = {}): Message {
     sender_id: 'user-1',
     content: 'hello',
     attachment_path: null,
+    attachment_url: null,
     created_at: '2026-08-19T00:00:00Z',
     updated_at: '2026-08-19T00:00:00Z',
     sender,

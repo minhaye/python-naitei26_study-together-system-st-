@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { ChevronDown, ChevronRight, UserPlus, Users, ArrowRight } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { getGroups, getMyGroups, listGroupMembers, createGroup, joinGroup, getMemberCounts, getMyMemberships } from '../../lib/group.api';
+import { getGroups, getMyGroups, createGroup, joinGroup, getMemberCounts, getMyMemberships } from '../../lib/group.api';
 import { ApiError } from '../../lib/apiClient';
 import { JoinByCodeModal } from '../../components/invitations/JoinByCodeModal';
 import type { Group, GroupMember, GroupMemberRole } from '../../lib/group.types';
@@ -99,7 +99,7 @@ export function StudyRooms() {
             const [publicGroups, myGroupsList, memberCountsObj, myMemberships] = await Promise.all([
                 getGroups(true),
                 currentUserId ? getMyGroups().catch(() => []) : Promise.resolve([]),
-                getMemberCounts().catch(() => ({})),
+                getMemberCounts().catch(() => ({} as Record<string, number>)),
                 currentUserId ? getMyMemberships().catch(() => []) : Promise.resolve([]),
             ]);
 
