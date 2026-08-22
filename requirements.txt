@@ -5,6 +5,8 @@ psycopg[binary]
 pydantic-settings
 pyjwt[crypto]
 httpx
+anthropic
+google-genai
 pytest
 pytest-asyncio
 livekit-api==1.2.0

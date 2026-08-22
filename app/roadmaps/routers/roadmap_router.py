@@ -8,10 +8,21 @@ from sqlalchemy.orm import selectinload
 from app.auth.dependencies import get_current_user
 from app.auth.dto.auth_dto import CurrentUser
 from app.db.session import get_db_session
-from app.roadmaps.dto.roadmap_dto import RoadmapCreate, RoadmapPhaseCreate, RoadmapPhaseResponse, RoadmapPhaseUpdate, RoadmapResponse, RoadmapUpdate
+from app.roadmaps.dto.roadmap_dto import (
+    RoadmapCreate,
+    RoadmapPhaseCreate,
+    RoadmapPhaseResponse,
+    RoadmapPhaseUpdate,
+    RoadmapResponse,
+    RoadmapSuggestRequest,
+    RoadmapSuggestion,
+    RoadmapUpdate,
+)
 from app.roadmaps.entities.roadmap_entity import Roadmap, RoadmapPhase
+from app.roadmaps.services.roadmap_ai_service import RoadmapAiError, RoadmapAiService, RoadmapAiServiceNotConfigured
 
 router = APIRouter(prefix='/roadmaps', tags=['Roadmaps'])
+roadmap_ai_service = RoadmapAiService()
 
 
 @router.get('', response_model=list[RoadmapResponse])
@@ -20,6 +31,16 @@ async def list_roadmaps(current_user: CurrentUser = Depends(get_current_user), s
         select(Roadmap).where(Roadmap.user_id == current_user.id).options(selectinload(Roadmap.phases)).order_by(Roadmap.created_at.desc())
     )
     return list(result.scalars())
+
+
+@router.post('/suggest', response_model=RoadmapSuggestion)
+async def suggest_roadmap(data: RoadmapSuggestRequest, current_user: CurrentUser = Depends(get_current_user)):
+    try:
+        return await roadmap_ai_service.suggest(data.description)
+    except RoadmapAiServiceNotConfigured as exc:
+        raise HTTPException(503, 'AI roadmap suggestions are not configured') from exc
+    except RoadmapAiError as exc:
+        raise HTTPException(502, str(exc)) from exc
 
 
 @router.post('', response_model=RoadmapResponse, status_code=201)

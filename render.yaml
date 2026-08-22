@@ -44,3 +44,9 @@ services:
         value: "true"
       - key: EMAIL_FROM_ADDRESS
         sync: false
+      - key: AI_PROVIDER
+        value: "anthropic"
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
