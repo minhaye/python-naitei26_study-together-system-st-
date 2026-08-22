@@ -13,6 +13,7 @@ import type {
   CommentUpdate,
   TagResponse,
 } from '../types/forum.types';
+import { commentCache } from './commentCache';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -206,6 +207,10 @@ export const forumApi = {
     return response.map((p) => mapPost(p));
   },
 
+  getCachedComments: (postId: string): Comment[] | null => {
+    return commentCache.get(postId);
+  },
+
   getComments: async (postId: string, userId?: string | null): Promise<Comment[]> => {
     let url = `/forum/comments?post_id=${postId}`;
     if (userId) {
@@ -213,40 +218,57 @@ export const forumApi = {
     }
     const response = await apiClient.get<CommentResponse[]>(url);
     const flat = response.map((c) => mapComment(c));
-    return nestComments(flat);
+    const nested = nestComments(flat);
+    commentCache.set(postId, nested);
+    return nested;
   },
 
   createComment: async (payload: CommentCreate, authorName?: string, authorAvatarUrl?: string | null): Promise<Comment> => {
     const response = await apiClient.post<CommentResponse>('/forum/comments', payload);
-    return mapComment({
+    const mapped = mapComment({
       ...response,
       author_name: authorName ?? 'Bạn',
       author_avatar_url: authorAvatarUrl ?? response.author_avatar_url ?? null,
       reactions: [],
     });
+    commentCache.addComment(payload.post_id, mapped);
+    return mapped;
   },
 
-  updateComment: async (commentId: string, payload: CommentUpdate): Promise<Comment> => {
+  updateComment: async (commentId: string, payload: CommentUpdate, postId?: string): Promise<Comment> => {
     const response = await apiClient.put<CommentResponse>(`/forum/comments/${commentId}`, payload);
-    return mapComment(response);
+    const mapped = mapComment(response);
+    if (postId) {
+      commentCache.updateComment(postId, commentId, payload.content);
+    }
+    return mapped;
   },
 
-  deleteComment: async (commentId: string): Promise<void> => {
+  deleteComment: async (commentId: string, postId?: string): Promise<void> => {
     await apiClient.delete(`/forum/comments/${commentId}`);
+    if (postId) {
+      commentCache.deleteComment(postId, commentId);
+    }
   },
 
-  setCommentReaction: async (commentId: string, emoji: string, userId?: string): Promise<ReactionSummary[]> => {
+  setCommentReaction: async (commentId: string, emoji: string, userId?: string, postId?: string): Promise<ReactionSummary[]> => {
     const response = await apiClient.put<ReactionSummaryResponse[]>(
       `/forum/comments/${commentId}/reactions?user_id=${userId ?? '00000000-0000-0000-0000-000000000000'}`,
       { emoji }
     );
+    if (postId) {
+      commentCache.reactComment(postId, commentId, emoji);
+    }
     return mapReactions(response);
   },
 
-  removeCommentReaction: async (commentId: string, userId?: string): Promise<ReactionSummary[]> => {
+  removeCommentReaction: async (commentId: string, userId?: string, postId?: string): Promise<ReactionSummary[]> => {
     const response = await apiClient.delete<ReactionSummaryResponse[]>(
       `/forum/comments/${commentId}/reactions?user_id=${userId ?? '00000000-0000-0000-0000-000000000000'}`
     );
+    if (postId) {
+      commentCache.reactComment(postId, commentId, null);
+    }
     return mapReactions(response);
   },
 };

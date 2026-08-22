@@ -301,13 +301,23 @@ class ForumService:
         return cmt
 
     async def list_comments_by_post(
-        self, session: AsyncSession, post_id: uuid.UUID, user_id: uuid.UUID | None = None
+        self,
+        session: AsyncSession,
+        post_id: uuid.UUID,
+        user_id: uuid.UUID | None = None,
+        skip: int = 0,
+        limit: int = 50,
     ) -> list[Comment]:
         from sqlalchemy.orm import selectinload
 
-        stmt = select(Comment).options(
-            selectinload(Comment.author)
-        ).where(Comment.post_id == post_id).order_by(Comment.created_at)
+        stmt = (
+            select(Comment)
+            .options(selectinload(Comment.author))
+            .where(Comment.post_id == post_id)
+            .order_by(Comment.created_at)
+            .offset(skip)
+            .limit(limit)
+        )
 
         result = await session.execute(stmt)
         comments = list(result.scalars().all())

@@ -95,12 +95,26 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
 
   const loadComments = useCallback(async () => {
     if (!postId) return;
-    setIsLoading(true);
-    // Chỉ truyền userId thực khi đã đăng nhập, không gửi 'user-current' (không phải UUID) lên backend
-    const userId = isLoggedIn ? currentUser?.id : undefined;
-    const data = await forumApi.getComments(postId, userId);
-    setComments(data);
-    setIsLoading(false);
+
+    // 1. Kiểm tra RAM Cache (Top 10 bài vừa xem): Hiện ngay lập tức 0ms
+    const cached = forumApi.getCachedComments(postId);
+    if (cached && cached.length > 0) {
+      setComments(cached);
+      setIsLoading(false);
+    } else {
+      setIsLoading(true);
+    }
+
+    // 2. Revalidate ngầm từ Server
+    try {
+      const userId = isLoggedIn ? currentUser?.id : undefined;
+      const data = await forumApi.getComments(postId, userId);
+      setComments(data);
+    } catch (err) {
+      console.error('Failed to load comments:', err);
+    } finally {
+      setIsLoading(false);
+    }
   }, [postId, isLoggedIn, currentUser?.id]);
 
   useEffect(() => {
@@ -197,7 +211,7 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
 
       // 2. Gọi API ngầm ở background
       try {
-        await forumApi.updateComment(commentId, { content: newContent });
+        await forumApi.updateComment(commentId, { content: newContent }, postId);
       } catch (error) {
         console.error('Failed to update comment', error);
       }
@@ -214,7 +228,7 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
 
       // 2. Gọi API delete ở background
       try {
-        await forumApi.deleteComment(commentId);
+        await forumApi.deleteComment(commentId, postId);
       } catch (error) {
         console.error('Failed to delete comment', error);
       }
@@ -230,7 +244,7 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
       setComments((prev) => updateReactionInTree(prev, commentId, emoji));
 
       // 2. Gọi API ngầm
-      await forumApi.setCommentReaction(commentId, emoji, currentUser?.id);
+      await forumApi.setCommentReaction(commentId, emoji, currentUser?.id, postId);
     });
   };
 
@@ -243,7 +257,7 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
       setComments((prev) => updateReactionInTree(prev, commentId, null));
 
       // 2. Gọi API ngầm
-      await forumApi.removeCommentReaction(commentId, currentUser?.id);
+      await forumApi.removeCommentReaction(commentId, currentUser?.id, postId);
     });
   };
 

@@ -24,11 +24,10 @@ interface CommentItemProps {
 
 const getPlainText = (html: string) => {
   if (!html) return '';
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  return doc.body.textContent || '';
+  return html.replace(/<[^>]*>/g, '').trim();
 };
 
-export const CommentItem: React.FC<CommentItemProps> = ({
+export const CommentItem: React.FC<CommentItemProps> = React.memo(({
   comment,
   onReply,
   onEdit,
@@ -574,4 +573,4 @@ export const CommentItem: React.FC<CommentItemProps> = ({
       </div>
     </div>
   );
-};
+});
