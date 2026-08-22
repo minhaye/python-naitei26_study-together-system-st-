@@ -188,6 +188,7 @@ async def test_message_response_includes_real_sender_identity(async_client, monk
         attachment_path=None, created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc),
     )
     message.sender = _profile(as_fake_user.id, display_name="Chi Pham")
+    message.reactions = []
 
     monkeypatch.setattr(message_router.conversation_service, "get_by_id", AsyncMock(return_value=conversation))
     monkeypatch.setattr(permissions.channels_service, "get_by_id", AsyncMock(return_value=channel))

@@ -1,5 +1,5 @@
 import { apiClient } from './apiClient';
-import type { Message, MessageCreate, MessageListResponse } from './message.types';
+import type { Message, MessageCreate, MessageListResponse, MessageReactionSummary } from './message.types';
 
 /** Newest-first, cursor-paginated. `before` is an opaque cursor from a prior
  * response's `next_cursor`. Channel messages are addressed by the channel's
@@ -27,4 +27,25 @@ export function sendConversationMessage(conversationId: string, data: MessageCre
  * `can_access_conversation` check as every other message endpoint (message_router.get_message). */
 export function getMessage(messageId: string): Promise<Message> {
   return apiClient.get<Message>(`/messages/${messageId}`);
+}
+
+/** Upserts the current user's reaction on a message (picking a new emoji replaces their
+ * previous one) -- returns the fresh grouped summary for that message directly, no need
+ * for a follow-up GET. */
+export function setMessageReaction(messageId: string, emoji: string): Promise<MessageReactionSummary[]> {
+  return apiClient.put<MessageReactionSummary[]>(`/messages/${messageId}/reactions`, { emoji });
+}
+
+/** Removes the current user's reaction on a message (idempotent) -- also returns the fresh
+ * grouped summary. */
+export function removeMessageReaction(messageId: string): Promise<MessageReactionSummary[]> {
+  return apiClient.delete<MessageReactionSummary[]>(`/messages/${messageId}/reactions`);
+}
+
+/** Used by useMessageReactionsRealtime.ts to hydrate a raw Realtime reaction-change event
+ * (which only carries the changed row, not grouped counts) -- not called by the user who
+ * triggered the change, since setMessageReaction/removeMessageReaction already return the
+ * fresh summary directly. */
+export function getMessageReactions(messageId: string): Promise<MessageReactionSummary[]> {
+  return apiClient.get<MessageReactionSummary[]>(`/messages/${messageId}/reactions`);
 }

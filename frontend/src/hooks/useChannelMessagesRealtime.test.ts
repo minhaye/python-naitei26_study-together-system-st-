@@ -61,6 +61,7 @@ function makeHydratedMessage(overrides: Partial<Message> = {}): Message {
     created_at: '2026-08-19T00:00:00Z',
     updated_at: '2026-08-19T00:00:00Z',
     sender: { id: 'user-2', username: 'bob', display_name: 'Bob Nguyen', avatar_url: 'https://example.com/bob.png' },
+    reactions: [],
     ...overrides,
   };
 }

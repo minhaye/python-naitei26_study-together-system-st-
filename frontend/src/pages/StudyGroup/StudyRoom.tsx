@@ -28,8 +28,10 @@ import type { ReactNode } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { useStudyRoom } from '../../hooks/useStudyRoom';
 import { useRoomMessages } from '../../hooks/useRoomMessages';
+import { useMessageReactionActions } from '../../hooks/useMessageReactionActions';
 import { useMessageImageAttachment, ALLOWED_IMAGE_ACCEPT } from '../../hooks/useMessageImageAttachment';
 import { MessageAttachmentImage } from '../../components/chat/MessageAttachmentImage';
+import { MessageReactions } from '../../components/chat/MessageReactions';
 import { SelectedImagePreview } from '../../components/chat/SelectedImagePreview';
 import { ErrorBoundary } from '../../components/ui/ErrorBoundary';
 import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
@@ -269,8 +271,16 @@ export function StudyRoom() {
   // /conversations/{id}/messages REST API + Realtime subscription as Channel chat --
   // see useRoomMessages.ts). `room.conversation_id` is null only in the brief instant
   // before `room` has loaded; the chat panel treats that the same as "not ready yet".
-  const { messages, isLoading: isMessagesLoading, loadError: messagesError, isSending: isSendingMessage, sendError: sendMessageError, sendMessage } =
-    useRoomMessages(room?.conversation_id ?? null);
+  const {
+    messages,
+    isLoading: isMessagesLoading,
+    loadError: messagesError,
+    isSending: isSendingMessage,
+    sendError: sendMessageError,
+    sendMessage,
+    updateMessageReactions,
+  } = useRoomMessages(room?.conversation_id ?? null);
+  const handleReactionSelect = useMessageReactionActions(updateMessageReactions);
   const [chatInput, setChatInput] = useState('');
   const imageAttachment = useMessageImageAttachment();
   const chatImageInputRef = useRef<HTMLInputElement | null>(null);
@@ -795,6 +805,12 @@ export function StudyRoom() {
                                 {m.content && <div style={{marginBottom: m.attachment_path ? 6 : 0}}>{m.content}</div>}
                                 {m.attachment_path && <MessageAttachmentImage messageId={m.id} />}
                               </div>
+                              <MessageReactions
+                                reactions={m.reactions}
+                                isSelf={display.isSelf}
+                                onSelect={(emoji) => handleReactionSelect(m, emoji)}
+                                dark
+                              />
                             </div>
                           </div>
                         );

@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { MessageCircle, MessagesSquare, Send, Image as ImageIcon } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useRoomMessages } from '../../hooks/useRoomMessages';
+import { useMessageReactionActions } from '../../hooks/useMessageReactionActions';
 import { useMessageImageAttachment, ALLOWED_IMAGE_ACCEPT } from '../../hooks/useMessageImageAttachment';
 import { listDirectConversations } from '../../lib/conversation.api';
 import { ApiError } from '../../lib/apiClient';
@@ -10,6 +11,7 @@ import { getDisplayName } from '../../utils/userDisplay';
 import { getAvatarColor, getAvatarInitials } from '../../utils/avatarUtils';
 import { useUnreadMessages } from '../../contexts/unread-messages-context';
 import { MessageAttachmentImage } from '../../components/chat/MessageAttachmentImage';
+import { MessageReactions } from '../../components/chat/MessageReactions';
 import { SelectedImagePreview } from '../../components/chat/SelectedImagePreview';
 import type { Conversation } from '../../lib/conversation.types';
 import type { Message } from '../../lib/message.types';
@@ -61,7 +63,9 @@ export function DirectMessagesPage() {
     isSending,
     sendError,
     sendMessage,
+    updateMessageReactions,
   } = useRoomMessages(conversationId ?? null);
+  const handleReactionSelect = useMessageReactionActions(updateMessageReactions);
   const [chatInput, setChatInput] = useState('');
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const imageAttachment = useMessageImageAttachment();
@@ -270,6 +274,11 @@ export function DirectMessagesPage() {
                           {msg.content && <div style={{ marginBottom: msg.attachment_path ? 6 : 0 }}>{msg.content}</div>}
                           {msg.attachment_path && <MessageAttachmentImage messageId={msg.id} />}
                         </div>
+                        <MessageReactions
+                          reactions={msg.reactions}
+                          isSelf={display.isSelf}
+                          onSelect={(emoji) => handleReactionSelect(msg, emoji)}
+                        />
                         <span style={{ color: '#94A3B8', fontSize: 11, marginTop: 4 }}>{formatMessageTime(msg.created_at)}</span>
                       </div>
                     </div>

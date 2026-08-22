@@ -1,5 +1,14 @@
 import type { UserSummary } from './profile.types';
 
+/** Mirrors MessageReactionSummary (app/messages/dto/message_dto.py) -- grouped-by-emoji
+ * counts, never raw per-user reaction rows. `reacted_by_me` is relative to the current
+ * user. */
+export interface MessageReactionSummary {
+  emoji: string;
+  count: number;
+  reacted_by_me: boolean;
+}
+
 /** Mirrors MessageResponse (app/messages/dto/message_dto.py). `sender` is the canonical
  * identity source for the message author -- see src/utils/userDisplay.ts's
  * getDisplayName(), never derive a label from `sender_id`. */
@@ -12,6 +21,7 @@ export interface Message {
   created_at: string;
   updated_at: string;
   sender: UserSummary;
+  reactions: MessageReactionSummary[];
 }
 
 /** Mirrors MessageListResponse. Cursor-based pagination, newest-first ordering. */
