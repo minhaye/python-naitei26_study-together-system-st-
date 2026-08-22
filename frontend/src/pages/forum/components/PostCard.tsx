@@ -407,7 +407,9 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({
         </div>
       )}
 
-      {/* Actions (Thanh Facebook Action Bar tràn viền sát đáy card) */}
+      {/* Actions (Thanh Facebook Action Bar tràn viền sát đáy card). Không dùng overflow:hidden
+          ở đây (dù muốn bo góc dưới) vì nó sẽ cắt mất bảng chọn emoji nổi lên phía trên nút
+          Thích -- bo góc được áp trực tiếp vào 2 nút ngoài cùng bên dưới thay vì clip cả hàng. */}
       <div
         style={{
           margin: '12px -24px 0px -24px',
@@ -415,9 +417,6 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'stretch',
-          borderBottomLeftRadius: showComments ? 0 : 16,
-          borderBottomRightRadius: showComments ? 0 : 16,
-          overflow: 'hidden',
         }}
       >
         {/* Nút Bày tỏ cảm xúc (0ms Optimistic UI) -- hover để mở bảng chọn emoji, click nhanh = 👍 */}
@@ -432,8 +431,14 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({
             setReactionPickerOpen(false);
           }}
         >
-          {reactionPickerOpen && <ReactionPicker onSelect={handlePickReaction} align="left" emojiSize={22} />}
-          <div onClick={handleLikeClick} style={actionButtonStyle('like', activeMeta?.color)}>
+          {reactionPickerOpen && <ReactionPicker onSelect={handlePickReaction} align="center" emojiSize={22} />}
+          <div
+            onClick={handleLikeClick}
+            style={{
+              ...actionButtonStyle('like', activeMeta?.color),
+              borderBottomLeftRadius: showComments ? 0 : 16,
+            }}
+          >
             {myEmoji ? <span style={{ fontSize: 18, lineHeight: 1 }}>{myEmoji}</span> : <ThumbsUp size={18} />}
             <span>{activeMeta?.label ?? 'Thích'}</span>
           </div>
@@ -458,7 +463,7 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({
           }}
           onMouseEnter={() => setHoveredButton('share')}
           onMouseLeave={() => setHoveredButton(null)}
-          style={actionButtonStyle('share')}
+          style={{ ...actionButtonStyle('share'), borderBottomRightRadius: showComments ? 0 : 16 }}
         >
           <Share2 size={18} />
           <span>Chia sẻ</span>

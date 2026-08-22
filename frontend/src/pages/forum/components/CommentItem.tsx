@@ -351,7 +351,7 @@ export const CommentItem: React.FC<CommentItemProps> = ({
               onMouseEnter={() => setReactionPickerOpen(true)}
               onMouseLeave={() => setReactionPickerOpen(false)}
             >
-              {reactionPickerOpen && <ReactionPicker onSelect={handlePickReaction} align="left" emojiSize={16} />}
+              {reactionPickerOpen && <ReactionPicker onSelect={handlePickReaction} align="center" emojiSize={16} />}
               <button
                 type="button"
                 onClick={handleLikeClick}
