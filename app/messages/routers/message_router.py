@@ -21,7 +21,14 @@ from app.core.permissions import (
 )
 from app.db.enums import ConversationType
 from app.db.session import get_db_session
-from app.messages.dto.message_dto import MessageCreate, MessageListResponse, MessageResponse, MessageUpdate
+from app.messages.dto.message_dto import (
+    MessageCreate,
+    MessageListResponse,
+    MessageReactionSet,
+    MessageReactionSummary,
+    MessageResponse,
+    MessageUpdate,
+)
 from app.messages.services.message_service import MessagesService
 from app.study_rooms.services.study_room_service import StudyRoomsService
 
@@ -82,7 +89,7 @@ async def list_messages(
 
     try:
         messages, next_cursor = await message_service.list_by_conversation(
-            session, conversation_id, limit=limit, before=before
+            session, conversation_id, viewer_id=current_user.id, limit=limit, before=before
         )
     except ValueError:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid cursor")
@@ -156,7 +163,7 @@ async def get_message(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
-    message = await message_service.get_by_id(session, message_id)
+    message = await message_service.get_by_id(session, message_id, viewer_id=current_user.id)
     if not message:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
 
@@ -172,7 +179,7 @@ async def update_message(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
-    message = await message_service.get_by_id(session, message_id)
+    message = await message_service.get_by_id(session, message_id, viewer_id=current_user.id)
     if not message:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
     if message.sender_id != current_user.id:
@@ -238,3 +245,72 @@ async def delete_message(
             await attachments_service.delete_object(attachment_path)
         except (AttachmentStorageError, AttachmentServiceNotConfigured):
             logger.warning("Failed to delete storage object for deleted message", exc_info=True)
+
+
+# --- Reactions ---
+# Authorized via can_access_conversation (read-level), not can_send_to_conversation --
+# reacting to history in an ended Study Room is harmless, unlike posting a new message.
+
+
+@router.put("/messages/{message_id}/reactions", response_model=list[MessageReactionSummary])
+async def set_message_reaction(
+    message_id: uuid.UUID,
+    data: MessageReactionSet,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
+    message = await message_service.get_by_id(session, message_id)
+    if not message:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
+
+    conversation = await _load_conversation(session, message.conversation_id)
+    await _authorize(session, conversation, current_user.id)
+
+    try:
+        await message_service.set_reaction(session, message, current_user.id, data.emoji)
+        await session.commit()
+    except Exception as e:
+        await session.rollback()
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Could not react to message: {str(e)}")
+    return await message_service.get_reactions(session, message_id, current_user.id)
+
+
+@router.delete("/messages/{message_id}/reactions", response_model=list[MessageReactionSummary])
+async def remove_message_reaction(
+    message_id: uuid.UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
+    message = await message_service.get_by_id(session, message_id)
+    if not message:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
+
+    conversation = await _load_conversation(session, message.conversation_id)
+    await _authorize(session, conversation, current_user.id)
+
+    try:
+        await message_service.remove_reaction(session, message_id, current_user.id)
+        await session.commit()
+    except Exception as e:
+        await session.rollback()
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Could not remove reaction: {str(e)}")
+    return await message_service.get_reactions(session, message_id, current_user.id)
+
+
+@router.get("/messages/{message_id}/reactions", response_model=list[MessageReactionSummary])
+async def get_message_reactions(
+    message_id: uuid.UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Not called by the acting user (PUT/DELETE above already return the fresh list) --
+    this is what other connected clients call to hydrate a raw Realtime reaction-change
+    event into a real summary, mirroring how GET /messages/{id} hydrates a raw message
+    INSERT event today (see useMessageReactionsRealtime.ts)."""
+    message = await message_service.get_by_id(session, message_id)
+    if not message:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
+
+    conversation = await _load_conversation(session, message.conversation_id)
+    await _authorize(session, conversation, current_user.id)
+    return await message_service.get_reactions(session, message_id, current_user.id)

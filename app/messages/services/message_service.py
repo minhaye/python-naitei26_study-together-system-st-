@@ -3,12 +3,13 @@ import binascii
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select, tuple_
+from sqlalchemy import func, select, tuple_
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.messages.entities.message_entity import Message
-from app.messages.dto.message_dto import MessageCreate, MessageUpdate
+from app.messages.entities.message_entity import Message, MessageReaction
+from app.messages.dto.message_dto import MessageCreate, MessageReactionSummary, MessageUpdate
 from app.profiles.services.profile_service import ProfilesService
 
 profiles_service = ProfilesService()
@@ -47,13 +48,26 @@ class MessagesService:
         # See GroupsService.add_member -- same reason for the in-memory `.sender` assignment
         # (MessageResponse.sender needs it, a freshly-flushed row has nothing loaded yet).
         message.sender = await profiles_service.get_by_id(session, sender_id)
+        # A brand-new message can't have reactions yet -- no query needed.
+        message.reactions = []
         return message
 
-    async def get_by_id(self, session: AsyncSession, message_id: uuid.UUID) -> Message | None:
-        return await session.get(Message, message_id, options=[selectinload(Message.sender)])
+    async def get_by_id(
+        self, session: AsyncSession, message_id: uuid.UUID, viewer_id: uuid.UUID | None = None
+    ) -> Message | None:
+        message = await session.get(Message, message_id, options=[selectinload(Message.sender)])
+        if message is None:
+            return None
+        if viewer_id is not None:
+            await self._attach_reactions(session, [message], viewer_id)
+        else:
+            # Callers that don't need reactions (e.g. delete_message, which only reads
+            # sender_id/conversation_id for authorization) skip the extra query.
+            message.reactions = []
+        return message
 
     async def list_by_conversation(
-        self, session: AsyncSession, conversation_id: uuid.UUID, limit: int = 50, before: str | None = None
+        self, session: AsyncSession, conversation_id: uuid.UUID, viewer_id: uuid.UUID, limit: int = 50, before: str | None = None
     ) -> tuple[list[Message], str | None]:
         """Newest-first keyset pagination on (created_at, id) to avoid OFFSET and handle timestamp ties."""
         query = select(Message).options(selectinload(Message.sender)).where(Message.conversation_id == conversation_id)
@@ -70,6 +84,7 @@ class MessagesService:
             messages = messages[:limit]
             last = messages[-1]
             next_cursor = _encode_cursor(last.created_at, last.id)
+        await self._attach_reactions(session, messages, viewer_id)
         return messages, next_cursor
 
     async def update(self, session: AsyncSession, message: Message, data: MessageUpdate) -> Message:
@@ -81,3 +96,69 @@ class MessagesService:
     async def delete(self, session: AsyncSession, message: Message) -> None:
         await session.delete(message)
         await session.flush()
+
+    async def _attach_reactions(self, session: AsyncSession, messages: list[Message], viewer_id: uuid.UUID) -> None:
+        """Batched grouped-reaction lookup for a page of messages (avoids N+1). Sets
+        `.reactions` as a transient attribute on each Message -- same pattern ForumService
+        uses for ForumPost.likes_count/is_liked (see forum_service.py's list queries)."""
+        if not messages:
+            return
+        message_ids = [m.id for m in messages]
+        stmt = (
+            select(
+                MessageReaction.message_id,
+                MessageReaction.emoji,
+                func.count().label("count"),
+                func.bool_or(MessageReaction.user_id == viewer_id).label("reacted_by_me"),
+            )
+            .where(MessageReaction.message_id.in_(message_ids))
+            .group_by(MessageReaction.message_id, MessageReaction.emoji)
+        )
+        result = await session.execute(stmt)
+        by_message: dict[uuid.UUID, list[MessageReactionSummary]] = {}
+        for message_id, emoji, count, reacted_by_me in result.all():
+            by_message.setdefault(message_id, []).append(
+                MessageReactionSummary(emoji=emoji, count=count, reacted_by_me=bool(reacted_by_me))
+            )
+        for message in messages:
+            message.reactions = by_message.get(message.id, [])
+
+    async def get_reactions(
+        self, session: AsyncSession, message_id: uuid.UUID, viewer_id: uuid.UUID
+    ) -> list[MessageReactionSummary]:
+        stmt = (
+            select(
+                MessageReaction.emoji,
+                func.count().label("count"),
+                func.bool_or(MessageReaction.user_id == viewer_id).label("reacted_by_me"),
+            )
+            .where(MessageReaction.message_id == message_id)
+            .group_by(MessageReaction.emoji)
+        )
+        result = await session.execute(stmt)
+        return [
+            MessageReactionSummary(emoji=emoji, count=count, reacted_by_me=bool(reacted_by_me))
+            for emoji, count, reacted_by_me in result.all()
+        ]
+
+    async def set_reaction(self, session: AsyncSession, message: Message, user_id: uuid.UUID, emoji: str) -> None:
+        """Upsert via ON CONFLICT DO UPDATE (target: the message_id/user_id unique
+        constraint) rather than check-then-insert -- race-safe against concurrent requests
+        from the same user, and lets picking a new emoji simply replace the old one."""
+        stmt = (
+            pg_insert(MessageReaction)
+            .values(message_id=message.id, conversation_id=message.conversation_id, user_id=user_id, emoji=emoji)
+            .on_conflict_do_update(index_elements=[MessageReaction.message_id, MessageReaction.user_id], set_={"emoji": emoji})
+        )
+        await session.execute(stmt)
+        await session.flush()
+
+    async def remove_reaction(self, session: AsyncSession, message_id: uuid.UUID, user_id: uuid.UUID) -> None:
+        """Idempotent: a no-op if the caller has no reaction on this message."""
+        result = await session.execute(
+            select(MessageReaction).where(MessageReaction.message_id == message_id, MessageReaction.user_id == user_id)
+        )
+        reaction = result.scalar_one_or_none()
+        if reaction is not None:
+            await session.delete(reaction)
+            await session.flush()

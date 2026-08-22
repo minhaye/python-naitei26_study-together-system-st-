@@ -2179,12 +2179,13 @@ luôn đồng bộ.
 19. conversation_members       -- migration 004, đã live — xem § 12; cột last_read_at thêm bởi migration 024, đã chạy live 2026-08-21 — xem § 15
 20. invitations                -- migration 013, đã chạy live và verify thành công 2026-08-18 — xem docs/invitations.md
 21. group_notes                -- migration 019 (đánh số lại từ 016 khi merge origin/master vào feat/notes-persistence, do origin/master đã dùng 016-018 cho forum-hashtag/profile), đã chạy live và verify thành công 2026-08-19 — Ghi chú dùng chung theo Group (không theo Study Room), quyền đọc cho mọi active member, quyền tạo/sửa/xóa chỉ Owner/Moderator — xem docs/db/migrations/README.md
+22. message_reactions          -- migration 025, đã chạy live và verify thành công 2026-08-22 — Reaction emoji (kiểu Messenger) trên messages, cho cả 3 loại conversation (channel/room/direct) — xem § 45
 ```
 
 Tổng cộng:
 
 ```text
-21 tables (tất cả đã live)
+22 tables (tất cả đã live)
 ```
 
 `messages.channel_id` đã bị migration 005 xóa hẳn khỏi schema (contract phase đã chạy live — xem § 12); `messages.conversation_id` là FK duy nhất còn lại.
@@ -2201,6 +2202,65 @@ moderation_action
 notification_type
 conversation_type              -- migration 004, đã live — xem § 13
 ```
+
+# 45. message_reactions — Reaction cảm xúc trên tin nhắn (migration 025, đã chạy live và verify thành công 2026-08-22)
+
+## Vai trò
+
+Reaction kiểu Messenger trên `messages` — áp dụng cho cả 3 loại conversation (channel/room/direct) vì tất cả đều dùng chung bảng `messages`/`conversations` (xem § 12, § 14). Mỗi user chỉ có tối đa 1 reaction trên 1 message tại một thời điểm — chọn emoji khác sẽ THAY THẾ reaction cũ, không cộng dồn.
+
+## Fields
+
+```text
+message_reactions
+├── id
+├── message_id       -- FK -> messages.id, ON DELETE CASCADE
+├── conversation_id  -- FK -> conversations.id, ON DELETE CASCADE. Denormalize từ
+│                        messages.conversation_id lúc ghi (MessagesService.set_reaction) --
+│                        CHỈ để Supabase Realtime filter theo conversation_id được (giống
+│                        cách bảng messages đang filter), vì postgres_changes chỉ hỗ trợ 1
+│                        điều kiện column=eq.value.
+├── user_id          -- FK -> profiles.id, ON DELETE CASCADE
+├── emoji             -- text, CHECK giới hạn 6 emoji cố định: 👍 ❤️ 😆 😮 😢 😡
+│                        (ALLOWED_MESSAGE_REACTIONS trong app/messages/dto/message_dto.py,
+│                        QUICK_REACTIONS trong frontend/src/components/chat/MessageReactions.tsx)
+└── created_at
+```
+
+## Unique Rule
+
+```text
+UNIQUE(message_id, user_id)
+```
+
+Đồng thời là target của `ON CONFLICT DO UPDATE` trong `MessagesService.set_reaction` — chọn emoji mới ghi đè `emoji` của row cũ thay vì tạo row mới, race-safe cho request đồng thời từ cùng 1 user.
+
+## RLS & Realtime
+
+`REPLICA IDENTITY FULL` (khác với `messages`) — để event Realtime DELETE mang theo đầy đủ `message_id`/`conversation_id` trong payload `old`, vì replica identity mặc định của Postgres chỉ gửi primary key khi DELETE. Không có field này thì client không biết reaction vừa xoá thuộc message nào để re-hydrate.
+
+RLS giống hệt `messages_select` (§ 12): 1 policy SELECT cho `authenticated` qua `can_access_conversation(conversation_id)`, không có write policy cho `authenticated` — FastAPI (`postgres` role) là writer duy nhất. Được thêm vào `supabase_realtime` publication với đầy đủ INSERT/UPDATE/DELETE (khác `messages`, chỉ cần INSERT).
+
+## API layer
+
+```text
+PUT    /messages/{message_id}/reactions   body: {"emoji": "👍"}   -- upsert reaction của
+                                                                     current user, trả về
+                                                                     list[MessageReactionSummary]
+DELETE /messages/{message_id}/reactions                          -- xoá reaction của current
+                                                                     user (idempotent), trả về
+                                                                     list[MessageReactionSummary]
+GET    /messages/{message_id}/reactions                          -- dùng để hydrate raw
+                                                                     Realtime event thành
+                                                                     summary thật (không phải
+                                                                     người thao tác gọi endpoint
+                                                                     này — họ đã nhận list mới
+                                                                     trực tiếp từ PUT/DELETE)
+```
+
+`MessageReactionSummary` = `{emoji, count, reacted_by_me}` — dữ liệu đã group theo emoji, không phải raw row. Đính kèm trên `MessageResponse.reactions` cho mọi endpoint đọc message (`GET /conversations/{id}/messages`, `GET /messages/{id}`).
+
+Quyền truy cập dùng `can_access_conversation` (read-level) — KHÔNG dùng `can_send_to_conversation`/`is_room_conversation_open_for_writes`, vì react vào lịch sử chat của 1 Study Room đã kết thúc là vô hại (khác với gửi tin nhắn mới).
 
 ---
 

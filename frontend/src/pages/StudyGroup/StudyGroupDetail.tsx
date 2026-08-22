@@ -19,8 +19,11 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useChannelMessagesRealtime } from '../../hooks/useChannelMessagesRealtime';
+import { useMessageReactionsRealtime } from '../../hooks/useMessageReactionsRealtime';
+import { useMessageReactionActions } from '../../hooks/useMessageReactionActions';
 import { useMessageImageAttachment, ALLOWED_IMAGE_ACCEPT } from '../../hooks/useMessageImageAttachment';
 import { MessageAttachmentImage } from '../../components/chat/MessageAttachmentImage';
+import { MessageReactions } from '../../components/chat/MessageReactions';
 import { SelectedImagePreview } from '../../components/chat/SelectedImagePreview';
 import { ErrorBoundary } from '../../components/ui/ErrorBoundary';
 import { useGroupTableRealtime } from '../../hooks/useGroupTableRealtime';
@@ -40,7 +43,7 @@ import { listConversationMessages, sendConversationMessage } from '../../lib/mes
 import type { Group, GroupMember } from '../../lib/group.types';
 import type { Channel } from '../../lib/channel.types';
 import type { StudyRoom } from '../../lib/studyRoom.types';
-import type { Message } from '../../lib/message.types';
+import type { Message, MessageReactionSummary } from '../../lib/message.types';
 import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
 import { getDisplayName } from '../../utils/userDisplay';
 
@@ -490,6 +493,12 @@ export function StudyGroupDetail() {
   useChannelMessagesRealtime(activeChannelObj?.conversation_id ?? null, (incoming) => {
     setMessages((prev) => appendMessageDeduped(prev, incoming));
   });
+
+  const updateMessageReactions = (messageId: string, reactions: MessageReactionSummary[]) => {
+    setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, reactions } : m)));
+  };
+  useMessageReactionsRealtime(activeChannelObj?.conversation_id ?? null, updateMessageReactions);
+  const handleReactionSelect = useMessageReactionActions(updateMessageReactions);
 
   // Auto-scroll chat to bottom on new message or channel change
   useEffect(() => {
@@ -1061,6 +1070,11 @@ export function StudyGroupDetail() {
                                                     </div>
                                                 )}
                                                 {msg.attachment_path && <MessageAttachmentImage messageId={msg.id} />}
+                                                <MessageReactions
+                                                    reactions={msg.reactions}
+                                                    isSelf={isSelf}
+                                                    onSelect={(emoji) => handleReactionSelect(msg, emoji)}
+                                                />
                                             </div>
                                         </div>
                                     );

@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timezone
+from unittest import mock
 from unittest.mock import AsyncMock
 
 import pytest
@@ -13,6 +14,7 @@ from app.db.enums import ConversationType, GroupMemberRole, MemberStatus, StudyR
 from app.db.session import get_db_session
 from app.groups.entities.group_entity import GroupMember
 from app.main import app
+from app.messages.dto.message_dto import MessageReactionSummary
 from app.messages.entities.message_entity import Message
 from app.messages.routers import message_router
 from app.messages.services.message_service import MessagesService, _decode_cursor, _encode_cursor
@@ -76,6 +78,10 @@ def _make_message(sender_id, conversation_id, content="Hello", attachment_path=N
     # MessageResponse.sender is required (see app/messages/dto/message_dto.py) -- mirrors
     # how MessagesService.create/get_by_id/list_by_conversation eager-loads/assigns it.
     message.sender = Profile(id=sender_id, username=None, display_name="Test User", avatar_url=None)
+    # MessageResponse.reactions is also required -- mirrors MessagesService's transient
+    # `.reactions` assignment (create()/_attach_reactions()). Tests that care about actual
+    # reaction data set `message.reactions = [...]` on the returned object directly.
+    message.reactions = []
     return message
 
 
@@ -1173,6 +1179,11 @@ class _FakeResult:
     def scalars(self):
         return _FakeScalars(self._items)
 
+    def all(self):
+        # _attach_reactions' grouped-reaction query calls .all() directly (not .scalars()) --
+        # these pagination tests don't care about reaction data, so it's always empty.
+        return []
+
 
 async def test_list_by_conversation_returns_next_cursor_when_more_rows_exist():
     conversation_id = uuid.uuid4()
@@ -1180,7 +1191,9 @@ async def test_list_by_conversation_returns_next_cursor_when_more_rows_exist():
     session = AsyncMock()
     session.execute = AsyncMock(return_value=_FakeResult(messages))
 
-    result, next_cursor = await MessagesService().list_by_conversation(session, conversation_id, limit=2)
+    result, next_cursor = await MessagesService().list_by_conversation(
+        session, conversation_id, viewer_id=uuid.uuid4(), limit=2
+    )
 
     assert len(result) == 2
     assert next_cursor is not None
@@ -1192,7 +1205,9 @@ async def test_list_by_conversation_no_next_cursor_on_exact_page():
     session = AsyncMock()
     session.execute = AsyncMock(return_value=_FakeResult(messages))
 
-    result, next_cursor = await MessagesService().list_by_conversation(session, conversation_id, limit=2)
+    result, next_cursor = await MessagesService().list_by_conversation(
+        session, conversation_id, viewer_id=uuid.uuid4(), limit=2
+    )
 
     assert len(result) == 2
     assert next_cursor is None
@@ -1309,3 +1324,149 @@ async def test_delete_message_succeeds_even_if_storage_cleanup_fails(async_clien
     response = await async_client.delete(f"/messages/{message.id}", headers=AUTH_HEADERS)
 
     assert response.status_code == 204
+
+
+# --- Reactions ---
+
+
+async def test_set_reaction_requires_auth(async_client):
+    response = await async_client.put(f"/messages/{uuid.uuid4()}/reactions", json={"emoji": "👍"})
+    assert response.status_code == 401
+
+
+async def test_set_reaction_not_found_for_missing_message(async_client, monkeypatch, as_fake_user):
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=None))
+
+    response = await async_client.put(
+        f"/messages/{uuid.uuid4()}/reactions", json={"emoji": "👍"}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 404
+
+
+async def test_set_reaction_invalid_emoji_returns_422(async_client, as_fake_user):
+    response = await async_client.put(
+        f"/messages/{uuid.uuid4()}/reactions", json={"emoji": "🚀"}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 422
+
+
+async def test_set_reaction_forbidden_without_conversation_access(async_client, monkeypatch, as_fake_user):
+    channel = _make_channel()
+    conversation = _make_conversation(channel)
+    message = _make_message(sender_id=uuid.uuid4(), conversation_id=conversation.id)
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_conversation(monkeypatch, channel, conversation)
+    monkeypatch.setattr(permissions.groups_service, "get_member", AsyncMock(return_value=None))
+    set_reaction_mock = AsyncMock()
+    monkeypatch.setattr(message_router.message_service, "set_reaction", set_reaction_mock)
+
+    response = await async_client.put(
+        f"/messages/{message.id}/reactions", json={"emoji": "👍"}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 403
+    set_reaction_mock.assert_not_awaited()
+
+
+async def test_set_reaction_success_returns_summary(async_client, monkeypatch, as_fake_user):
+    channel = _make_channel(is_private=False)
+    conversation = _make_conversation(channel)
+    message = _make_message(sender_id=uuid.uuid4(), conversation_id=conversation.id)
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_conversation(monkeypatch, channel, conversation)
+    monkeypatch.setattr(
+        permissions.groups_service, "get_member", AsyncMock(return_value=_active_member(channel.group_id, as_fake_user.id))
+    )
+    set_reaction_mock = AsyncMock(return_value=None)
+    monkeypatch.setattr(message_router.message_service, "set_reaction", set_reaction_mock)
+    monkeypatch.setattr(
+        message_router.message_service,
+        "get_reactions",
+        AsyncMock(return_value=[MessageReactionSummary(emoji="👍", count=1, reacted_by_me=True)]),
+    )
+
+    response = await async_client.put(
+        f"/messages/{message.id}/reactions", json={"emoji": "👍"}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 200
+    assert response.json() == [{"emoji": "👍", "count": 1, "reacted_by_me": True}]
+    set_reaction_mock.assert_awaited_once_with(mock.ANY, message, as_fake_user.id, "👍")
+
+
+async def test_set_reaction_allowed_on_ended_room(async_client, monkeypatch, as_fake_user):
+    """Reacting is read-level (can_access_conversation), unlike sending a new message --
+    an ended Study Room stays reactable, same as it stays readable."""
+    room = _make_room(status=StudyRoomStatus.ENDED)
+    conversation = _make_room_conversation(room)
+    message = _make_message(sender_id=uuid.uuid4(), conversation_id=conversation.id)
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_room_conversation(monkeypatch, room, conversation, as_fake_user.id)
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, as_fake_user.id)),
+    )
+    monkeypatch.setattr(message_router.message_service, "set_reaction", AsyncMock(return_value=None))
+    monkeypatch.setattr(message_router.message_service, "get_reactions", AsyncMock(return_value=[]))
+
+    response = await async_client.put(
+        f"/messages/{message.id}/reactions", json={"emoji": "❤️"}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 200
+
+
+async def test_remove_reaction_success(async_client, monkeypatch, as_fake_user):
+    other_user = uuid.uuid4()
+    conversation = _make_direct_conversation(as_fake_user.id, other_user)
+    message = _make_message(sender_id=other_user, conversation_id=conversation.id)
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_direct_conversation(monkeypatch, conversation, {as_fake_user.id, other_user})
+    remove_mock = AsyncMock(return_value=None)
+    monkeypatch.setattr(message_router.message_service, "remove_reaction", remove_mock)
+    monkeypatch.setattr(message_router.message_service, "get_reactions", AsyncMock(return_value=[]))
+
+    response = await async_client.delete(f"/messages/{message.id}/reactions", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    assert response.json() == []
+    remove_mock.assert_awaited_once()
+
+
+async def test_remove_reaction_forbidden_without_conversation_access(async_client, monkeypatch, as_fake_user):
+    user_a, user_b = uuid.uuid4(), uuid.uuid4()
+    conversation = _make_direct_conversation(user_a, user_b)
+    message = _make_message(sender_id=user_a, conversation_id=conversation.id)
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_direct_conversation(monkeypatch, conversation, {user_a, user_b})
+    remove_mock = AsyncMock()
+    monkeypatch.setattr(message_router.message_service, "remove_reaction", remove_mock)
+
+    response = await async_client.delete(f"/messages/{message.id}/reactions", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+    remove_mock.assert_not_awaited()
+
+
+async def test_get_reactions_forbidden_without_access(async_client, monkeypatch, as_fake_user):
+    user_a, user_b = uuid.uuid4(), uuid.uuid4()
+    conversation = _make_direct_conversation(user_a, user_b)
+    message = _make_message(sender_id=user_a, conversation_id=conversation.id)
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_direct_conversation(monkeypatch, conversation, {user_a, user_b})
+
+    response = await async_client.get(f"/messages/{message.id}/reactions", headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_get_reactions_success(async_client, monkeypatch, as_fake_user):
+    other_user = uuid.uuid4()
+    conversation = _make_direct_conversation(as_fake_user.id, other_user)
+    message = _make_message(sender_id=other_user, conversation_id=conversation.id)
+    monkeypatch.setattr(message_router.message_service, "get_by_id", AsyncMock(return_value=message))
+    _wire_direct_conversation(monkeypatch, conversation, {as_fake_user.id, other_user})
+    monkeypatch.setattr(
+        message_router.message_service,
+        "get_reactions",
+        AsyncMock(return_value=[MessageReactionSummary(emoji="😆", count=2, reacted_by_me=False)]),
+    )
+
+    response = await async_client.get(f"/messages/{message.id}/reactions", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    assert response.json() == [{"emoji": "😆", "count": 2, "reacted_by_me": False}]

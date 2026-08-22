@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../lib/apiClient';
 import { listConversationMessages, sendConversationMessage } from '../lib/message.api';
 import { useChannelMessagesRealtime } from './useChannelMessagesRealtime';
-import type { Message } from '../lib/message.types';
+import { useMessageReactionsRealtime } from './useMessageReactionsRealtime';
+import type { Message, MessageReactionSummary } from '../lib/message.types';
 
 export interface RoomMessagesError {
   status: number | null;
@@ -81,6 +82,12 @@ export function useRoomMessages(conversationId: string | null) {
     setMessages((prev) => appendMessageDeduped(prev, incoming));
   });
 
+  const updateMessageReactions = useCallback((messageId: string, reactions: MessageReactionSummary[]) => {
+    setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, reactions } : m)));
+  }, []);
+
+  useMessageReactionsRealtime(conversationId, updateMessageReactions);
+
   const sendMessage = useCallback(
     async (content: string, attachmentPath?: string | null) => {
       const trimmed = content.trim();
@@ -114,5 +121,6 @@ export function useRoomMessages(conversationId: string | null) {
     sendError,
     sendMessage,
     clearSendError: () => setSendError(null),
+    updateMessageReactions,
   };
 }

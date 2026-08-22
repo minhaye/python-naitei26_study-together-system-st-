@@ -3,8 +3,9 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { ApiError } from '../lib/apiClient';
 import { listConversationMessages, sendConversationMessage } from '../lib/message.api';
 import { useChannelMessagesRealtime } from './useChannelMessagesRealtime';
+import { useMessageReactionsRealtime } from './useMessageReactionsRealtime';
 import { useRoomMessages } from './useRoomMessages';
-import type { Message } from '../lib/message.types';
+import type { Message, MessageReactionSummary } from '../lib/message.types';
 
 vi.mock('../lib/message.api', () => ({
   listConversationMessages: vi.fn(),
@@ -13,10 +14,14 @@ vi.mock('../lib/message.api', () => ({
 vi.mock('./useChannelMessagesRealtime', () => ({
   useChannelMessagesRealtime: vi.fn(),
 }));
+vi.mock('./useMessageReactionsRealtime', () => ({
+  useMessageReactionsRealtime: vi.fn(),
+}));
 
 const mockedList = vi.mocked(listConversationMessages);
 const mockedSend = vi.mocked(sendConversationMessage);
 const mockedRealtime = vi.mocked(useChannelMessagesRealtime);
+const mockedReactionsRealtime = vi.mocked(useMessageReactionsRealtime);
 
 const sender = { id: 'user-1', username: 'alice', display_name: 'Alice', avatar_url: null };
 
@@ -30,6 +35,7 @@ function makeMessage(overrides: Partial<Message> = {}): Message {
     created_at: '2026-08-19T00:00:00Z',
     updated_at: '2026-08-19T00:00:00Z',
     sender,
+    reactions: [],
     ...overrides,
   };
 }
@@ -38,6 +44,7 @@ beforeEach(() => {
   mockedList.mockReset();
   mockedSend.mockReset();
   mockedRealtime.mockReset();
+  mockedReactionsRealtime.mockReset();
 });
 
 describe('useRoomMessages', () => {
@@ -240,5 +247,50 @@ describe('useRoomMessages', () => {
       display_name: 'Bob Nguyen',
       avatar_url: 'https://example.com/bob.png',
     });
+  });
+
+  it('subscribes to reaction changes for the given conversation', async () => {
+    mockedList.mockResolvedValue({ items: [], next_cursor: null });
+
+    renderHook(() => useRoomMessages('conv-1'));
+
+    expect(mockedReactionsRealtime).toHaveBeenCalledWith('conv-1', expect.any(Function));
+  });
+
+  it('patches only the matching message when a reaction change event arrives', async () => {
+    mockedList.mockResolvedValue({
+      items: [makeMessage({ id: 'msg-1' }), makeMessage({ id: 'msg-2' })],
+      next_cursor: null,
+    });
+
+    let reactionsCallback: (messageId: string, reactions: MessageReactionSummary[]) => void = () => {};
+    mockedReactionsRealtime.mockImplementation((_conversationId, onChange) => {
+      reactionsCallback = onChange;
+    });
+
+    const { result } = renderHook(() => useRoomMessages('conv-1'));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    const newReactions: MessageReactionSummary[] = [{ emoji: '👍', count: 1, reacted_by_me: true }];
+    act(() => {
+      reactionsCallback('msg-2', newReactions);
+    });
+
+    expect(result.current.messages.find((m) => m.id === 'msg-1')?.reactions).toEqual([]);
+    expect(result.current.messages.find((m) => m.id === 'msg-2')?.reactions).toEqual(newReactions);
+  });
+
+  it('exposes updateMessageReactions so callers can apply a PUT/DELETE response directly', async () => {
+    mockedList.mockResolvedValue({ items: [makeMessage({ id: 'msg-1' })], next_cursor: null });
+
+    const { result } = renderHook(() => useRoomMessages('conv-1'));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    const newReactions: MessageReactionSummary[] = [{ emoji: '❤️', count: 2, reacted_by_me: false }];
+    act(() => {
+      result.current.updateMessageReactions('msg-1', newReactions);
+    });
+
+    expect(result.current.messages[0].reactions).toEqual(newReactions);
   });
 });
