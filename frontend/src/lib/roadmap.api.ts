@@ -4,9 +4,16 @@ export interface RoadmapPhase { id: string; name: string; position: number; prog
 export interface Roadmap { id: string; title: string; goal: string; due_date: string | null; created_at: string; phases: RoadmapPhase[]; }
 export interface RoadmapCreate { title: string; goal: string; due_date: string | null; phases: Array<Pick<RoadmapPhase, 'name'>>; }
 export interface RoadmapSuggestion { title: string; goal: string; phases: Array<{ name: string }>; }
+export interface RoadmapQuestion { question: string; options: Array<{ label: string }>; }
+export interface RoadmapAnswer { question: string; answer: string; }
 
 export function listRoadmaps() { return apiClient.get<Roadmap[]>('/roadmaps'); }
-export function suggestRoadmap(description: string) { return apiClient.post<RoadmapSuggestion>('/roadmaps/suggest', { description }); }
+export function suggestRoadmapQuestions(description: string) {
+  return apiClient.post<{ questions: RoadmapQuestion[] }>('/roadmaps/suggest/questions', { description });
+}
+export function suggestRoadmap(description: string, answers: RoadmapAnswer[] = []) {
+  return apiClient.post<RoadmapSuggestion>('/roadmaps/suggest', { description, answers });
+}
 export function createRoadmap(data: RoadmapCreate) { return apiClient.post<Roadmap>('/roadmaps', data); }
 export function updateRoadmap(id: string, data: Partial<Pick<Roadmap, 'title' | 'goal' | 'due_date'>>) { return apiClient.patch<Roadmap>(`/roadmaps/${id}`, data); }
 export function deleteRoadmap(id: string) { return apiClient.delete<void>(`/roadmaps/${id}`); }

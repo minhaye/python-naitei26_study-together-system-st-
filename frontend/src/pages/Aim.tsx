@@ -10,10 +10,13 @@ import {
   deleteRoadmapPhase,
   listRoadmaps,
   suggestRoadmap,
+  suggestRoadmapQuestions,
   updateRoadmap,
   updateRoadmapPhase,
   type Roadmap,
+  type RoadmapAnswer,
   type RoadmapPhase,
+  type RoadmapQuestion,
 } from '../lib/roadmap.api';
 import { ApiError } from '../lib/apiClient';
 
@@ -199,6 +202,8 @@ export function AimPage() {
   const [aiDescription, setAiDescription] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [aiQuestions, setAiQuestions] = useState<RoadmapQuestion[] | null>(null);
+  const [aiAnswers, setAiAnswers] = useState<string[]>([]);
 
   // Edit form
   const [editing, setEditing] = useState<Roadmap | null>(null);
@@ -224,17 +229,39 @@ export function AimPage() {
     })();
   }, []);
 
-  const resetCreate = () => { setCTitle(''); setCGoal(''); setCDue(''); setCPhases([]); setAiDescription(''); setAiError(null); };
+  const resetCreate = () => {
+    setCTitle(''); setCGoal(''); setCDue(''); setCPhases([]);
+    setAiDescription(''); setAiError(null); setAiQuestions(null); setAiAnswers([]);
+  };
 
-  const askAi = async () => {
+  const askQuestions = async () => {
     const description = aiDescription.trim();
     if (!description) return;
     setAiLoading(true); setAiError(null);
     try {
-      const suggestion = await suggestRoadmap(description);
+      const { questions } = await suggestRoadmapQuestions(description);
+      setAiQuestions(questions);
+      setAiAnswers(questions.map(() => ''));
+    } catch (c) { setAiError(friendlyError(c)); }
+    finally { setAiLoading(false); }
+  };
+
+  const backToDescription = () => { setAiQuestions(null); setAiAnswers([]); setAiError(null); };
+
+  const applySuggestion = async () => {
+    const description = aiDescription.trim();
+    if (!description || !aiQuestions) return;
+    setAiLoading(true); setAiError(null);
+    try {
+      const answers: RoadmapAnswer[] = aiQuestions
+        .map((q, i) => ({ question: q.question, answer: aiAnswers[i] }))
+        .filter(a => a.answer);
+      const suggestion = await suggestRoadmap(description, answers);
       setCTitle(suggestion.title);
       setCGoal(suggestion.goal);
       setCPhases(suggestion.phases.map(p => p.name));
+      setAiQuestions(null);
+      setAiAnswers([]);
     } catch (c) { setAiError(friendlyError(c)); }
     finally { setAiLoading(false); }
   };
@@ -497,24 +524,67 @@ export function AimPage() {
               <Sparkles size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
               Gợi ý bằng AI
             </label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                value={aiDescription}
-                onChange={e => setAiDescription(e.target.value)}
-                placeholder="Mô tả mục tiêu, VD: Học lập trình web để đi thực tập trong 3 tháng"
-                maxLength={500}
-                style={{ ...input, flex: 1 }}
-                disabled={aiLoading}
-              />
-              <button
-                type="button"
-                onClick={() => void askAi()}
-                disabled={aiLoading || !aiDescription.trim()}
-                style={{ ...secondaryButton, background: '#7C3AED', color: 'white', border: 0, whiteSpace: 'nowrap' }}
-              >
-                {aiLoading ? 'Đang tạo...' : 'Gợi ý'}
-              </button>
-            </div>
+            {!aiQuestions ? (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  value={aiDescription}
+                  onChange={e => setAiDescription(e.target.value)}
+                  placeholder="Mô tả mục tiêu, VD: Học lập trình web để đi thực tập trong 3 tháng"
+                  maxLength={500}
+                  style={{ ...input, flex: 1 }}
+                  disabled={aiLoading}
+                />
+                <button
+                  type="button"
+                  onClick={() => void askQuestions()}
+                  disabled={aiLoading || !aiDescription.trim()}
+                  style={{ ...secondaryButton, background: '#7C3AED', color: 'white', border: 0, whiteSpace: 'nowrap' }}
+                >
+                  {aiLoading ? 'Đang tạo...' : 'Tiếp theo'}
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: 12 }}>
+                {aiQuestions.map((q, i) => (
+                  <div key={i} style={{ display: 'grid', gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>{q.question}</span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {q.options.map((opt, j) => {
+                        const active = aiAnswers[i] === opt.label;
+                        return (
+                          <button
+                            key={j}
+                            type="button"
+                            onClick={() => setAiAnswers(a => a.map((v, k) => (k === i ? opt.label : v)))}
+                            style={{
+                              ...control,
+                              padding: '6px 12px',
+                              fontSize: 12,
+                              background: active ? '#7C3AED' : 'white',
+                              color: active ? 'white' : '#334155',
+                              border: active ? '1px solid #7C3AED' : '1px solid #CBD5E1',
+                            }}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                  <button type="button" onClick={backToDescription} disabled={aiLoading} style={secondaryButton}>Quay lại</button>
+                  <button
+                    type="button"
+                    onClick={() => void applySuggestion()}
+                    disabled={aiLoading}
+                    style={{ ...secondaryButton, background: '#7C3AED', color: 'white', border: 0 }}
+                  >
+                    {aiLoading ? 'Đang tạo...' : 'Gợi ý lộ trình'}
+                  </button>
+                </div>
+              </div>
+            )}
             {aiError && <p role="alert" style={{ margin: 0, color: '#B91C1C', fontSize: 13 }}>{aiError}</p>}
           </div>
           <label style={fieldLabel}>
