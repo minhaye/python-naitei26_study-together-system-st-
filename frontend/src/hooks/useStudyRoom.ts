@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from './useAuth';
+import { useStudyRoomMembersRealtime } from './useStudyRoomMembersRealtime';
 import { ApiError } from '../lib/apiClient';
 import { listGroupMembers } from '../lib/group.api';
 import {
@@ -141,6 +142,25 @@ export function useStudyRoom(roomId: string | undefined) {
     loadModeration();
     loadGroupManagerIds();
   }, [room, loadMembers, loadModeration, loadGroupManagerIds]);
+
+  // `members` otherwise only refreshes after the current user's own join/leave/moderate
+  // action -- an already-open tab never learns when someone ELSE joins or leaves, so the
+  // member count/list silently goes stale (e.g. sidebar stuck showing "(2)" after a 3rd and
+  // 4th person join). useStudyRoomMembersRealtime (below) is the primary, near-instant fix
+  // once docs/db/migrations/026_enable_study_room_members_realtime.sql has been run live; this
+  // poll is a resilience fallback that keeps working even if that Realtime channel is still
+  // pending, disconnects, or misses an event (documented gap: Postgres Changes evaluates RLS
+  // against an UPDATE's post-image, see 026's header) -- worst case is a 10s-stale count
+  // instead of an indefinitely-stale one.
+  useEffect(() => {
+    if (!room) return;
+    const interval = setInterval(loadMembers, 10000);
+    return () => clearInterval(interval);
+  }, [room, loadMembers]);
+
+  // Near-instant member list refresh on any INSERT/UPDATE to this room's study_room_members
+  // rows (join/leave/kick/role-change) -- see useStudyRoomMembersRealtime.ts and 026's header.
+  useStudyRoomMembersRealtime(room ? roomId ?? null : null, loadMembers);
 
   const currentMember = useMemo(
     () => members.find((m) => m.user_id === currentUserId) ?? null,

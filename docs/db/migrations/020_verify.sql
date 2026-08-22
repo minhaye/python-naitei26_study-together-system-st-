@@ -15,7 +15,7 @@ select
   case
     when count(*) = 1
      and bool_and(policyname = 'group_notes_select_active_member')
-     and bool_and(cmd = 'r') -- 'r' = SELECT
+     and bool_and(cmd = 'SELECT')
      and bool_and(qual like '%is_group_member(group_id, auth.uid())%')
     then 'OK' else 'FAIL'
   end as group_notes_select_policy_status,
@@ -29,7 +29,7 @@ select
   case when count(*) = 0 then 'OK' else 'FAIL' end as group_notes_no_authenticated_write_policy
 from pg_policies
 where schemaname = 'public' and tablename = 'group_notes'
-  and 'authenticated' = any(roles) and cmd != 'r';
+  and 'authenticated' = any(roles) and cmd != 'SELECT';
 
 -- 4. RLS still enabled on all three tables (this migration never disables it anywhere).
 select relname as tablename, case when relrowsecurity then 'OK' else 'FAIL' end as rls_status
