@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { MessageCircle, MessagesSquare, Send } from 'lucide-react';
+import { MessageCircle, MessagesSquare, Send, Image as ImageIcon } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useRoomMessages } from '../../hooks/useRoomMessages';
+import { useMessageImageAttachment, ALLOWED_IMAGE_ACCEPT } from '../../hooks/useMessageImageAttachment';
 import { listDirectConversations } from '../../lib/conversation.api';
 import { ApiError } from '../../lib/apiClient';
 import { getDisplayName } from '../../utils/userDisplay';
 import { getAvatarColor, getAvatarInitials } from '../../utils/avatarUtils';
 import { useUnreadMessages } from '../../contexts/unread-messages-context';
+import { MessageAttachmentImage } from '../../components/chat/MessageAttachmentImage';
+import { SelectedImagePreview } from '../../components/chat/SelectedImagePreview';
 import type { Conversation } from '../../lib/conversation.types';
 import type { Message } from '../../lib/message.types';
 
@@ -61,6 +64,8 @@ export function DirectMessagesPage() {
   } = useRoomMessages(conversationId ?? null);
   const [chatInput, setChatInput] = useState('');
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const imageAttachment = useMessageImageAttachment();
+  const chatImageInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -79,13 +84,24 @@ export function DirectMessagesPage() {
 
   const handleSend = async () => {
     const trimmed = chatInput.trim();
-    if (!trimmed || !conversationId || isSending) return;
+    if ((!trimmed && !imageAttachment.hasImage) || !conversationId || isSending || imageAttachment.isUploading) return;
     try {
-      await sendMessage(trimmed);
+      // Upload first, create the message second -- a failed upload must never produce an
+      // orphaned/misleading message record (see useMessageImageAttachment.uploadImage).
+      const attachmentPath = imageAttachment.hasImage ? await imageAttachment.uploadImage(conversationId) : null;
+      await sendMessage(trimmed, attachmentPath);
       setChatInput('');
+      imageAttachment.clearImage();
     } catch {
-      // sendError is already populated; keep the draft so the user can retry.
+      // sendError / imageAttachment.uploadError is already populated; keep the draft (and
+      // any selected image) so the user can retry.
     }
+  };
+
+  const handleChatImageSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = e.target.files?.[0];
+    if (picked) imageAttachment.selectImage(picked);
+    e.target.value = '';
   };
 
   const senderDisplay = (message: Message) => {
@@ -251,7 +267,8 @@ export function DirectMessagesPage() {
                             wordBreak: 'break-word',
                           }}
                         >
-                          {msg.content}
+                          {msg.content && <div style={{ marginBottom: msg.attachment_path ? 6 : 0 }}>{msg.content}</div>}
+                          {msg.attachment_path && <MessageAttachmentImage messageId={msg.id} />}
                         </div>
                         <span style={{ color: '#94A3B8', fontSize: 11, marginTop: 4 }}>{formatMessageTime(msg.created_at)}</span>
                       </div>
@@ -263,12 +280,44 @@ export function DirectMessagesPage() {
             </div>
 
             <div style={{ padding: '16px 24px', borderTop: '1px solid #E2E8F0' }}>
-              {sendError && (
+              {(sendError || imageAttachment.uploadError || imageAttachment.pickError) && (
                 <div style={{ marginBottom: 8, padding: '8px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, color: '#B91C1C', fontSize: 12.5 }}>
-                  {sendError.message}
+                  {sendError?.message || imageAttachment.uploadError?.message || imageAttachment.pickError}
                 </div>
               )}
+              {imageAttachment.previewUrl && (
+                <SelectedImagePreview
+                  previewUrl={imageAttachment.previewUrl}
+                  onRemove={imageAttachment.clearImage}
+                  disabled={isSending || imageAttachment.isUploading}
+                />
+              )}
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  type="file"
+                  accept={ALLOWED_IMAGE_ACCEPT}
+                  ref={chatImageInputRef}
+                  onChange={handleChatImageSelected}
+                  style={{ display: 'none' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => chatImageInputRef.current?.click()}
+                  disabled={isSending}
+                  aria-label="Đính kèm ảnh"
+                  style={{
+                    background: '#F8FAFC',
+                    border: '1px solid #E2E8F0',
+                    color: '#00236F',
+                    padding: 10,
+                    borderRadius: 8,
+                    display: 'flex',
+                    cursor: isSending ? 'default' : 'pointer',
+                    opacity: isSending ? 0.6 : 1,
+                  }}
+                >
+                  <ImageIcon size={16} />
+                </button>
                 <input
                   type="text"
                   placeholder="Nhập tin nhắn..."
@@ -280,15 +329,15 @@ export function DirectMessagesPage() {
                 />
                 <button
                   onClick={handleSend}
-                  disabled={!chatInput.trim() || isSending}
+                  disabled={(!chatInput.trim() && !imageAttachment.hasImage) || isSending || imageAttachment.isUploading}
                   style={{
                     background: '#00236F',
                     border: 'none',
                     color: 'white',
                     padding: 10,
                     borderRadius: 8,
-                    cursor: !chatInput.trim() || isSending ? 'default' : 'pointer',
-                    opacity: !chatInput.trim() || isSending ? 0.6 : 1,
+                    cursor: (!chatInput.trim() && !imageAttachment.hasImage) || isSending || imageAttachment.isUploading ? 'default' : 'pointer',
+                    opacity: (!chatInput.trim() && !imageAttachment.hasImage) || isSending || imageAttachment.isUploading ? 0.6 : 1,
                   }}
                 >
                   <Send size={16} />
