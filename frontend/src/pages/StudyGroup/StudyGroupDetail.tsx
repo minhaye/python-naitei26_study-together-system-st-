@@ -81,7 +81,13 @@ export function StudyGroupDetail() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [studyRooms, setStudyRooms] = useState<StudyRoom[]>([]);
   const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  
+  // Independent loading states for Lazy Loading
+  const [isGroupLoading, setIsGroupLoading] = useState(true);
+  const [isChannelsLoading, setIsChannelsLoading] = useState(true);
+  const [isRoomsLoading, setIsRoomsLoading] = useState(true);
+  const [isMembersLoading, setIsMembersLoading] = useState(true);
+  
   const [loadError, setLoadError] = useState<{ status: number | null; message: string } | null>(null);
 
   // Leave-group mutation state
@@ -134,38 +140,67 @@ export function StudyGroupDetail() {
     if (!groupId) return;
     let cancelled = false;
 
-    async function load() {
-      setIsLoading(true);
-      setLoadError(null);
-      try {
-        const [groupData, channelsData, roomsData, membersData] = await Promise.all([
-          getGroup(groupId as string),
-          listChannelsByGroup(groupId as string),
-          listStudyRoomsByGroup(groupId as string),
-          listGroupMembers(groupId as string),
-        ]);
-        if (cancelled) return;
-        setGroup(groupData);
-        setChannels(channelsData);
-        setStudyRooms(roomsData);
-        setGroupMembers(membersData);
-        setActiveChannel((prev) =>
-          channelsData.some((c) => c.id === prev) ? prev : (channelsData[0]?.id ?? '')
-        );
-      } catch (err) {
-        if (cancelled) return;
-        if (err instanceof ApiError) {
-          setLoadError({ status: err.status, message: err.message });
-        } else {
-          setLoadError({ status: null, message: 'Không thể tải dữ liệu nhóm học.' });
-        }
-        setGroup(null);
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    }
+    setIsGroupLoading(true);
+    setIsChannelsLoading(true);
+    setIsRoomsLoading(true);
+    setIsMembersLoading(true);
+    setLoadError(null);
 
-    load();
+    // 1. Fetch Group Details
+    getGroup(groupId as string)
+      .then((data) => {
+        if (!cancelled) {
+          setGroup(data);
+          setIsGroupLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setLoadError({
+            status: err instanceof ApiError ? err.status : null,
+            message: err instanceof ApiError ? err.message : 'Không thể tải dữ liệu nhóm học.',
+          });
+          setIsGroupLoading(false);
+        }
+      });
+
+    // 2. Fetch Channels
+    listChannelsByGroup(groupId as string)
+      .then((data) => {
+        if (!cancelled) {
+          setChannels(data);
+          setActiveChannel((prev) => (data.some((c) => c.id === prev) ? prev : (data[0]?.id ?? '')));
+          setIsChannelsLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setIsChannelsLoading(false);
+      });
+
+    // 3. Fetch Study Rooms
+    listStudyRoomsByGroup(groupId as string)
+      .then((data) => {
+        if (!cancelled) {
+          setStudyRooms(data);
+          setIsRoomsLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setIsRoomsLoading(false);
+      });
+
+    // 4. Fetch Members
+    listGroupMembers(groupId as string)
+      .then((data) => {
+        if (!cancelled) {
+          setGroupMembers(data);
+          setIsMembersLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setIsMembersLoading(false);
+      });
+
     return () => {
       cancelled = true;
     };
@@ -593,7 +628,7 @@ export function StudyGroupDetail() {
     );
   }
 
-  if (isLoading) {
+  if (isGroupLoading) {
     return (
       <div style={{ display: 'flex', height: 'calc(100vh - 64px)', width: '100%', overflow: 'hidden' }}>
         {/* Left sidebar skeleton */}
@@ -804,10 +839,18 @@ export function StudyGroupDetail() {
                             </div>
                         </div>
                         <div style={{display: 'flex', flexDirection: 'column', gap: 2}}>
-                            {channels.length === 0 && (
-                                <div style={{padding: '8px 12px', color: '#94A3B8', fontSize: 13}}>Chưa có kênh nào.</div>
-                            )}
-                            {channels.map((channel) => {
+                            {isChannelsLoading ? (
+                                <div style={{ padding: '4px 8px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                    {[...Array(3)].map((_, i) => (
+                                        <div key={i} className="skeleton-pulse" style={{ height: 32, borderRadius: 6 }} />
+                                    ))}
+                                </div>
+                            ) : (
+                                <>
+                                    {channels.length === 0 && (
+                                        <div style={{padding: '8px 12px', color: '#94A3B8', fontSize: 13}}>Chưa có kênh nào.</div>
+                                    )}
+                                    {channels.map((channel) => {
                                 const isActive = activeChannel === channel.id && mainView === 'chat';
                                 const isMenuOpen = openChannelMenuId === channel.id;
                                 return (
@@ -858,6 +901,8 @@ export function StudyGroupDetail() {
                                     </div>
                                 );
                             })}
+                            </>
+                        )}
                         </div>
                     </div>
 
@@ -890,9 +935,17 @@ export function StudyGroupDetail() {
                         </div>
 
                         <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
-                            {openRooms.length === 0 && (
-                                <div style={{padding: '8px', color: '#94A3B8', fontSize: 13}}>Chưa có phòng học nào đang mở.</div>
-                            )}
+                            {isRoomsLoading ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 8px' }}>
+                                    {[...Array(2)].map((_, i) => (
+                                        <div key={i} className="skeleton-pulse" style={{ height: 80, borderRadius: 8 }} />
+                                    ))}
+                                </div>
+                            ) : (
+                                <>
+                                    {openRooms.length === 0 && (
+                                        <div style={{padding: '8px', color: '#94A3B8', fontSize: 13}}>Chưa có phòng học nào đang mở.</div>
+                                    )}
                             {/* Limit rooms to top 2 for Sidebar */}
                             {openRooms.slice(0, 2).map(room => {
                                 const isRoomMenuOpen = openRoomMenuId === room.id;
@@ -961,6 +1014,9 @@ export function StudyGroupDetail() {
                                     Xem tất cả {openRooms.length} phòng học
                                 </div>
                             )}
+                                </>
+                            )}
+
 
                         </div>
                     </div>
@@ -1314,19 +1370,28 @@ export function StudyGroupDetail() {
             )}
 
             {/* Right Sidebar - Members (real backend group members) */}
-            <GroupMembersPanel
-                members={activeMembers}
-                currentUserId={currentUserId}
-                currentUser={currentUser}
-                isOwner={isOwner}
-                isGroupManager={isGroupManager}
-                pendingMemberId={memberActionPendingId}
-                error={memberActionError}
-                onPromote={handlePromoteMember}
-                onDemote={handleDemoteMember}
-                onRemove={handleRemoveMember}
-                onInviteClick={() => setIsInviteModalOpen(true)}
-            />
+            {isMembersLoading ? (
+                <div style={{ width: 260, padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <div className="skeleton-pulse" style={{ height: 20, width: 100, borderRadius: 4 }}></div>
+                    <div className="skeleton-pulse" style={{ height: 48, borderRadius: 8 }}></div>
+                    <div className="skeleton-pulse" style={{ height: 48, borderRadius: 8 }}></div>
+                    <div className="skeleton-pulse" style={{ height: 48, borderRadius: 8 }}></div>
+                </div>
+            ) : (
+                <GroupMembersPanel
+                    members={activeMembers}
+                    currentUserId={currentUserId}
+                    currentUser={currentUser}
+                    isOwner={isOwner}
+                    isGroupManager={isGroupManager}
+                    pendingMemberId={memberActionPendingId}
+                    error={memberActionError}
+                    onPromote={handlePromoteMember}
+                    onDemote={handleDemoteMember}
+                    onRemove={handleRemoveMember}
+                    onInviteClick={() => setIsInviteModalOpen(true)}
+                />
+            )}
 
         </div>
 
