@@ -5,6 +5,8 @@ import type {
   CommentResponse,
   Post,
   Comment,
+  ReactionSummary,
+  ReactionSummaryResponse,
   ForumPostCreate,
   ForumPostUpdate,
   CommentCreate,
@@ -24,6 +26,11 @@ function timeAgo(isoString: string): string {
   return `${Math.floor(hours / 24)} ngày trước`;
 }
 
+/** Map ReactionSummaryResponse (BE DTO, snake_case) → ReactionSummary (UI model, camelCase) */
+function mapReactions(dtos: ReactionSummaryResponse[] | undefined): ReactionSummary[] {
+  return (dtos ?? []).map((r) => ({ emoji: r.emoji, count: r.count, reactedByMe: r.reacted_by_me }));
+}
+
 /** Map ForumPostResponse (BE DTO) → Post (UI Model) */
 function mapPost(dto: ForumPostResponse): Post {
   const isEdited = dto.updated_at && dto.created_at && new Date(dto.updated_at).getTime() - new Date(dto.created_at).getTime() > 5000;
@@ -41,9 +48,8 @@ function mapPost(dto: ForumPostResponse): Post {
     updatedAt: dto.updated_at,
     isEdited: Boolean(isEdited),
     timeAgo: timeAgo(dto.created_at),
-    likesCount: dto.likes_count ?? 0,
+    reactions: mapReactions(dto.reactions),
     commentsCount: dto.comments_count ?? 0,
-    isLiked: dto.is_liked ?? false,
     tags: dto.tags ?? [],
   };
 }
@@ -63,8 +69,7 @@ function mapComment(dto: CommentResponse): Comment {
     updatedAt: dto.updated_at,
     isEdited: Boolean(isEdited),
     timeAgo: timeAgo(dto.created_at),
-    likesCount: dto.likes_count ?? 0,
-    isLiked: dto.is_liked ?? false,
+    reactions: mapReactions(dto.reactions),
     replies: [],
   };
 }
@@ -163,9 +168,8 @@ export const forumApi = {
       category_name: categoryName ?? 'Chung',
       author_name: authorName ?? 'Bạn',
       author_avatar_url: authorAvatarUrl ?? response.author_avatar_url ?? null,
-      likes_count: 0,
+      reactions: [],
       comments_count: 0,
-      is_liked: false,
     });
   },
 
@@ -181,13 +185,20 @@ export const forumApi = {
     await apiClient.delete(`/forum/posts/${postId}`);
   },
 
-  likePost: async (postId: string, userId?: string): Promise<void> => {
-    // Backend expects user_id as query param
-    await apiClient.post(`/forum/posts/${postId}/like?user_id=${userId ?? '00000000-0000-0000-0000-000000000000'}`, {});
+  setPostReaction: async (postId: string, emoji: string, userId?: string): Promise<ReactionSummary[]> => {
+    // Backend expects user_id as query param (Forum has no auth dependency on any endpoint)
+    const response = await apiClient.put<ReactionSummaryResponse[]>(
+      `/forum/posts/${postId}/reactions?user_id=${userId ?? '00000000-0000-0000-0000-000000000000'}`,
+      { emoji }
+    );
+    return mapReactions(response);
   },
 
-  unlikePost: async (postId: string, userId?: string): Promise<void> => {
-    await apiClient.delete(`/forum/posts/${postId}/unlike?user_id=${userId ?? '00000000-0000-0000-0000-000000000000'}`);
+  removePostReaction: async (postId: string, userId?: string): Promise<ReactionSummary[]> => {
+    const response = await apiClient.delete<ReactionSummaryResponse[]>(
+      `/forum/posts/${postId}/reactions?user_id=${userId ?? '00000000-0000-0000-0000-000000000000'}`
+    );
+    return mapReactions(response);
   },
 
   getLikedPosts: async (userId: string, skip = 0, limit = 50): Promise<Post[]> => {
@@ -211,8 +222,7 @@ export const forumApi = {
       ...response,
       author_name: authorName ?? 'Bạn',
       author_avatar_url: authorAvatarUrl ?? response.author_avatar_url ?? null,
-      likes_count: 0,
-      is_liked: false,
+      reactions: [],
     });
   },
 
@@ -225,11 +235,18 @@ export const forumApi = {
     await apiClient.delete(`/forum/comments/${commentId}`);
   },
 
-  likeComment: async (commentId: string, userId?: string): Promise<void> => {
-    await apiClient.post(`/forum/comments/${commentId}/like`, { comment_id: commentId, user_id: userId ?? '00000000-0000-0000-0000-000000000000' });
+  setCommentReaction: async (commentId: string, emoji: string, userId?: string): Promise<ReactionSummary[]> => {
+    const response = await apiClient.put<ReactionSummaryResponse[]>(
+      `/forum/comments/${commentId}/reactions?user_id=${userId ?? '00000000-0000-0000-0000-000000000000'}`,
+      { emoji }
+    );
+    return mapReactions(response);
   },
 
-  unlikeComment: async (commentId: string, userId?: string): Promise<void> => {
-    await apiClient.delete(`/forum/comments/${commentId}/unlike?user_id=${userId ?? '00000000-0000-0000-0000-000000000000'}`);
+  removeCommentReaction: async (commentId: string, userId?: string): Promise<ReactionSummary[]> => {
+    const response = await apiClient.delete<ReactionSummaryResponse[]>(
+      `/forum/comments/${commentId}/reactions?user_id=${userId ?? '00000000-0000-0000-0000-000000000000'}`
+    );
+    return mapReactions(response);
   },
 };

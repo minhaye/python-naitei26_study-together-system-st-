@@ -1,10 +1,19 @@
 import re
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.forum.entities.forum_entity import Comment, CommentLike, ForumCategory, ForumPost, PostLike, PostTag, Tag
+from app.forum.entities.forum_entity import (
+    Comment,
+    CommentReaction,
+    ForumCategory,
+    ForumPost,
+    PostReaction,
+    PostTag,
+    Tag,
+)
 from app.forum.dto.forum_dto import (
     CommentCreate,
     CommentUpdate,
@@ -12,6 +21,7 @@ from app.forum.dto.forum_dto import (
     ForumCategoryUpdate,
     ForumPostCreate,
     ForumPostUpdate,
+    ReactionSummary,
 )
 
 
@@ -85,31 +95,84 @@ class ForumService:
         post = ForumPost(**data.model_dump())
         session.add(post)
         await session.flush()
-        
+
         tag_names = self.parse_hashtags(data.content)
         await self._sync_post_tags(session, post.id, tag_names)
-        
+
+        # A brand-new post can't have reactions yet -- no query needed. Also avoids the
+        # ForumPost.reactions relationship (same attribute name as this transient summary list,
+        # see _attach_post_reactions) lazy-loading under async SQLAlchemy when the response
+        # model serializes this object.
+        post.reactions = []
         return post
+
+    async def _attach_post_reactions(
+        self, session: AsyncSession, posts: list[ForumPost], viewer_id: uuid.UUID | None
+    ) -> None:
+        """Batched grouped-reaction lookup for a page of posts (avoids N+1). Sets
+        `.reactions` as a transient attribute on each ForumPost -- same pattern
+        MessagesService._attach_reactions uses for messages."""
+        if not posts:
+            return
+        post_ids = [p.id for p in posts]
+        stmt = (
+            select(
+                PostReaction.post_id,
+                PostReaction.emoji,
+                func.count().label("count"),
+                # bool_or(NULL) -> NULL when viewer_id is None (nothing to compare equal to),
+                # and bool(None) is False -- reacted_by_me correctly comes out False either way.
+                func.bool_or(PostReaction.user_id == viewer_id).label("reacted_by_me"),
+            )
+            .where(PostReaction.post_id.in_(post_ids))
+            .group_by(PostReaction.post_id, PostReaction.emoji)
+        )
+        result = await session.execute(stmt)
+        by_post: dict[uuid.UUID, list[ReactionSummary]] = {}
+        for post_id, emoji, count, reacted_by_me in result.all():
+            by_post.setdefault(post_id, []).append(
+                ReactionSummary(emoji=emoji, count=count, reacted_by_me=bool(reacted_by_me))
+            )
+        for post in posts:
+            post.reactions = by_post.get(post.id, [])
+
+    async def _attach_comment_reactions(
+        self, session: AsyncSession, comments: list[Comment], viewer_id: uuid.UUID | None
+    ) -> None:
+        if not comments:
+            return
+        comment_ids = [c.id for c in comments]
+        stmt = (
+            select(
+                CommentReaction.comment_id,
+                CommentReaction.emoji,
+                func.count().label("count"),
+                func.bool_or(CommentReaction.user_id == viewer_id).label("reacted_by_me"),
+            )
+            .where(CommentReaction.comment_id.in_(comment_ids))
+            .group_by(CommentReaction.comment_id, CommentReaction.emoji)
+        )
+        result = await session.execute(stmt)
+        by_comment: dict[uuid.UUID, list[ReactionSummary]] = {}
+        for comment_id, emoji, count, reacted_by_me in result.all():
+            by_comment.setdefault(comment_id, []).append(
+                ReactionSummary(emoji=emoji, count=count, reacted_by_me=bool(reacted_by_me))
+            )
+        for comment in comments:
+            comment.reactions = by_comment.get(comment.id, [])
 
     async def get_post_by_id(
         self, session: AsyncSession, post_id: uuid.UUID, user_id: uuid.UUID | None = None
     ) -> ForumPost | None:
-        from sqlalchemy import func
         from sqlalchemy.orm import selectinload
-        from app.forum.entities.forum_entity import Comment, PostLike, PostTag, Tag
 
         comments_count_subq = (
             select(func.count(Comment.id))
             .where(Comment.post_id == ForumPost.id)
             .scalar_subquery()
         )
-        likes_count_subq = (
-            select(func.count(PostLike.id))
-            .where(PostLike.post_id == ForumPost.id)
-            .scalar_subquery()
-        )
         stmt = (
-            select(ForumPost, comments_count_subq.label("comments_count"), likes_count_subq.label("likes_count"))
+            select(ForumPost, comments_count_subq.label("comments_count"))
             .options(
                 selectinload(ForumPost.category),
                 selectinload(ForumPost.author),
@@ -121,19 +184,13 @@ class ForumService:
         row = result.first()
         if not row:
             return None
-        post, c_count, l_count = row
+        post, c_count = row
         post.category_name = post.category.name if post.category else None
         post.author_name = post.author.display_name if post.author else None
         post.author_avatar_url = post.author.avatar_url if post.author else None
-        post.likes_count = l_count
         post.comments_count = c_count
-        post.is_liked = False
-        if user_id:
-            like_res = await session.execute(
-                select(PostLike).where(PostLike.post_id == post_id, PostLike.user_id == user_id)
-            )
-            post.is_liked = like_res.scalars().first() is not None
         post.tags = [f"#{pt.tag.name}" for pt in post.post_tags if pt.tag]
+        await self._attach_post_reactions(session, [post], user_id)
         return post
 
     async def list_posts_by_category(
@@ -145,9 +202,7 @@ class ForumService:
         skip: int = 0,
         limit: int = 50,
     ) -> list[ForumPost]:
-        from sqlalchemy import func
         from sqlalchemy.orm import selectinload
-        from app.forum.entities.forum_entity import Comment, PostLike, PostTag, Tag
 
         comments_count_subq = (
             select(func.count(Comment.id))
@@ -155,16 +210,9 @@ class ForumService:
             .scalar_subquery()
         )
 
-        likes_count_subq = (
-            select(func.count(PostLike.id))
-            .where(PostLike.post_id == ForumPost.id)
-            .scalar_subquery()
-        )
-
         stmt = select(
-            ForumPost, 
-            comments_count_subq.label("comments_count"), 
-            likes_count_subq.label("likes_count")
+            ForumPost,
+            comments_count_subq.label("comments_count"),
         ).options(
             selectinload(ForumPost.category),
             selectinload(ForumPost.author),
@@ -183,27 +231,16 @@ class ForumService:
         result = await session.execute(stmt)
         rows = result.all()
 
-        liked_post_ids = set()
-        if user_id and rows:
-            post_ids = [p[0].id for p in rows]
-            liked_stmt = select(PostLike.post_id).where(
-                PostLike.user_id == user_id,
-                PostLike.post_id.in_(post_ids)
-            )
-            liked_res = await session.execute(liked_stmt)
-            liked_post_ids = set(liked_res.scalars().all())
-
         posts = []
-        for post, c_count, l_count in rows:
+        for post, c_count in rows:
             post.category_name = post.category.name if post.category else None
             post.author_name = post.author.display_name if post.author else None
             post.author_avatar_url = post.author.avatar_url if post.author else None
-            post.likes_count = l_count
             post.comments_count = c_count
-            post.is_liked = post.id in liked_post_ids
             post.tags = [f"#{pt.tag.name}" for pt in post.post_tags if pt.tag]
             posts.append(post)
 
+        await self._attach_post_reactions(session, posts, user_id)
         return posts
 
     async def update_post(self, session: AsyncSession, post: ForumPost, data: ForumPostUpdate) -> ForumPost:
@@ -246,9 +283,13 @@ class ForumService:
         comment = Comment(**data.model_dump())
         session.add(comment)
         await session.flush()
+        # A brand-new comment can't have reactions yet -- see create_post's identical note.
+        comment.reactions = []
         return comment
 
-    async def get_comment_by_id(self, session: AsyncSession, comment_id: uuid.UUID) -> Comment | None:
+    async def get_comment_by_id(
+        self, session: AsyncSession, comment_id: uuid.UUID, user_id: uuid.UUID | None = None
+    ) -> Comment | None:
         from sqlalchemy.orm import selectinload
         stmt = select(Comment).options(selectinload(Comment.author)).where(Comment.id == comment_id)
         res = await session.execute(stmt)
@@ -256,46 +297,26 @@ class ForumService:
         if cmt:
             cmt.author_name = cmt.author.display_name if cmt.author else None
             cmt.author_avatar_url = cmt.author.avatar_url if cmt.author else None
+            await self._attach_comment_reactions(session, [cmt], user_id)
         return cmt
 
     async def list_comments_by_post(
         self, session: AsyncSession, post_id: uuid.UUID, user_id: uuid.UUID | None = None
     ) -> list[Comment]:
-        from sqlalchemy import func, select
         from sqlalchemy.orm import selectinload
-        from app.forum.entities.forum_entity import Comment, CommentLike
 
-        likes_count_subq = (
-            select(func.count(CommentLike.id))
-            .where(CommentLike.comment_id == Comment.id)
-            .scalar_subquery()
-        )
-
-        stmt = select(Comment, likes_count_subq.label("likes_count")).options(
+        stmt = select(Comment).options(
             selectinload(Comment.author)
         ).where(Comment.post_id == post_id).order_by(Comment.created_at)
 
         result = await session.execute(stmt)
-        rows = result.all()
+        comments = list(result.scalars().all())
 
-        liked_comment_ids = set()
-        if user_id and rows:
-            cmt_ids = [c[0].id for c in rows]
-            liked_stmt = select(CommentLike.comment_id).where(
-                CommentLike.user_id == user_id,
-                CommentLike.comment_id.in_(cmt_ids)
-            )
-            liked_res = await session.execute(liked_stmt)
-            liked_comment_ids = set(liked_res.scalars().all())
-
-        comments = []
-        for cmt, l_count in rows:
+        for cmt in comments:
             cmt.author_name = cmt.author.display_name if cmt.author else None
             cmt.author_avatar_url = cmt.author.avatar_url if cmt.author else None
-            cmt.likes_count = l_count
-            cmt.is_liked = cmt.id in liked_comment_ids
-            comments.append(cmt)
 
+        await self._attach_comment_reactions(session, comments, user_id)
         return comments
 
     async def update_comment(self, session: AsyncSession, comment: Comment, data: CommentUpdate) -> Comment:
@@ -308,88 +329,125 @@ class ForumService:
         await session.delete(comment)
         await session.flush()
 
-    # --- Likes ---
+    # --- Reactions ---
 
-    async def list_liked_posts(
+    async def list_reacted_posts(
         self, session: AsyncSession, user_id: uuid.UUID, skip: int = 0, limit: int = 50
     ) -> list[ForumPost]:
-        from sqlalchemy import func, select
-        from sqlalchemy.orm import selectinload, aliased
-        from app.forum.entities.forum_entity import Comment, PostLike, ForumPost
-        
+        """Posts the given user has placed any emoji reaction on (formerly "liked posts") --
+        ordered by when they reacted, most recent first."""
+        from sqlalchemy.orm import selectinload
+
         comments_count_subq = (
             select(func.count(Comment.id))
             .where(Comment.post_id == ForumPost.id)
             .scalar_subquery()
         )
-        
-        PostLikeAlias = aliased(PostLike)
-        likes_count_subq = (
-            select(func.count(PostLikeAlias.id))
-            .where(PostLikeAlias.post_id == ForumPost.id)
-            .scalar_subquery()
-        )
-        
+
         stmt = select(
-            ForumPost, 
-            comments_count_subq.label("comments_count"), 
-            likes_count_subq.label("likes_count")
+            ForumPost,
+            comments_count_subq.label("comments_count"),
         ).join(
-            PostLike, PostLike.post_id == ForumPost.id
+            PostReaction, PostReaction.post_id == ForumPost.id
         ).options(
             selectinload(ForumPost.category),
             selectinload(ForumPost.author)
         ).where(
             ForumPost.deleted_at.is_(None),
-            PostLike.user_id == user_id
+            PostReaction.user_id == user_id
         ).order_by(
-            PostLike.created_at.desc()
+            PostReaction.created_at.desc()
         ).offset(skip).limit(limit)
-        
+
         result = await session.execute(stmt)
         rows = result.all()
-        
+
         posts = []
-        for post, c_count, l_count in rows:
+        for post, c_count in rows:
             post.category_name = post.category.name if post.category else None
             post.author_name = post.author.display_name if post.author else None
             post.author_avatar_url = post.author.avatar_url if post.author else None
-            post.likes_count = l_count
             post.comments_count = c_count
-            post.is_liked = True
             posts.append(post)
-            
+
+        await self._attach_post_reactions(session, posts, user_id)
         return posts
 
-    async def like_post(self, session: AsyncSession, post_id: uuid.UUID, user_id: uuid.UUID) -> PostLike:
-        like = PostLike(post_id=post_id, user_id=user_id)
-        session.add(like)
-        await session.flush()
-        return like
-
-    async def get_post_like(self, session: AsyncSession, post_id: uuid.UUID, user_id: uuid.UUID) -> PostLike | None:
-        result = await session.execute(
-            select(PostLike).where(PostLike.post_id == post_id, PostLike.user_id == user_id)
+    async def get_post_reactions(
+        self, session: AsyncSession, post_id: uuid.UUID, user_id: uuid.UUID | None
+    ) -> list[ReactionSummary]:
+        stmt = (
+            select(
+                PostReaction.emoji,
+                func.count().label("count"),
+                func.bool_or(PostReaction.user_id == user_id).label("reacted_by_me"),
+            )
+            .where(PostReaction.post_id == post_id)
+            .group_by(PostReaction.emoji)
         )
-        return result.scalar_one_or_none()
+        result = await session.execute(stmt)
+        return [
+            ReactionSummary(emoji=emoji, count=count, reacted_by_me=bool(reacted_by_me))
+            for emoji, count, reacted_by_me in result.all()
+        ]
 
-    async def unlike_post(self, session: AsyncSession, like: PostLike) -> None:
-        await session.delete(like)
-        await session.flush()
-
-    async def like_comment(self, session: AsyncSession, comment_id: uuid.UUID, user_id: uuid.UUID) -> CommentLike:
-        like = CommentLike(comment_id=comment_id, user_id=user_id)
-        session.add(like)
-        await session.flush()
-        return like
-
-    async def get_comment_like(self, session: AsyncSession, comment_id: uuid.UUID, user_id: uuid.UUID) -> CommentLike | None:
-        result = await session.execute(
-            select(CommentLike).where(CommentLike.comment_id == comment_id, CommentLike.user_id == user_id)
+    async def set_post_reaction(self, session: AsyncSession, post_id: uuid.UUID, user_id: uuid.UUID, emoji: str) -> None:
+        stmt = (
+            pg_insert(PostReaction)
+            .values(post_id=post_id, user_id=user_id, emoji=emoji)
+            .on_conflict_do_update(index_elements=[PostReaction.post_id, PostReaction.user_id], set_={"emoji": emoji})
         )
-        return result.scalar_one_or_none()
-
-    async def unlike_comment(self, session: AsyncSession, like: CommentLike) -> None:
-        await session.delete(like)
+        await session.execute(stmt)
         await session.flush()
+
+    async def remove_post_reaction(self, session: AsyncSession, post_id: uuid.UUID, user_id: uuid.UUID) -> None:
+        """Idempotent: a no-op if the caller has no reaction on this post."""
+        result = await session.execute(
+            select(PostReaction).where(PostReaction.post_id == post_id, PostReaction.user_id == user_id)
+        )
+        reaction = result.scalar_one_or_none()
+        if reaction is not None:
+            await session.delete(reaction)
+            await session.flush()
+
+    async def get_comment_reactions(
+        self, session: AsyncSession, comment_id: uuid.UUID, user_id: uuid.UUID | None
+    ) -> list[ReactionSummary]:
+        stmt = (
+            select(
+                CommentReaction.emoji,
+                func.count().label("count"),
+                func.bool_or(CommentReaction.user_id == user_id).label("reacted_by_me"),
+            )
+            .where(CommentReaction.comment_id == comment_id)
+            .group_by(CommentReaction.emoji)
+        )
+        result = await session.execute(stmt)
+        return [
+            ReactionSummary(emoji=emoji, count=count, reacted_by_me=bool(reacted_by_me))
+            for emoji, count, reacted_by_me in result.all()
+        ]
+
+    async def set_comment_reaction(
+        self, session: AsyncSession, comment_id: uuid.UUID, user_id: uuid.UUID, emoji: str
+    ) -> None:
+        stmt = (
+            pg_insert(CommentReaction)
+            .values(comment_id=comment_id, user_id=user_id, emoji=emoji)
+            .on_conflict_do_update(
+                index_elements=[CommentReaction.comment_id, CommentReaction.user_id], set_={"emoji": emoji}
+            )
+        )
+        await session.execute(stmt)
+        await session.flush()
+
+    async def remove_comment_reaction(self, session: AsyncSession, comment_id: uuid.UUID, user_id: uuid.UUID) -> None:
+        """Idempotent: a no-op if the caller has no reaction on this comment."""
+        result = await session.execute(
+            select(CommentReaction).where(CommentReaction.comment_id == comment_id, CommentReaction.user_id == user_id)
+        )
+        reaction = result.scalar_one_or_none()
+        if reaction is not None:
+            await session.delete(reaction)
+            await session.flush()
 

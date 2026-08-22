@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from app.groups.entities.group_entity import Group, GroupMember
     from app.channels.entities.channel_entity import Channel, ChannelMember
     from app.messages.entities.message_entity import Message
-    from app.forum.entities.forum_entity import Comment, CommentLike, ForumPost, PostLike
+    from app.forum.entities.forum_entity import Comment, CommentReaction, ForumPost, PostReaction
     from app.notifications.entities.notification_entity import Notification
     from app.resources.entities.resource_entity import Resource, ResourceFolder
     from app.study_rooms.entities.study_room_entity import RoomModerationAction, StudyRoom, StudyRoomMember
@@ -39,8 +39,8 @@ class Profile(Base):
     sent_messages: Mapped[list["Message"]] = relationship(back_populates="sender")
     forum_posts: Mapped[list["ForumPost"]] = relationship(back_populates="author")
     comments: Mapped[list["Comment"]] = relationship(back_populates="author")
-    comment_likes: Mapped[list["CommentLike"]] = relationship(back_populates="user")
-    post_likes: Mapped[list["PostLike"]] = relationship(back_populates="user")
+    comment_reactions: Mapped[list["CommentReaction"]] = relationship(back_populates="user")
+    post_reactions: Mapped[list["PostReaction"]] = relationship(back_populates="user")
     notifications: Mapped[list["Notification"]] = relationship(
         back_populates="user", foreign_keys="Notification.user_id"
     )

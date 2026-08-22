@@ -5,6 +5,8 @@ import { RichContentView } from '../../../components/ui/RichContentView';
 import { FORUM_COLORS } from '../constants/colors';
 import type { Comment } from '../types/forum.types';
 import { EditComment } from './EditComment';
+import { ReactionPicker } from './ReactionPicker';
+import { DEFAULT_REACTION_EMOJI, REACTION_META_BY_EMOJI, myReactionEmoji, topReactionEmojis, totalReactionCount } from '../constants/reactions';
 import { useAuth } from '../../../hooks/useAuth';
 
 interface CommentItemProps {
@@ -12,7 +14,8 @@ interface CommentItemProps {
   onReply: (parentId: string, content: string) => void;
   onEdit?: (commentId: string, newContent: string) => void;
   onDelete?: (commentId: string) => void;
-  onLike: (commentId: string, isLiked: boolean) => void;
+  onReact: (commentId: string, emoji: string) => void;
+  onRemoveReaction: (commentId: string) => void;
   isReply?: boolean;
   nestingLevel?: number; // 0 = Gốc (Root), 1 = Reply trong luồng
   isLastChild?: boolean; // Đánh dấu comment con cuối cùng trong nhánh
@@ -23,7 +26,8 @@ export const CommentItem: React.FC<CommentItemProps> = ({
   onReply,
   onEdit,
   onDelete,
-  onLike,
+  onReact,
+  onRemoveReaction,
   isReply = false,
   nestingLevel = 0,
   isLastChild = false,
@@ -35,10 +39,15 @@ export const CommentItem: React.FC<CommentItemProps> = ({
   const [showReplyBox, setShowReplyBox] = useState(false);
   const [showReplies, setShowReplies] = useState(false);
   const [replyText, setReplyText] = useState('');
-  const [likeHovered, setLikeHovered] = useState(false);
+  const [reactionPickerOpen, setReactionPickerOpen] = useState(false);
   const [replyHovered, setReplyHovered] = useState(false);
   const [isBubbleHovered, setIsBubbleHovered] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  const myEmoji = myReactionEmoji(comment.reactions);
+  const activeMeta = myEmoji ? REACTION_META_BY_EMOJI[myEmoji] : null;
+  const totalReactions = totalReactionCount(comment.reactions);
+  const topEmojis = topReactionEmojis(comment.reactions, 3);
 
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -51,6 +60,27 @@ export const CommentItem: React.FC<CommentItemProps> = ({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const handleLikeClick = () => {
+    requireAuth(() => {
+      if (myEmoji) {
+        onRemoveReaction(comment.id);
+      } else {
+        onReact(comment.id, DEFAULT_REACTION_EMOJI);
+      }
+    });
+  };
+
+  const handlePickReaction = (emoji: string) => {
+    setReactionPickerOpen(false);
+    requireAuth(() => {
+      if (myEmoji === emoji) {
+        onRemoveReaction(comment.id);
+      } else {
+        onReact(comment.id, emoji);
+      }
+    });
+  };
 
   const handleOpenReplyBox = () => {
     requireAuth(() => {
@@ -315,33 +345,39 @@ export const CommentItem: React.FC<CommentItemProps> = ({
               {comment.isEdited && <span style={{ marginLeft: 4 }}>• Đã chỉnh sửa</span>}
             </span>
 
-            {/* Nút Thích */}
-            <button
-              onMouseEnter={() => setLikeHovered(true)}
-              onMouseLeave={() => setLikeHovered(false)}
-              onClick={() => onLike(comment.id, comment.isLiked)}
-              style={{
-                background: 'none',
-                border: 'none',
-                padding: 0,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4,
-                fontSize: 12,
-                fontWeight: '600',
-                color: comment.isLiked
-                  ? FORUM_COLORS.primary
-                  : likeHovered
-                  ? FORUM_COLORS.textPrimary
-                  : FORUM_COLORS.textMuted,
-                transition: 'color 0.15s ease',
-              }}
+            {/* Nút Bày tỏ cảm xúc -- hover để mở bảng chọn emoji, click nhanh = 👍 */}
+            <div
+              style={{ position: 'relative' }}
+              onMouseEnter={() => setReactionPickerOpen(true)}
+              onMouseLeave={() => setReactionPickerOpen(false)}
             >
-              <ThumbsUp size={12} fill={comment.isLiked ? FORUM_COLORS.primary : 'none'} />
-              <span>Thích</span>
-              {comment.likesCount > 0 && <span style={{ fontWeight: '500' }}>({comment.likesCount})</span>}
-            </button>
+              {reactionPickerOpen && <ReactionPicker onSelect={handlePickReaction} align="left" emojiSize={16} />}
+              <button
+                type="button"
+                onClick={handleLikeClick}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontSize: 12,
+                  fontWeight: '600',
+                  color: activeMeta ? activeMeta.color : FORUM_COLORS.textMuted,
+                  transition: 'color 0.15s ease',
+                }}
+              >
+                {myEmoji ? <span style={{ fontSize: 14 }}>{myEmoji}</span> : <ThumbsUp size={12} />}
+                <span>{activeMeta ? activeMeta.label : 'Thích'}</span>
+                {totalReactions > 0 && (
+                  <span style={{ fontWeight: '500', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                    ({topEmojis.join('')} {totalReactions})
+                  </span>
+                )}
+              </button>
+            </div>
 
             {/* Nút Trả lời */}
             <button
@@ -454,7 +490,8 @@ export const CommentItem: React.FC<CommentItemProps> = ({
                 onReply={onReply}
                 onEdit={onEdit}
                 onDelete={onDelete}
-                onLike={onLike}
+                onReact={onReact}
+                onRemoveReaction={onRemoveReaction}
                 isReply
                 nestingLevel={1}
                 isLastChild={index === comment.replies.length - 1}

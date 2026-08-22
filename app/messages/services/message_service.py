@@ -133,8 +133,9 @@ class MessagesService:
 
     async def _attach_reactions(self, session: AsyncSession, messages: list[Message], viewer_id: uuid.UUID) -> None:
         """Batched grouped-reaction lookup for a page of messages (avoids N+1). Sets
-        `.reactions` as a transient attribute on each Message -- same pattern ForumService
-        uses for ForumPost.likes_count/is_liked (see forum_service.py's list queries)."""
+        `.reactions` as a transient attribute on each Message -- same pattern
+        ForumService._attach_post_reactions/_attach_comment_reactions use for Forum posts and
+        comments (see forum_service.py)."""
         if not messages:
             return
         message_ids = [m.id for m in messages]

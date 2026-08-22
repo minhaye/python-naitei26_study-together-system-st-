@@ -12,6 +12,7 @@ import { useState } from 'react';
 import type { Post, ForumPostCreate, ForumPostUpdate } from '../types/forum.types';
 import { forumApi } from '../lib/forum.api';
 import { useAuth } from '../../../hooks/useAuth';
+import { applyReactionOptimistic } from '../constants/reactions';
 
 
 export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Post[]>>) {
@@ -36,9 +37,8 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
         imagePath: payload.image_path ?? null,
         createdAt: new Date().toISOString(),
         timeAgo: 'Vừa xong',
-        likesCount: 0,
+        reactions: [],
         commentsCount: 0,
-        isLiked: false,
         tags: [],
         status: 'sending',
       };
@@ -158,47 +158,53 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
     setPosts((prev) => prev.filter((p) => p.id !== postId));
   };
 
-  const handleToggleLike = (postId: string) => {
+  const handleReact = (postId: string, emoji: string) => {
     requireAuth(async () => {
-      let isCurrentlyLiked = false;
+      let previousReactions = null as Post['reactions'] | null;
 
       // 1. Cập nhật UI ngay lập tức (Optimistic UI - 0ms)
-      setPosts((prev) => {
-        const target = prev.find((p) => p.id === postId);
-        if (!target) return prev;
-        isCurrentlyLiked = target.isLiked;
-        const nextLiked = !isCurrentlyLiked;
-        const nextCount = nextLiked ? target.likesCount + 1 : Math.max(0, target.likesCount - 1);
+      setPosts((prev) =>
+        prev.map((p) => {
+          if (p.id !== postId) return p;
+          previousReactions = p.reactions;
+          return { ...p, reactions: applyReactionOptimistic(p.reactions, emoji) };
+        })
+      );
 
-        return prev.map((p) =>
-          p.id === postId
-            ? { ...p, isLiked: nextLiked, likesCount: nextCount }
-            : p
-        );
-      });
-
-      // 2. Gửi API song song lên backend ở background
+      // 2. Gửi API lên backend ở background
       try {
-        if (isCurrentlyLiked) {
-          await forumApi.unlikePost(postId, currentUser.id);
-        } else {
-          await forumApi.likePost(postId, currentUser.id);
-        }
+        await forumApi.setPostReaction(postId, emoji, currentUser.id);
         window.dispatchEvent(new CustomEvent('post_liked_toggled'));
       } catch (error) {
-        console.error('Failed to toggle like', error);
+        console.error('Failed to set reaction', error);
         // 3. Rollback UI nếu API gặp sự cố
-        setPosts((prev) =>
-          prev.map((p) =>
-            p.id === postId
-              ? {
-                  ...p,
-                  isLiked: isCurrentlyLiked,
-                  likesCount: isCurrentlyLiked ? p.likesCount + 1 : Math.max(0, p.likesCount - 1),
-                }
-              : p
-          )
-        );
+        if (previousReactions) {
+          setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, reactions: previousReactions! } : p)));
+        }
+      }
+    });
+  };
+
+  const handleRemoveReaction = (postId: string) => {
+    requireAuth(async () => {
+      let previousReactions = null as Post['reactions'] | null;
+
+      setPosts((prev) =>
+        prev.map((p) => {
+          if (p.id !== postId) return p;
+          previousReactions = p.reactions;
+          return { ...p, reactions: applyReactionOptimistic(p.reactions, null) };
+        })
+      );
+
+      try {
+        await forumApi.removePostReaction(postId, currentUser.id);
+        window.dispatchEvent(new CustomEvent('post_liked_toggled'));
+      } catch (error) {
+        console.error('Failed to remove reaction', error);
+        if (previousReactions) {
+          setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, reactions: previousReactions! } : p)));
+        }
       }
     });
   };
@@ -211,6 +217,7 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
     handleDeletePost,
     handleRetryPost,
     handleDiscardPost,
-    handleToggleLike,
+    handleReact,
+    handleRemoveReaction,
   };
 }

@@ -11,6 +11,7 @@ import { LikedPostSkeleton, TrendingTopicSkeleton } from '../../../components/ui
 import { Avatar } from '../../../components/ui/Avatar';
 import { forumApi } from '../lib/forum.api';
 import type { Post, TagResponse } from '../types/forum.types';
+import { totalReactionCount } from '../constants/reactions';
 import { LikedPostsModal } from './LikedPostsModal';
 import { useForumState } from '../context/ForumStateContext';
 
@@ -253,7 +254,7 @@ export const ForumRightSidebar: React.FC = () => {
                       {post.title}
                     </Link>
                     <div style={{ display: 'flex', gap: 12, fontSize: 11, color: '#64748B', paddingTop: 2 }}>
-                      <span>{post.likesCount} thích</span>
+                      <span>{totalReactionCount(post.reactions)} cảm xúc</span>
                       <span>{post.commentsCount} bình luận</span>
                     </div>
                   </div>
