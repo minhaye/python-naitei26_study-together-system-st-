@@ -15,6 +15,8 @@ interface PreJoinLobbyProps {
   userInitial: string;
   userColor: string;
   userAvatarUrl?: string;
+  isJoining?: boolean;
+  joinError?: string;
   onJoin: (choice: MediaJoinChoice) => void;
   onBack: () => void;
 }
@@ -56,6 +58,8 @@ export function PreJoinLobby({
   userInitial,
   userColor,
   userAvatarUrl,
+  isJoining = false,
+  joinError,
   onJoin,
   onBack,
 }: PreJoinLobbyProps) {
@@ -233,6 +237,12 @@ export function PreJoinLobby({
             </div>
           )}
 
+          {joinError && (
+            <div style={{background: '#450A0A', border: '1px solid #7F1D1D', borderRadius: 8, padding: '10px 12px', color: '#FCA5A5', fontSize: 12.5}}>
+              {joinError}
+            </div>
+          )}
+
           <div style={{display: 'flex', flexDirection: 'column', gap: 12}}>
             <div>
               <label style={{color: '#94A3B8', fontSize: 12, fontWeight: '600', marginBottom: 6, display: 'block'}}>Micro</label>
@@ -268,15 +278,17 @@ export function PreJoinLobby({
           <div style={{display: 'flex', gap: 12, marginTop: 8}}>
             <button
               onClick={onBack}
-              style={{flex: '0 0 auto', background: '#334155', border: 'none', color: 'white', padding: '12px 18px', borderRadius: 10, cursor: 'pointer', fontSize: 14, fontWeight: '500'}}
+              disabled={isJoining}
+              style={{flex: '0 0 auto', background: '#334155', border: 'none', color: 'white', padding: '12px 18px', borderRadius: 10, cursor: isJoining ? 'default' : 'pointer', fontSize: 14, fontWeight: '500', opacity: isJoining ? 0.7 : 1}}
             >
               Quay lại
             </button>
             <button
               onClick={handleJoin}
-              style={{flex: 1, background: '#2563EB', border: 'none', color: 'white', padding: '12px 18px', borderRadius: 10, cursor: 'pointer', fontSize: 14, fontWeight: '600'}}
+              disabled={isJoining}
+              style={{flex: 1, background: '#2563EB', border: 'none', color: 'white', padding: '12px 18px', borderRadius: 10, cursor: isJoining ? 'default' : 'pointer', fontSize: 14, fontWeight: '600', opacity: isJoining ? 0.7 : 1}}
             >
-              Tham gia phòng học
+              {isJoining ? 'Đang tham gia...' : 'Tham gia phòng học'}
             </button>
           </div>
         </div>
