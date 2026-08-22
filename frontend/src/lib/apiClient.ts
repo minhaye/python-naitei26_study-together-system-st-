@@ -14,6 +14,27 @@ export function setAccessTokenProvider(provider: AccessTokenProvider): void {
   getAccessToken = provider;
 }
 
+/**
+ * Render free tier "spin down" khiến request đầu tiên sau một thời gian rảnh có thể mất
+ * hàng chục giây để backend khởi động lại. Theo dõi các request đang treo lâu hơn ngưỡng
+ * này để UI có thể hiện thông báo "đang khởi động server" thay vì trông như bị treo.
+ */
+const COLD_START_THRESHOLD_MS = 2500;
+
+type ColdStartListener = (isSlow: boolean) => void;
+
+const coldStartListeners = new Set<ColdStartListener>();
+let slowRequestCount = 0;
+
+function notifyColdStart(isSlow: boolean): void {
+  coldStartListeners.forEach((listener) => listener(isSlow));
+}
+
+export function subscribeColdStart(listener: ColdStartListener): () => void {
+  coldStartListeners.add(listener);
+  return () => coldStartListeners.delete(listener);
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly data: unknown;
@@ -46,26 +67,41 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     requestHeaders['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method,
-    headers: requestHeaders,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-    signal,
-  });
+  let firedColdStart = false;
+  const coldStartTimer = setTimeout(() => {
+    firedColdStart = true;
+    slowRequestCount += 1;
+    if (slowRequestCount === 1) notifyColdStart(true);
+  }, COLD_START_THRESHOLD_MS);
 
-  const contentType = response.headers.get('content-type') ?? '';
-  const isJson = contentType.includes('application/json');
-  const data = isJson ? await response.json().catch(() => null) : await response.text();
+  try {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      method,
+      headers: requestHeaders,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal,
+    });
 
-  if (!response.ok) {
-    const message =
-      isJson && data && typeof data === 'object' && 'detail' in data
-        ? String((data as { detail: unknown }).detail)
-        : response.statusText;
-    throw new ApiError(response.status, message, data);
+    const contentType = response.headers.get('content-type') ?? '';
+    const isJson = contentType.includes('application/json');
+    const data = isJson ? await response.json().catch(() => null) : await response.text();
+
+    if (!response.ok) {
+      const message =
+        isJson && data && typeof data === 'object' && 'detail' in data
+          ? String((data as { detail: unknown }).detail)
+          : response.statusText;
+      throw new ApiError(response.status, message, data);
+    }
+
+    return data as T;
+  } finally {
+    clearTimeout(coldStartTimer);
+    if (firedColdStart) {
+      slowRequestCount -= 1;
+      if (slowRequestCount === 0) notifyColdStart(false);
+    }
   }
-
-  return data as T;
 }
 
 export const apiClient = {
