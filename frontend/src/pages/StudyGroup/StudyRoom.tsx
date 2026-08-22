@@ -130,17 +130,6 @@ export function StudyRoom() {
     navigate(room ? `/groups/${room.group_id}` : '/groups');
   };
 
-  const handleJoinRoom = async () => {
-    setIsJoining(true);
-    try {
-      await join();
-    } catch {
-      // actionError is already populated by the hook.
-    } finally {
-      setIsJoining(false);
-    }
-  };
-
   const handleStartRoom = async () => {
     setIsLifecycleBusy(true);
     try {
@@ -360,7 +349,11 @@ export function StudyRoom() {
     );
   }
 
-  if (!isCurrentUserMember) {
+  const statusColor = room.status === 'active' ? '#10B981' : room.status === 'waiting' ? '#F59E0B' : '#64748B';
+  const statusLabel = room.status === 'active' ? 'Đang diễn ra' : room.status === 'waiting' ? 'Chưa bắt đầu' : 'Đã kết thúc';
+  const isRoomEnded = room.status === 'ended';
+
+  if (!isCurrentUserMember && isRoomEnded) {
     return (
       <CenteredRoomMessage
         title={room.name}
@@ -368,34 +361,16 @@ export function StudyRoom() {
         onBack={() => navigate(`/groups/${room.group_id}`)}
       >
         <div style={{color: '#94A3B8', fontSize: 13, marginBottom: 16}}>
-          {room.status === 'ended'
-            ? 'Phòng học này đã kết thúc.'
-            : membersError?.status === 403
-              ? 'Bạn cần tham gia để xem và tương tác trong phòng học này.'
-              : membersError?.message}
+          {membersError?.status === 403 ? 'Phòng học này đã kết thúc.' : membersError?.message}
         </div>
-        {room.status !== 'ended' && (
-          <button
-            onClick={handleJoinRoom}
-            disabled={isJoining}
-            style={{padding: '12px 24px', background: '#2563EB', color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: '600', cursor: isJoining ? 'default' : 'pointer', opacity: isJoining ? 0.7 : 1}}
-          >
-            {isJoining ? 'Đang tham gia...' : 'Tham gia phòng'}
-          </button>
-        )}
-        {actionError && (
-          <div style={{color: '#F87171', fontSize: 13, marginTop: 12}}>{actionError.message}</div>
-        )}
       </CenteredRoomMessage>
     );
   }
 
-  const statusColor = room.status === 'active' ? '#10B981' : room.status === 'waiting' ? '#F59E0B' : '#64748B';
-  const statusLabel = room.status === 'active' ? 'Đang diễn ra' : room.status === 'waiting' ? 'Chưa bắt đầu' : 'Đã kết thúc';
-  const isRoomEnded = room.status === 'ended';
-
   // Pre-join lobby: lets the user preview/toggle camera & mic (and pick a device) before the
   // LiveKit connection is made, instead of connecting with audio/video hardcoded on immediately.
+  // Also doubles as the room-membership join step for first-time visitors -- "Tham gia phòng học"
+  // both joins the room and confirms the media setup in one action, instead of a separate screen.
   if (!lobbyConfirmed && !isRoomEnded) {
     return (
       <PreJoinLobby
@@ -405,9 +380,23 @@ export function StudyRoom() {
         userInitial={currentUser.initials}
         userColor={currentUser.color}
         userAvatarUrl={currentUser.avatarUrl ?? undefined}
-        onJoin={(choice) => {
+        isJoining={isJoining}
+        joinError={actionError?.message}
+        onJoin={async (choice) => {
           setMediaChoice(choice);
-          setLobbyConfirmed(true);
+          if (isCurrentUserMember) {
+            setLobbyConfirmed(true);
+            return;
+          }
+          setIsJoining(true);
+          try {
+            await join();
+            setLobbyConfirmed(true);
+          } catch {
+            // actionError is already populated by the hook.
+          } finally {
+            setIsJoining(false);
+          }
         }}
         onBack={() => navigate(`/groups/${room.group_id}`)}
       />
