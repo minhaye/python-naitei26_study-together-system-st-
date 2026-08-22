@@ -7,6 +7,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Post } from '../types/forum.types';
 import { forumApi } from '../lib/forum.api';
+import { forumCache } from '../lib/forumCache';
 import type { FilterOption } from '../components/ForumFilterBar';
 import { useForumState } from '../context/ForumStateContext';
 
@@ -87,21 +88,43 @@ export function useForumPosts(
 
     isInitialMountRef.current = false;
 
-    setPosts([]);
     setHasMore(true);
     setSkip(0);
 
+    const isLandingPage = !categoryId && !search && filter === 'latest' && !selectedTag;
+
     (async () => {
+      // 1. STALE: Load dữ liệu cũ ngay lập tức nếu có cache (chỉ áp dụng cho trang chủ không filter)
+      if (isLandingPage) {
+        const cached = forumCache.get();
+        if (cached && cached.length > 0) {
+          setPosts(cached);
+          setSkip(cached.length);
+        } else {
+          setPosts([]);
+        }
+      } else {
+        setPosts([]);
+      }
+
       setIsLoading(true);
+
+      // 2. REVALIDATE: Fetch ngầm dữ liệu mới
       try {
         const firstPage = await forumApi.getPosts(categoryId, 0, PAGE_SIZE, selectedTag, currentUserId);
         const processed = applyFilterAndSearch(firstPage, filter, search, currentUserId);
+        
         setPosts(processed);
         setSkip(PAGE_SIZE);
         if (firstPage.length < PAGE_SIZE) setHasMore(false);
+
+        // Lưu cache lại nếu là trang chủ
+        if (isLandingPage) {
+          forumCache.set(processed);
+        }
       } catch (err) {
         console.error('Lỗi khi tải bài viết diễn đàn ban đầu:', err);
-        setPosts([]);
+        setPosts(prev => prev.length === 0 ? [] : prev); // Giữ nguyên cache nếu có lỗi
         setHasMore(false);
       } finally {
         setIsLoading(false);

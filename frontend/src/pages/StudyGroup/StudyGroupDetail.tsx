@@ -40,6 +40,7 @@ import { MessageUserTrigger } from '../../components/messages/MessageUserTrigger
 import { createChannel, deleteChannel, getChannel, listChannelsByGroup } from '../../lib/channel.api';
 import { createStudyRoom, deleteStudyRoom, getStudyRoom, listStudyRoomsByGroup } from '../../lib/studyRoom.api';
 import { listConversationMessages, sendConversationMessage } from '../../lib/message.api';
+import { chatCache } from '../../lib/chatCache';
 import type { Group, GroupMember } from '../../lib/group.types';
 import type { Channel } from '../../lib/channel.types';
 import type { StudyRoom } from '../../lib/studyRoom.types';
@@ -494,20 +495,36 @@ export function StudyGroupDetail() {
   useEffect(() => {
     const conversationId = activeChannelObj?.conversation_id ?? null;
     const channelId = activeChannel;
-    setMessages([]);
+    
     setMessagesError(null);
     setSendMessageError(null);
+    
     if (!channelId || !conversationId) {
+      setMessages([]);
       setIsMessagesLoading(false);
       return;
     }
+
     let cancelled = false;
-    setIsMessagesLoading(true);
+
+    // 1. SWR - Thử lấy từ cache trước
+    const cached = chatCache.get(conversationId);
+    if (cached && cached.length > 0) {
+      setMessages(cached);
+      // Nếu có cache, không hiện loading (để tạo cảm giác 0ms)
+    } else {
+      setMessages([]);
+      setIsMessagesLoading(true);
+    }
+
+    // 2. Fetch ngầm dữ liệu mới
     listConversationMessages(conversationId)
       .then((res) => {
         if (cancelled || activeChannelRef.current !== channelId) return;
         // Backend returns newest-first; reverse for standard oldest-to-newest chat display.
-        setMessages([...res.items].reverse());
+        const newMessages = [...res.items].reverse();
+        setMessages(newMessages);
+        chatCache.set(conversationId, newMessages);
       })
       .catch((err) => {
         if (cancelled || activeChannelRef.current !== channelId) return;
