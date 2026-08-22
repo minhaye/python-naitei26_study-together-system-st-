@@ -86,7 +86,7 @@ function replaceTempIdInTree(
 }
 
 export function useComments(postId: string, onCommentAdded?: () => void) {
-  const { requireAuth, currentUser } = useAuth();
+  const { requireAuth, currentUser, isLoggedIn } = useAuth();
   const [comments, setComments] = useState<Comment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -100,10 +100,12 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
   const loadComments = useCallback(async () => {
     if (!postId) return;
     setIsLoading(true);
-    const data = await forumApi.getComments(postId, currentUser?.id);
+    // Chỉ truyền userId thực khi đã đăng nhập, không gửi 'user-current' (không phải UUID) lên backend
+    const userId = isLoggedIn ? currentUser?.id : undefined;
+    const data = await forumApi.getComments(postId, userId);
     setComments(data);
     setIsLoading(false);
-  }, [postId, currentUser?.id]);
+  }, [postId, isLoggedIn, currentUser?.id]);
 
   useEffect(() => {
     loadComments();

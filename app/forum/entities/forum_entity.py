@@ -8,9 +8,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
+from app.profiles.entities.profile_entity import Profile
+
 if TYPE_CHECKING:
     from app.notifications.entities.notification_entity import Notification
-    from app.profiles.entities.profile_entity import Profile
 
 
 class ForumCategory(Base):

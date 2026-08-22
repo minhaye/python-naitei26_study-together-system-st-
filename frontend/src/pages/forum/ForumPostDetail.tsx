@@ -12,7 +12,7 @@ import { useForumState } from './context/ForumStateContext';
 export const ForumPostDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { currentUser, requireAuth } = useAuth();
+  const { isLoggedIn, currentUser, requireAuth } = useAuth();
   const { updatePostInState, deletePostInState } = useForumState();
 
   const [post, setPost] = useState<Post | null>(null);
@@ -21,15 +21,16 @@ export const ForumPostDetail: React.FC = () => {
   useEffect(() => {
     if (!id) return;
     setIsLoading(true);
-    // Lấy bài viết theo ID từ API
+    // Chỉ truyền userId thực (UUID hợp lệ) khi đã đăng nhập, không gửi 'user-current' lên backend
+    const userId = isLoggedIn ? currentUser?.id : undefined;
     forumApi
-      .getPosts(null, 0, 9999, null, currentUser?.id)
+      .getPosts(null, 0, 9999, null, userId)
       .then((all) => {
         const found = all.find((p) => p.id === id);
         if (found) setPost(found);
       })
       .finally(() => setIsLoading(false));
-  }, [id, currentUser?.id]);
+  }, [id, isLoggedIn, currentUser?.id]);
 
   const handleToggleLike = (postId: string) => {
     requireAuth(async () => {

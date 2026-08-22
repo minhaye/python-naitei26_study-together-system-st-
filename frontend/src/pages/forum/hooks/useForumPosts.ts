@@ -60,14 +60,21 @@ export function useForumPosts(
     if (isLoading || !hasMore) return;
     setIsLoading(true);
 
-    const newPosts = await forumApi.getPosts(categoryId, skip, PAGE_SIZE, selectedTag, currentUserId);
-    const processed = applyFilterAndSearch(newPosts, filter, search, currentUserId);
+    try {
+      const newPosts = await forumApi.getPosts(categoryId, skip, PAGE_SIZE, selectedTag, currentUserId);
+      const processed = applyFilterAndSearch(newPosts, filter, search, currentUserId);
 
-    setPosts((prev) => [...prev, ...processed]);
-    setSkip(skip + PAGE_SIZE);
+      setPosts((prev) => [...prev, ...processed]);
+      setSkip(skip + PAGE_SIZE);
 
-    if (newPosts.length < PAGE_SIZE) setHasMore(false);
-    setIsLoading(false);
+      if (newPosts.length < PAGE_SIZE) setHasMore(false);
+    } catch (err) {
+      console.error('Lỗi khi tải thêm bài viết diễn đàn:', err);
+      // Giả sử hết trang khi có lỗi để ngưng vòng lặp infinite scroll
+      setHasMore(false);
+    } finally {
+      setIsLoading(false);
+    }
   }, [isLoading, hasMore, categoryId, search, filter, currentUserId, skip, selectedTag, setPosts, setSkip, setHasMore]);
 
   /** Reset và tải lại từ đầu khi đổi danh mục, bộ lọc, từ khóa hoặc hashtag */
@@ -86,12 +93,19 @@ export function useForumPosts(
 
     (async () => {
       setIsLoading(true);
-      const firstPage = await forumApi.getPosts(categoryId, 0, PAGE_SIZE, selectedTag, currentUserId);
-      const processed = applyFilterAndSearch(firstPage, filter, search, currentUserId);
-      setPosts(processed);
-      setSkip(PAGE_SIZE);
-      if (firstPage.length < PAGE_SIZE) setHasMore(false);
-      setIsLoading(false);
+      try {
+        const firstPage = await forumApi.getPosts(categoryId, 0, PAGE_SIZE, selectedTag, currentUserId);
+        const processed = applyFilterAndSearch(firstPage, filter, search, currentUserId);
+        setPosts(processed);
+        setSkip(PAGE_SIZE);
+        if (firstPage.length < PAGE_SIZE) setHasMore(false);
+      } catch (err) {
+        console.error('Lỗi khi tải bài viết diễn đàn ban đầu:', err);
+        setPosts([]);
+        setHasMore(false);
+      } finally {
+        setIsLoading(false);
+      }
     })();
   }, [categoryId, search, filter, currentUserId, selectedTag]);
 

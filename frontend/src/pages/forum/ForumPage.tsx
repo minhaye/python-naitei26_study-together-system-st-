@@ -42,11 +42,12 @@ export const ForumPage: React.FC = () => {
   const [categories, setCategories] = useState<ForumCategoryResponse[]>([]);
 
   // Hooks với bộ lọc selectedFilter từ Context
+  // Chỉ truyền userId khi đã đăng nhập để tránh gửi 'user-current' (không phải UUID hợp lệ) lên backend → 422 error
   const { posts, setPosts, isLoading, hasMore, fetchNextPage } = useForumPosts(
     selectedCategoryId,
     search,
     selectedFilter,
-    currentUser.id
+    isLoggedIn ? currentUser.id : undefined
   );
   const { showCreateModal, setShowCreateModal, handleCreatePost, handleUpdatePost, handleDeletePost, handleRetryPost, handleDiscardPost, handleToggleLike } = usePostActions(setPosts);
 
@@ -57,6 +58,9 @@ export const ForumPage: React.FC = () => {
   useEffect(() => {
     forumApi.getCategories().then((cats) => {
       setCategories(cats);
+    }).catch((err) => {
+      console.error('Lỗi khi tải danh mục diễn đàn:', err);
+      setCategories([]);
     });
   }, []);
 
