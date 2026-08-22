@@ -5,6 +5,7 @@ import './index.css'
 import { AppRoutes } from './routes'
 import { AuthProvider } from './contexts/AuthContext'
 import { UnreadMessagesProvider } from './contexts/UnreadMessagesProvider'
+import { NotificationProvider } from './contexts/notification-context'
 import { ColdStartOverlay } from './components/common/ColdStartOverlay'
 import { useKeepAlive } from './hooks/useKeepAlive'
 
@@ -24,7 +25,9 @@ createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <AuthProvider>
         <UnreadMessagesProvider>
-          <AppShell />
+          <NotificationProvider>
+            <AppShell />
+          </NotificationProvider>
         </UnreadMessagesProvider>
       </AuthProvider>
     </BrowserRouter>
