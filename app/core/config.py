@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = True
     email_from_address: str | None = None
 
+    # AI roadmap suggestions (optional -- the /roadmaps/suggest endpoint returns 503 when
+    # unconfigured). ai_provider picks which service RoadmapAiService calls; only that
+    # provider's key needs to be set. See app/roadmaps/services/roadmap_ai_service.py.
+    ai_provider: str = "anthropic"  # "anthropic" or "gemini"
+    anthropic_api_key: str | None = None
+    gemini_api_key: str | None = None
+
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]

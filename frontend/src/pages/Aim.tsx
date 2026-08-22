@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent, KeyboardEvent } from 'react';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, Sparkles, Trash2, X } from 'lucide-react';
 import { TaskManagementSection } from './TaskManagementSection';
 import { Modal } from '../components/ui/Modal';
 import {
@@ -9,6 +9,7 @@ import {
   deleteRoadmap,
   deleteRoadmapPhase,
   listRoadmaps,
+  suggestRoadmap,
   updateRoadmap,
   updateRoadmapPhase,
   type Roadmap,
@@ -195,6 +196,9 @@ export function AimPage() {
   const [cDue, setCDue] = useState('');
   const [cPhases, setCPhases] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [aiDescription, setAiDescription] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   // Edit form
   const [editing, setEditing] = useState<Roadmap | null>(null);
@@ -220,7 +224,20 @@ export function AimPage() {
     })();
   }, []);
 
-  const resetCreate = () => { setCTitle(''); setCGoal(''); setCDue(''); setCPhases([]); };
+  const resetCreate = () => { setCTitle(''); setCGoal(''); setCDue(''); setCPhases([]); setAiDescription(''); setAiError(null); };
+
+  const askAi = async () => {
+    const description = aiDescription.trim();
+    if (!description) return;
+    setAiLoading(true); setAiError(null);
+    try {
+      const suggestion = await suggestRoadmap(description);
+      setCTitle(suggestion.title);
+      setCGoal(suggestion.goal);
+      setCPhases(suggestion.phases.map(p => p.name));
+    } catch (c) { setAiError(friendlyError(c)); }
+    finally { setAiLoading(false); }
+  };
 
   const create = async (e: FormEvent) => {
     e.preventDefault();
@@ -475,6 +492,31 @@ export function AimPage() {
       {/* Modal: Tạo lộ trình mới */}
       <Modal isOpen={adding} onClose={() => !saving && setAdding(false)} title="Tạo lộ trình mới">
         <form onSubmit={create} style={{ display: 'grid', gap: 14 }}>
+          <div style={{ display: 'grid', gap: 8, background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 10, padding: 14 }}>
+            <label style={{ ...fieldLabel, color: '#5B21B6' }}>
+              <Sparkles size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
+              Gợi ý bằng AI
+            </label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                value={aiDescription}
+                onChange={e => setAiDescription(e.target.value)}
+                placeholder="Mô tả mục tiêu, VD: Học lập trình web để đi thực tập trong 3 tháng"
+                maxLength={500}
+                style={{ ...input, flex: 1 }}
+                disabled={aiLoading}
+              />
+              <button
+                type="button"
+                onClick={() => void askAi()}
+                disabled={aiLoading || !aiDescription.trim()}
+                style={{ ...secondaryButton, background: '#7C3AED', color: 'white', border: 0, whiteSpace: 'nowrap' }}
+              >
+                {aiLoading ? 'Đang tạo...' : 'Gợi ý'}
+              </button>
+            </div>
+            {aiError && <p role="alert" style={{ margin: 0, color: '#B91C1C', fontSize: 13 }}>{aiError}</p>}
+          </div>
           <label style={fieldLabel}>
             Tên lộ trình
             <input autoFocus required value={cTitle} maxLength={200} onChange={e => setCTitle(e.target.value)} style={input} />
