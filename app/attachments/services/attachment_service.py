@@ -113,6 +113,29 @@ class AttachmentsService:
         signed_url = response.json()["signedURL"]
         return {"url": f"{self._storage_url}{signed_url}", "expires_in": expires_in}
 
+    async def create_signed_download_urls(self, paths: list[str], expires_in: int) -> dict[str, str]:
+        if not paths:
+            return {}
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                # https://supabase.com/docs/reference/javascript/storage-from-createsignedurls
+                # REST API: POST /object/sign/{bucket} with body { paths: [...], expiresIn: int }
+                response = await client.post(
+                    f"{self._storage_url}/object/sign/{self._bucket}",
+                    headers=self._headers(),
+                    json={"paths": paths, "expiresIn": expires_in},
+                )
+                response.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise AttachmentStorageError(f"Could not create signed download URLs: {exc}") from exc
+
+        items = response.json()
+        result = {}
+        for item in items:
+            if "error" not in item and "signedURL" in item:
+                result[item["path"]] = f"{self._storage_url}{item['signedURL']}"
+        return result
+
     async def object_exists(self, path: str) -> bool:
         directory, _, file_name = path.rpartition("/")
         async with httpx.AsyncClient(timeout=10.0) as client:

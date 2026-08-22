@@ -281,7 +281,7 @@ export function DirectMessagesPage() {
                           }}
                         >
                           {msg.content && <div style={{ marginBottom: msg.attachment_path ? 6 : 0 }}>{msg.content}</div>}
-                          {msg.attachment_path && <MessageAttachmentImage messageId={msg.id} />}
+                          {msg.attachment_path && <MessageAttachmentImage messageId={msg.id} initialUrl={msg.attachment_url} />}
                         </div>
                         <MessageReactions
                           reactions={msg.reactions}

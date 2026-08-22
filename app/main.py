@@ -25,14 +25,21 @@ from app.roadmaps.routers.roadmap_router import router as roadmaps_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Warm up the DB connection pool on startup so the first real request
-    doesn't pay the cold-connection cost (~200-400ms) on top of everything else."""
-    try:
-        async with engine.connect() as conn:
-            await conn.exec_driver_sql("SELECT 1")
-    except Exception:
-        # Don't block startup if the DB is temporarily unreachable
-        pass
+    """Warm up the DB connection pool on startup so the first real requests
+    don't pay the cold-connection cost (~200-400ms per connection). We warm up
+    5 connections since many frontend pages do 4-5 parallel fetches (Promise.all)."""
+    import asyncio
+    
+    async def _ping_db():
+        try:
+            async with engine.connect() as conn:
+                await conn.exec_driver_sql("SELECT 1")
+        except Exception:
+            pass
+
+    # Launch 5 concurrent connections to warm up the pool
+    await asyncio.gather(*[_ping_db() for _ in range(5)])
+    
     yield
 
 

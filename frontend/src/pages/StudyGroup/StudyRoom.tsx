@@ -803,7 +803,7 @@ export function StudyRoom() {
                                 wordBreak: 'break-word'
                               }}>
                                 {m.content && <div style={{marginBottom: m.attachment_path ? 6 : 0}}>{m.content}</div>}
-                                {m.attachment_path && <MessageAttachmentImage messageId={m.id} />}
+                                {m.attachment_path && <MessageAttachmentImage messageId={m.id} initialUrl={m.attachment_url} />}
                               </div>
                               <MessageReactions
                                 reactions={m.reactions}

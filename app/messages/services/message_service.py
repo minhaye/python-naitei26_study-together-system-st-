@@ -11,8 +11,10 @@ from sqlalchemy.orm import selectinload
 from app.messages.entities.message_entity import Message, MessageReaction
 from app.messages.dto.message_dto import MessageCreate, MessageReactionSummary, MessageUpdate
 from app.profiles.services.profile_service import ProfilesService
+from app.attachments.services.attachment_service import AttachmentsService
 
 profiles_service = ProfilesService()
+attachments_service = AttachmentsService()
 
 
 def _encode_cursor(created_at: datetime, message_id: uuid.UUID) -> str:
@@ -50,6 +52,15 @@ class MessagesService:
         message.sender = await profiles_service.get_by_id(session, sender_id)
         # A brand-new message can't have reactions yet -- no query needed.
         message.reactions = []
+        
+        message.attachment_url = None
+        if message.attachment_path:
+            try:
+                url_dict = await attachments_service.create_signed_download_url(message.attachment_path, 3600)
+                message.attachment_url = url_dict.get("url")
+            except Exception:
+                pass
+                
         return message
 
     async def get_by_id(
@@ -64,6 +75,14 @@ class MessagesService:
             # Callers that don't need reactions (e.g. delete_message, which only reads
             # sender_id/conversation_id for authorization) skip the extra query.
             message.reactions = []
+            
+        message.attachment_url = None
+        if message.attachment_path:
+            try:
+                url_dict = await attachments_service.create_signed_download_url(message.attachment_path, 3600)
+                message.attachment_url = url_dict.get("url")
+            except Exception:
+                pass
         return message
 
     async def list_by_conversation(
@@ -85,6 +104,21 @@ class MessagesService:
             last = messages[-1]
             next_cursor = _encode_cursor(last.created_at, last.id)
         await self._attach_reactions(session, messages, viewer_id)
+        
+        attachment_paths = [m.attachment_path for m in messages if m.attachment_path]
+        if attachment_paths:
+            try:
+                urls = await attachments_service.create_signed_download_urls(attachment_paths, 3600)
+                for m in messages:
+                    if m.attachment_path:
+                        m.attachment_url = urls.get(m.attachment_path)
+            except Exception:
+                for m in messages:
+                    m.attachment_url = None
+        else:
+            for m in messages:
+                m.attachment_url = None
+                
         return messages, next_cursor
 
     async def update(self, session: AsyncSession, message: Message, data: MessageUpdate) -> Message:

@@ -3,6 +3,7 @@ import { getMessageAttachmentUrl } from '../../lib/attachment.api';
 
 interface MessageAttachmentImageProps {
   messageId: string;
+  initialUrl?: string | null;
 }
 
 /** Renders a persisted message's image attachment as a contained thumbnail, opening a
@@ -15,12 +16,17 @@ interface MessageAttachmentImageProps {
  * (attachment_path) is the persisted, durable part of a Message; the signed URL itself is
  * short-lived by design (settings.attachment_download_url_expires_in) and must never be
  * cached as if it were permanent. */
-export function MessageAttachmentImage({ messageId }: MessageAttachmentImageProps) {
-  const [url, setUrl] = useState<string | null>(null);
+export function MessageAttachmentImage({ messageId, initialUrl }: MessageAttachmentImageProps) {
+  const [url, setUrl] = useState<string | null>(initialUrl || null);
   const [failed, setFailed] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
+    if (initialUrl) {
+      setUrl(initialUrl);
+      return;
+    }
+    
     let cancelled = false;
     setUrl(null);
     setFailed(false);
@@ -34,7 +40,7 @@ export function MessageAttachmentImage({ messageId }: MessageAttachmentImageProp
     return () => {
       cancelled = true;
     };
-  }, [messageId]);
+  }, [messageId, initialUrl]);
 
   if (failed) {
     return <div style={{ fontSize: 12.5, color: '#94A3B8', fontStyle: 'italic' }}>Không thể tải ảnh.</div>;

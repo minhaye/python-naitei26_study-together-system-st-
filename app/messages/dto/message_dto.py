@@ -69,6 +69,7 @@ class MessageResponse(BaseModel):
     sender_id: uuid.UUID
     content: str | None
     attachment_path: str | None
+    attachment_url: str | None = None
     created_at: datetime
     updated_at: datetime
     # See GroupMemberResponse.user -- same canonical-identity convention. This is what fixes

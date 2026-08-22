@@ -1112,7 +1112,7 @@ export function StudyGroupDetail() {
                                                         {msg.content}
                                                     </div>
                                                 )}
-                                                {msg.attachment_path && <MessageAttachmentImage messageId={msg.id} />}
+                                                {msg.attachment_path && <MessageAttachmentImage messageId={msg.id} initialUrl={msg.attachment_url} />}
                                                 <MessageReactions
                                                     reactions={msg.reactions}
                                                     isSelf={isSelf}

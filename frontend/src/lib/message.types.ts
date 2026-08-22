@@ -18,6 +18,7 @@ export interface Message {
   sender_id: string;
   content: string | null;
   attachment_path: string | null;
+  attachment_url: string | null;
   created_at: string;
   updated_at: string;
   sender: UserSummary;

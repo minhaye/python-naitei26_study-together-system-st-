@@ -22,7 +22,7 @@ it never touches or logs a credential.
 
 from urllib.parse import urlsplit
 
-from sqlalchemy.pool import NullPool
+
 
 _POOLER_HOST_SUFFIX = "pooler.supabase.com"
 _TRANSACTION_POOLER_PORT = 6543
@@ -42,14 +42,21 @@ def build_engine_kwargs(database_url: str) -> dict:
     connection (direct, or Supavisor session pooler) -- SQLAlchemy's default pool and
     psycopg's default `prepare_threshold` are both correct there, so this function does not
     touch them. For a Supavisor transaction-pooler URL, returns:
-      - `poolclass=NullPool`: SQLAlchemy does not hold its own persistent DBAPI connections on
-        top of Supavisor's pooling -- every checkout opens (and every checkin closes) a real
-        connection to Supavisor, which is itself already a connection pool.
       - `connect_args={"prepare_threshold": None}`: disables psycopg3's automatic server-side
-        prepared statements. This is what actually prevents `DuplicatePreparedStatement` --
-        `NullPool` alone is not sufficient, since a single request can still execute the same
-        query more than once within one transaction/connection, crossing `prepare_threshold`
-        before that connection is even returned to the pool."""
+        prepared statements. This is what actually prevents `DuplicatePreparedStatement`.
+        We purposely DO NOT use `NullPool` here anymore, because establishing a new TLS
+        connection to Supabase for every single request adds 200-400ms of latency.
+        Double-pooling (SQLAlchemy pool + Supavisor pool) is completely fine and required
+        for high performance, as long as prepared statements are disabled."""
+    kwargs = {
+        "pool_pre_ping": True,
+        "pool_size": 10,
+        "max_overflow": 10,
+        "pool_recycle": 300,  # Recycle connections every 5 mins to prevent stale drops
+    }
+    
     if not is_transaction_pooler_url(database_url):
-        return {}
-    return {"poolclass": NullPool, "connect_args": {"prepare_threshold": None}}
+        return kwargs
+
+    kwargs["connect_args"] = {"prepare_threshold": None}
+    return kwargs
