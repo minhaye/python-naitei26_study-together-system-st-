@@ -6,12 +6,14 @@ from sqlalchemy.orm import selectinload
 
 from app.conversations.services.conversation_service import ConversationsService
 from app.db.enums import ModerationAction, StudyRoomMemberRole, StudyRoomStatus
+from app.notifications.services.notification_service import NotificationsService
 from app.profiles.services.profile_service import ProfilesService
 from app.study_rooms.entities.study_room_entity import StudyRoom, StudyRoomMember, RoomModerationAction
 from app.study_rooms.dto.study_room_dto import RoomModerationActionCreate, StudyRoomCreate, StudyRoomUpdate
 
 conversations_service = ConversationsService()
 profiles_service = ProfilesService()
+notifications_service = NotificationsService()
 
 
 class StudyRoomsService:
@@ -100,22 +102,52 @@ class StudyRoomsService:
         )
         return result.scalar_one_or_none()
 
+    async def _trigger_room_notifications(self, session: AsyncSession, room_id: uuid.UUID, user_id: uuid.UUID) -> None:
+        try:
+            active_members = await self.list_active_members(session, room_id)
+            active_count = len(active_members)
+            room = await self.get_by_id(session, room_id)
+            if not room:
+                return
+
+            user = await profiles_service.get_by_id(session, user_id)
+            user_name = (user.display_name or user.username or "Thành viên") if user else "Thành viên"
+
+            if active_count == 1:
+                await notifications_service.notify_study_room_first_joiner(
+                    session,
+                    room_id=room_id,
+                    room_name=room.name,
+                    group_id=room.group_id,
+                    joiner_id=user_id,
+                    joiner_name=user_name,
+                )
+            elif active_count >= 5:
+                await notifications_service.notify_study_room_active(
+                    session,
+                    room_id=room_id,
+                    room_name=room.name,
+                    group_id=room.group_id,
+                    active_user_count=active_count,
+                )
+        except Exception:
+            pass
+
     async def join(
         self, session: AsyncSession, room_id: uuid.UUID, user_id: uuid.UUID, role: StudyRoomMemberRole = StudyRoomMemberRole.PARTICIPANT
     ) -> StudyRoomMember:
-        """See GroupsService.add_member -- same reason for the in-memory `.user` assignment
-        after flush (StudyRoomMemberResponse.user needs it, a freshly-flushed row has
-        nothing loaded yet)."""
         member = StudyRoomMember(room_id=room_id, user_id=user_id, role=role)
         session.add(member)
         await session.flush()
         member.user = await profiles_service.get_by_id(session, user_id)
+        await self._trigger_room_notifications(session, room_id, user_id)
         return member
 
     async def rejoin(self, session: AsyncSession, member: StudyRoomMember) -> StudyRoomMember:
         member.joined_at = datetime.now(timezone.utc)
         member.left_at = None
         await session.flush()
+        await self._trigger_room_notifications(session, member.room_id, member.user_id)
         return member
 
     async def leave(self, session: AsyncSession, member: StudyRoomMember) -> StudyRoomMember:

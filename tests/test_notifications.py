@@ -143,3 +143,57 @@ async def test_delete_own_notification_allowed(async_client, monkeypatch, as_fak
 
     response = await async_client.delete(f"/notifications/{notification.id}", headers=AUTH_HEADERS)
     assert response.status_code == 204
+
+
+# --- Phase 1 & 2: New unread-counts, read-all & category filter endpoints ---
+
+
+async def test_unread_counts_endpoint_requires_auth(async_client):
+    response = await async_client.get("/notifications/unread-counts")
+    assert response.status_code == 401
+
+
+async def test_unread_counts_returns_counts_structure(async_client, monkeypatch, as_fake_user):
+    counts = {"total": 5, "forum": 2, "group": 1, "goal": 2, "message": 0}
+    monkeypatch.setattr(notification_router.service, "get_unread_counts", AsyncMock(return_value=counts))
+
+    response = await async_client.get("/notifications/unread-counts", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 5
+    assert data["forum"] == 2
+    assert data["group"] == 1
+    assert data["goal"] == 2
+    assert data["message"] == 0
+
+
+async def test_mark_all_read_endpoint(async_client, monkeypatch, as_fake_user):
+    monkeypatch.setattr(notification_router.service, "mark_all_read", AsyncMock(return_value=3))
+
+    response = await async_client.put("/notifications/read-all", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    assert response.json() == {"updated": 3}
+
+
+async def test_mark_all_read_with_category_filter(async_client, monkeypatch, as_fake_user):
+    mark_all_mock = AsyncMock(return_value=2)
+    monkeypatch.setattr(notification_router.service, "mark_all_read", mark_all_mock)
+
+    response = await async_client.put("/notifications/read-all?category=forum", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    assert response.json() == {"updated": 2}
+    mark_all_mock.assert_awaited_once()
+
+
+async def test_list_notifications_with_category_filter(async_client, monkeypatch, as_fake_user):
+    notification = _notification(as_fake_user.id)
+    notification.type = "post_like"
+    list_mock = AsyncMock(return_value=[notification])
+    monkeypatch.setattr(notification_router.service, "list_for_user", list_mock)
+
+    response = await async_client.get("/notifications/?category=forum", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    items = response.json()
+    assert len(items) == 1
+    assert items[0]["category"] == "forum"
+

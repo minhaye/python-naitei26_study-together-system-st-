@@ -3,6 +3,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.groups.entities.group_entity import Group
+from app.notifications.services.notification_service import NotificationsService
 from app.resources.entities.resource_entity import Resource, ResourceFolder
 from app.resources.dto.resource_dto import (
     ResourceCreate,
@@ -10,6 +12,8 @@ from app.resources.dto.resource_dto import (
     ResourceFolderUpdate,
     ResourceUpdate,
 )
+
+notifications_service = NotificationsService()
 
 
 class ResourcesService:
@@ -55,6 +59,22 @@ class ResourcesService:
         session.add(resource)
         await session.flush()
         await session.refresh(resource, attribute_names=["uploader"])
+
+        try:
+            group = await session.get(Group, resource.group_id)
+            uploader_name = (resource.uploader.display_name or resource.uploader.username or "Thành viên") if resource.uploader else "Thành viên"
+            group_name = (group.name if group else None) or "Nhóm"
+            await notifications_service.notify_new_resource(
+                session,
+                group_id=resource.group_id,
+                group_name=group_name,
+                resource_name=resource.name,
+                uploader_id=uploader_id,
+                uploader_name=uploader_name,
+            )
+        except Exception:
+            pass
+
         return resource
 
     async def get_file_by_id(self, session: AsyncSession, resource_id: uuid.UUID) -> Resource | None:
