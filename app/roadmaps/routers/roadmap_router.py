@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -21,6 +22,8 @@ from app.roadmaps.dto.roadmap_dto import (
 from app.roadmaps.entities.roadmap_entity import Roadmap, RoadmapPhase
 from app.roadmaps.services.roadmap_ai_service import RoadmapAiError, RoadmapAiService, RoadmapAiServiceNotConfigured
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix='/roadmaps', tags=['Roadmaps'])
 roadmap_ai_service = RoadmapAiService()
 
@@ -38,9 +41,13 @@ async def suggest_roadmap(data: RoadmapSuggestRequest, current_user: CurrentUser
     try:
         return await roadmap_ai_service.suggest(data.description)
     except RoadmapAiServiceNotConfigured as exc:
-        raise HTTPException(503, 'AI roadmap suggestions are not configured') from exc
+        logger.error("Roadmap AI suggestion requested but not configured: %s", exc)
+        raise HTTPException(503, 'Tính năng gợi ý bằng AI hiện chưa khả dụng.') from exc
     except RoadmapAiError as exc:
-        raise HTTPException(502, str(exc)) from exc
+        # exc carries the raw provider error (may include request payloads) -- log it for
+        # debugging but never forward it to the client as the HTTP detail.
+        logger.warning("Roadmap AI suggestion failed: %s", exc)
+        raise HTTPException(502, 'Không thể tạo gợi ý lúc này, vui lòng thử lại sau.') from exc
 
 
 @router.post('', response_model=RoadmapResponse, status_code=201)
