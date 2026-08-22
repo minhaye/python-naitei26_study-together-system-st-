@@ -67,6 +67,16 @@ export const ForumPage: React.FC = () => {
     }
   }, [scrollTop, posts]);
 
+  // 💾 LƯU VỊ TRÍ CUỘN KHI RỜI KHỎI TRANG (Unmount) - Triệt tiêu re-render khi cuộn
+  useEffect(() => {
+    const el = feedRef.current;
+    return () => {
+      if (el) {
+        setScrollTop(el.scrollTop);
+      }
+    };
+  }, [setScrollTop]);
+
   // IntersectionObserver trigger cho Infinite Scroll khi cuộn cột giữa
   useEffect(() => {
     if (!observerRef.current || !hasMore || isLoading) return;
@@ -123,10 +133,9 @@ export const ForumPage: React.FC = () => {
           />
         </div>
 
-        {/* CỘT 2: Feed Giữa (Flex 1 - Scroll độc lập + Infinite Scroll) */}
+        {/* CỘT 2: Feed Giữa (Flex 1 - Scroll độc lập 60 FPS + Infinite Scroll) */}
         <main
           ref={feedRef}
-          onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
           style={{
             flex: 1,
             height: '100%',

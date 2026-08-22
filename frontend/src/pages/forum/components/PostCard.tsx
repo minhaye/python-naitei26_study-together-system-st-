@@ -22,7 +22,7 @@ interface PostCardProps {
   isDetailPage?: boolean;
 }
 
-export const PostCard: React.FC<PostCardProps> = ({
+export const PostCard: React.FC<PostCardProps> = React.memo(({
   post,
   onToggleLike,
   onUpdatePost,
@@ -126,6 +126,8 @@ export const PostCard: React.FC<PostCardProps> = ({
         opacity: post.status === 'sending' ? 0.85 : 1,
         transition: 'opacity 0.3s ease, border-color 0.3s ease',
         position: 'relative',
+        contentVisibility: 'auto',
+        containIntrinsicSize: '350px',
       }}
     >
       {/* Banner Optimistic UI — Trạng thái Đang đăng */}
@@ -370,6 +372,8 @@ export const PostCard: React.FC<PostCardProps> = ({
           <img
             src={post.imagePath}
             alt={post.title}
+            loading="lazy"
+            decoding="async"
             style={{ width: '100%', maxHeight: 320, objectFit: 'cover', display: 'block' }}
           />
         </div>
@@ -449,4 +453,4 @@ export const PostCard: React.FC<PostCardProps> = ({
       )}
     </div>
   );
-};
+});

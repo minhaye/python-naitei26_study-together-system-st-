@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { injectHashtagSpansInHtml } from '../../pages/forum/lib/hashtagUtils';
@@ -68,7 +68,7 @@ function renderMathInHtml(rawContent: string): string {
  * Render an toàn: HTML, Khung ảnh đính kèm riêng biệt (Facebook-style attachment),
  * Công thức toán KaTeX, và Hashtag pills (via event delegation — không phá vỡ HTML structure).
  */
-export const RichContentView: React.FC<RichContentViewProps> = ({
+export const RichContentView: React.FC<RichContentViewProps> = React.memo(({
   content,
   style,
   className = '',
@@ -76,14 +76,14 @@ export const RichContentView: React.FC<RichContentViewProps> = ({
 }) => {
   if (!content) return null;
 
-  // 1. Tách mảng ảnh đính kèm ra khỏi nội dung văn bản
-  const { textHtml, images } = extractImagesFromHtml(content);
+  // 1. Tách mảng ảnh đính kèm ra khỏi nội dung văn bản (Memoized để không chạy lại khi cuộn)
+  const { textHtml, images } = useMemo(() => extractImagesFromHtml(content), [content]);
 
   // 2. Xử lý render KaTeX cho nội dung văn bản
-  const htmlWithMath = renderMathInHtml(textHtml);
+  const htmlWithMath = useMemo(() => renderMathInHtml(textHtml), [textHtml]);
 
   // 3. Inject hashtag <span> vào trong HTML string mà không phá vỡ cấu trúc thẻ HTML
-  const htmlWithHashtags = injectHashtagSpansInHtml(htmlWithMath);
+  const htmlWithHashtags = useMemo(() => injectHashtagSpansInHtml(htmlWithMath), [htmlWithMath]);
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
@@ -135,6 +135,8 @@ export const RichContentView: React.FC<RichContentViewProps> = ({
               <img
                 src={src}
                 alt={`Ảnh đính kèm ${imgIdx + 1}`}
+                loading="lazy"
+                decoding="async"
                 style={{
                   maxWidth: '100%',
                   maxHeight: 480,
@@ -148,4 +150,4 @@ export const RichContentView: React.FC<RichContentViewProps> = ({
       )}
     </div>
   );
-};
+});
