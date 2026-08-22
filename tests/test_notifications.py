@@ -197,3 +197,23 @@ async def test_list_notifications_with_category_filter(async_client, monkeypatch
     assert len(items) == 1
     assert items[0]["category"] == "forum"
 
+
+# --- Phase 3: Background Scheduler Service & Trigger Endpoint ---
+
+
+async def test_trigger_scheduler_endpoint_requires_auth(async_client):
+    response = await async_client.post("/notifications/trigger-scheduler")
+    assert response.status_code == 401
+
+
+async def test_trigger_scheduler_endpoint_success(async_client, monkeypatch, as_fake_user):
+    mock_run = AsyncMock(return_value={"daily_reminders": 2, "due_soon": 1, "overdue": 0})
+    monkeypatch.setattr(notification_router.scheduler_service, "run_all_checks", mock_run)
+
+    response = await async_client.post("/notifications/trigger-scheduler", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert data["notifications_created"]["daily_reminders"] == 2
+
+

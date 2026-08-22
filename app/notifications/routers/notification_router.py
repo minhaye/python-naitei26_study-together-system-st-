@@ -13,18 +13,12 @@ from app.notifications.dto.notification_dto import (
     NOTIFICATION_TYPE_TO_CATEGORY,
     UnreadCountsResponse,
 )
+from app.notifications.services.notification_scheduler import NotificationSchedulerService
 from app.notifications.services.notification_service import NotificationsService
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
 service = NotificationsService()
-
-# No public POST endpoint here, intentionally. Auditing actual callers found no legitimate
-# client for notification creation -- notifications are always created by trusted
-# server-side code that already knows the real recipient/actor ids (e.g.
-# InvitationService.create, called in-process, never over HTTP). Requiring auth on a public
-# create endpoint would not be enough on its own: any authenticated user could still set an
-# arbitrary user_id/actor_id and impersonate/spam. Use NotificationsService.create directly
-# from server-side code instead of adding a route back here.
+scheduler_service = NotificationSchedulerService()
 
 
 def _enrich_response(notification) -> dict:
@@ -37,6 +31,26 @@ def _enrich_response(notification) -> dict:
         **{c.key: getattr(notification, c.key) for c in notification.__table__.columns},
         "category": cat,
     }
+
+
+# ── Scheduler trigger endpoint ───────────────────────────────────────────
+
+@router.post("/trigger-scheduler", status_code=status.HTTP_200_OK)
+async def trigger_scheduler(
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Manually run all 3 goal notification checks (Daily Reminder, Due Soon, Overdue)."""
+    try:
+        results = await scheduler_service.run_all_checks(session)
+        await session.commit()
+        return {"status": "ok", "notifications_created": results}
+    except Exception as e:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Scheduler check failed: {str(e)}",
+        )
 
 
 # ── Unread counts (bell badge) ────────────────────────────────────────────
