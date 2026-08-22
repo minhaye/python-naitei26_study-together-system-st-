@@ -95,6 +95,7 @@ export const EditTextTool: React.FC<EditTextToolProps> = ({
       Superscript,
       Image.configure({
         inline: true,
+        allowBase64: true,
         HTMLAttributes: {
           style: 'max-height: 360px; border-radius: 12px; object-fit: cover; margin: 8px 0; border: 1px solid #E2E8F0;',
         },
