@@ -54,29 +54,35 @@ export function useForumPosts(
   const { posts, setPosts, hasMore, setHasMore, skip, setSkip, selectedTag } = forumState;
 
   const [isLoading, setIsLoading] = useState(false);
+  const isFetchingRef = useRef(false);
   const isInitialMountRef = useRef(true);
 
   /** Tải một trang bài viết và nối vào danh sách hiện tại */
   const fetchNextPage = useCallback(async () => {
-    if (isLoading || !hasMore) return;
+    if (isLoading || !hasMore || isFetchingRef.current) return;
+    isFetchingRef.current = true;
     setIsLoading(true);
 
     try {
       const newPosts = await forumApi.getPosts(categoryId, skip, PAGE_SIZE, selectedTag, currentUserId);
       const processed = applyFilterAndSearch(newPosts, filter, search, currentUserId);
 
-      setPosts((prev) => [...prev, ...processed]);
+      setPosts((prev) => {
+        const existingIds = new Set(prev.map((p) => p.id));
+        const uniqueNew = processed.filter((p) => !existingIds.has(p.id));
+        return [...prev, ...uniqueNew];
+      });
       setSkip(skip + PAGE_SIZE);
 
       if (newPosts.length < PAGE_SIZE) setHasMore(false);
     } catch (err) {
       console.error('Lỗi khi tải thêm bài viết diễn đàn:', err);
-      // Giả sử hết trang khi có lỗi để ngưng vòng lặp infinite scroll
       setHasMore(false);
     } finally {
       setIsLoading(false);
+      isFetchingRef.current = false;
     }
-  }, [isLoading, hasMore, categoryId, search, filter, currentUserId, skip, selectedTag, setPosts, setSkip, setHasMore]);
+  }, [isLoading, hasMore, categoryId, skip, selectedTag, currentUserId, filter, search, setPosts, setSkip, setHasMore]);
 
   /** Reset và tải lại từ đầu khi đổi danh mục, bộ lọc, từ khóa hoặc hashtag */
   useEffect(() => {
@@ -113,9 +119,17 @@ export function useForumPosts(
       try {
         const firstPage = await forumApi.getPosts(categoryId, 0, PAGE_SIZE, selectedTag, currentUserId);
         const processed = applyFilterAndSearch(firstPage, filter, search, currentUserId);
-        
-        setPosts(processed);
-        setSkip(PAGE_SIZE);
+
+        setPosts((prev) => {
+          if (prev.length <= PAGE_SIZE) return processed;
+          const updated = [...prev];
+          processed.forEach((item, idx) => {
+            updated[idx] = item;
+          });
+          return updated;
+        });
+
+        setSkip(skip < PAGE_SIZE ? PAGE_SIZE : skip);
         if (firstPage.length < PAGE_SIZE) setHasMore(false);
 
         // Lưu cache lại nếu là trang chủ
@@ -124,13 +138,13 @@ export function useForumPosts(
         }
       } catch (err) {
         console.error('Lỗi khi tải bài viết diễn đàn ban đầu:', err);
-        setPosts(prev => prev.length === 0 ? [] : prev); // Giữ nguyên cache nếu có lỗi
+        setPosts((prev) => (prev.length === 0 ? [] : prev));
         setHasMore(false);
       } finally {
         setIsLoading(false);
       }
     })();
-  }, [categoryId, search, filter, currentUserId, selectedTag]);
+  }, [categoryId, search, filter, selectedTag]);
 
   return { posts, setPosts, isLoading, hasMore, fetchNextPage };
 }

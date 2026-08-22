@@ -265,9 +265,11 @@ async def get_comment(comment_id: uuid.UUID, session: AsyncSession = Depends(get
 async def list_comments(
     post_id: uuid.UUID,
     user_id: uuid.UUID | None = None,
+    skip: int = 0,
+    limit: int = 50,
     session: AsyncSession = Depends(get_db_session)
 ):
-    return await service.list_comments_by_post(session, post_id, user_id=user_id)
+    return await service.list_comments_by_post(session, post_id, user_id=user_id, skip=skip, limit=limit)
 
 
 @router.put("/comments/{comment_id}", response_model=CommentResponse)
