@@ -133,3 +133,197 @@ export const TrendingTopicSkeleton: React.FC = () => {
     </div>
   );
 };
+
+/** StudyGroupCardSkeleton — Mô phỏng layout của thẻ nhóm học trong StudyGroups */
+export const StudyGroupCardSkeleton: React.FC = () => {
+  return (
+    <div
+      style={{
+        background: 'white',
+        borderRadius: 8,
+        outline: '1px #E2E8F0 solid',
+        outlineOffset: '-1px',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Cover image area */}
+      <Skeleton width="100%" height={128} borderRadius={0} />
+      {/* Card body */}
+      <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {/* Badge */}
+        <Skeleton width={80} height={24} borderRadius={4} />
+        {/* Title */}
+        <Skeleton width="70%" height={22} />
+        {/* Description lines */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <Skeleton width="100%" height={14} />
+          <Skeleton width="80%" height={14} />
+        </div>
+        {/* Footer */}
+        <div
+          style={{
+            paddingTop: 16,
+            marginTop: 8,
+            borderTop: '1px solid #E2E8F0',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          <Skeleton width={36} height={28} borderRadius="50%" />
+          <Skeleton width={80} height={16} />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/** ConversationItemSkeleton — Mô phỏng 1 dòng hội thoại trong danh sách DM */
+export const ConversationItemSkeleton: React.FC = () => {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px' }}>
+      <Skeleton width={40} height={40} borderRadius="50%" style={{ flexShrink: 0 }} />
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <Skeleton width="65%" height={14} />
+        <Skeleton width="45%" height={12} />
+      </div>
+    </div>
+  );
+};
+
+/** MessageBubbleSkeleton — Mô phỏng một tin nhắn bubble trong thread */
+export const MessageBubbleSkeleton: React.FC<{ isSelf?: boolean }> = ({ isSelf = false }) => {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        gap: 10,
+        flexDirection: isSelf ? 'row-reverse' : 'row',
+        alignItems: 'flex-end',
+      }}
+    >
+      <Skeleton width={32} height={32} borderRadius="50%" style={{ flexShrink: 0 }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: isSelf ? 'flex-end' : 'flex-start' }}>
+        <Skeleton width={Math.floor(120 + Math.random() * 100)} height={40} borderRadius={14} />
+        <Skeleton width={40} height={10} borderRadius={4} />
+      </div>
+    </div>
+  );
+};
+
+/** PageLoadingSkeleton — Skeleton toàn trang khi ProtectedRoute đang xác thực */
+export const PageLoadingSkeleton: React.FC = () => {
+  return (
+    <div
+      style={{
+        width: '100%',
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        background: '#F8FAFC',
+      }}
+    >
+      {/* Nav bar skeleton */}
+      <div
+        style={{
+          height: 64,
+          background: 'white',
+          borderBottom: '1px solid #E2E8F0',
+          display: 'flex',
+          alignItems: 'center',
+          padding: '0 32px',
+          gap: 24,
+        }}
+      >
+        <Skeleton width={140} height={28} borderRadius={6} />
+        <div style={{ flex: 1 }} />
+        <Skeleton width={80} height={20} borderRadius={6} />
+        <Skeleton width={80} height={20} borderRadius={6} />
+        <Skeleton width={80} height={20} borderRadius={6} />
+        <Skeleton width={36} height={36} borderRadius="50%" />
+      </div>
+
+      {/* Content area */}
+      <div
+        style={{
+          flex: 1,
+          padding: '32px 48px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 24,
+          maxWidth: 900,
+          margin: '0 auto',
+          width: '100%',
+        }}
+      >
+        <Skeleton width={260} height={32} borderRadius={8} />
+        <Skeleton width="50%" height={18} borderRadius={6} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20, marginTop: 8 }}>
+          {[...Array(6)].map((_, i) => (
+            <div
+              key={i}
+              style={{
+                background: 'white',
+                borderRadius: 8,
+                border: '1px solid #E2E8F0',
+                overflow: 'hidden',
+              }}
+            >
+              <Skeleton width="100%" height={96} borderRadius={0} />
+              <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Skeleton width="70%" height={18} />
+                <Skeleton width="100%" height={12} />
+                <Skeleton width="85%" height={12} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/** DmPageSkeleton — Skeleton toàn trang Direct Messages */
+export const DmPageSkeleton: React.FC = () => {
+  return (
+    <div style={{ display: 'flex', height: 'calc(100vh - 64px)', background: 'white' }}>
+      {/* Sidebar list */}
+      <div
+        style={{
+          width: 300,
+          flexShrink: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          background: '#F8FAFC',
+          borderRight: '1px solid #E2E8F0',
+        }}
+      >
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #E2E8F0', background: 'white' }}>
+          <Skeleton width={100} height={20} borderRadius={6} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingTop: 8 }}>
+          {[...Array(6)].map((_, i) => (
+            <ConversationItemSkeleton key={i} />
+          ))}
+        </div>
+      </div>
+      {/* Thread pane placeholder */}
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 12,
+          color: '#CBD5E1',
+        }}
+      >
+        <Skeleton width={48} height={48} borderRadius="50%" />
+        <Skeleton width={240} height={16} borderRadius={6} />
+      </div>
+    </div>
+  );
+};

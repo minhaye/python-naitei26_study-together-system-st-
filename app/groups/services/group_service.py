@@ -98,8 +98,21 @@ class GroupsService:
         return list(result.scalars().all())
 
     async def list_user_memberships(self, session: AsyncSession, user_id: uuid.UUID) -> list[GroupMember]:
-        result = await session.execute(select(GroupMember).where(GroupMember.user_id == user_id))
+        result = await session.execute(
+            select(GroupMember)
+            .options(selectinload(GroupMember.user))
+            .where(GroupMember.user_id == user_id)
+        )
         return list(result.scalars().all())
+
+    async def get_all_active_member_counts(self, session: AsyncSession) -> dict[uuid.UUID, int]:
+        from sqlalchemy import func
+        result = await session.execute(
+            select(GroupMember.group_id, func.count(GroupMember.id))
+            .where(GroupMember.status == MemberStatus.ACTIVE)
+            .group_by(GroupMember.group_id)
+        )
+        return {group_id: count for group_id, count in result.all()}
 
     async def update_member_role(self, session: AsyncSession, member: GroupMember, role: GroupMemberRole) -> GroupMember:
         member.role = role

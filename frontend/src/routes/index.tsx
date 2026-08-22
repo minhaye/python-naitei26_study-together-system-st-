@@ -13,16 +13,13 @@ import { AccountSettingsPage } from '../pages/AccountSettingsPage';
 import { DirectMessagesPage } from '../pages/messages/DirectMessagesPage';
 import { useAuth } from '../hooks/useAuth';
 import { ForumStateProvider } from '../pages/forum/context/ForumStateContext';
+import { PageLoadingSkeleton } from '../components/ui/Skeleton';
 
 const ProtectedRoute = ({ children }: { children?: React.ReactNode }) => {
   const { isLoggedIn, loading } = useAuth();
 
   if (loading) {
-    return (
-      <div style={{ minHeight: '100vh', width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#64748B', fontSize: 15 }}>
-        Đang tải...
-      </div>
-    );
+    return <PageLoadingSkeleton />;
   }
 
   if (!isLoggedIn) {

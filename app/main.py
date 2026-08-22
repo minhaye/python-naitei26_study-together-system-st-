@@ -1,7 +1,11 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.core.config import settings
+from app.db.session import engine
 from app.attachments.routers.attachment_router import router as attachments_router
 from app.auth.routers.auth_router import router as auth_router
 from app.conversations.routers.conversation_router import router as conversations_router
@@ -18,7 +22,21 @@ from app.invitations.routers.invitation_router import router as invitations_rout
 from app.tasks.routers.task_router import router as tasks_router
 from app.roadmaps.routers.roadmap_router import router as roadmaps_router
 
-app = FastAPI(title="Study Platform API", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Warm up the DB connection pool on startup so the first real request
+    doesn't pay the cold-connection cost (~200-400ms) on top of everything else."""
+    try:
+        async with engine.connect() as conn:
+            await conn.exec_driver_sql("SELECT 1")
+    except Exception:
+        # Don't block startup if the DB is temporarily unreachable
+        pass
+    yield
+
+
+app = FastAPI(title="Study Platform API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,6 +46,14 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept"],
 )
+
+
+@app.get("/health", include_in_schema=False)
+async def health_check():
+    """Lightweight keep-alive endpoint — no DB call, no auth.
+    Frontend pings this every 10 min to prevent Render free-tier spin-down."""
+    return JSONResponse({"status": "ok"})
+
 
 app.include_router(auth_router)
 app.include_router(profiles_router)

@@ -325,7 +325,38 @@ export function AimPage() {
           {error && <p role="alert" style={{ color: '#B91C1C', fontSize: 13 }}>{error}</p>}
 
           {loading ? (
-            <p style={{ color: '#64748B' }}>Đang tải lộ trình...</p>
+            <div style={{ display: 'flex', gap: 16, paddingBottom: 16 }}>
+              {[...Array(3)].map((_, i) => (
+                <div
+                  key={i}
+                  style={{
+                    minWidth: 320,
+                    maxWidth: 350,
+                    background: '#F8FAFC',
+                    border: '1px solid #E2E8F0',
+                    borderRadius: 12,
+                    padding: 20,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 12,
+                  }}
+                >
+                  <div className="skeleton-pulse" style={{ width: '75%', height: 20, borderRadius: 6 }} />
+                  <div className="skeleton-pulse" style={{ width: '100%', height: 14, borderRadius: 4 }} />
+                  <div className="skeleton-pulse" style={{ width: '85%', height: 14, borderRadius: 4 }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                    <div className="skeleton-pulse" style={{ width: 80, height: 12, borderRadius: 4 }} />
+                    <div className="skeleton-pulse" style={{ width: 40, height: 12, borderRadius: 4 }} />
+                  </div>
+                  <div className="skeleton-pulse" style={{ width: '100%', height: 8, borderRadius: 20 }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                    {[...Array(3)].map((_, j) => (
+                      <div key={j} className="skeleton-pulse" style={{ height: 36, borderRadius: 7 }} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : loadError ? null : (
             <div>
               <style>{`

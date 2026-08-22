@@ -15,6 +15,7 @@ import { MessageReactions } from '../../components/chat/MessageReactions';
 import { SelectedImagePreview } from '../../components/chat/SelectedImagePreview';
 import type { Conversation } from '../../lib/conversation.types';
 import type { Message } from '../../lib/message.types';
+import { ConversationItemSkeleton, MessageBubbleSkeleton } from '../../components/ui/Skeleton';
 
 /** Direct-message inbox: a conversation list (left) + the selected thread (right). Reuses
  * useRoomMessages -- despite the name, it has no Room-specific logic, it's already generic
@@ -134,7 +135,11 @@ export function DirectMessagesPage() {
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {isLoadingList && <div style={{ padding: 20, color: '#64748B', fontSize: 13 }}>Đang tải...</div>}
+          {isLoadingList && (
+            <div style={{ display: 'flex', flexDirection: 'column', paddingTop: 8 }}>
+              {[...Array(5)].map((_, i) => <ConversationItemSkeleton key={i} />)}
+            </div>
+          )}
           {listError && (
             <div style={{ margin: 12, padding: '10px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, color: '#B91C1C', fontSize: 12.5 }}>
               {listError}
@@ -236,8 +241,12 @@ export function DirectMessagesPage() {
 
             <div style={{ flex: 1, overflowY: 'auto', padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
               {isMessagesLoading ? (
-                <div style={{ display: 'flex', justifyContent: 'center', margin: '32px 0', color: '#94A3B8', fontSize: 13 }}>
-                  Đang tải tin nhắn...
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingTop: 8 }}>
+                  <MessageBubbleSkeleton isSelf={false} />
+                  <MessageBubbleSkeleton isSelf={true} />
+                  <MessageBubbleSkeleton isSelf={false} />
+                  <MessageBubbleSkeleton isSelf={true} />
+                  <MessageBubbleSkeleton isSelf={false} />
                 </div>
               ) : messagesError ? (
                 <div style={{ margin: '16px 0', padding: '12px 14px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, color: '#B91C1C', fontSize: 12.5 }}>

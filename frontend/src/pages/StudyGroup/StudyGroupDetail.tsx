@@ -595,8 +595,51 @@ export function StudyGroupDetail() {
 
   if (isLoading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 'calc(100vh - 64px)', color: '#64748B', fontSize: 15 }}>
-        Đang tải nhóm học...
+      <div style={{ display: 'flex', height: 'calc(100vh - 64px)', width: '100%', overflow: 'hidden' }}>
+        {/* Left sidebar skeleton */}
+        <div style={{ width: 280, flexShrink: 0, background: '#F8FAFC', borderRight: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: 0 }}>
+          {/* Group header */}
+          <div style={{ padding: 16, borderBottom: '1px solid #E2E8F0' }}>
+            <div className="skeleton-pulse" style={{ height: 18, borderRadius: 6, marginBottom: 8 }} />
+            <div className="skeleton-pulse" style={{ width: '60%', height: 12, borderRadius: 4 }} />
+          </div>
+          {/* Channels */}
+          <div style={{ padding: '16px 8px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div className="skeleton-pulse" style={{ width: '50%', height: 11, borderRadius: 4, marginBottom: 4 }} />
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="skeleton-pulse" style={{ height: 32, borderRadius: 6 }} />
+            ))}
+            <div className="skeleton-pulse" style={{ width: '50%', height: 11, borderRadius: 4, marginTop: 12, marginBottom: 4 }} />
+            {[...Array(2)].map((_, i) => (
+              <div key={i} className="skeleton-pulse" style={{ height: 80, borderRadius: 8 }} />
+            ))}
+          </div>
+        </div>
+        {/* Center chat area skeleton */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'white' }}>
+          <div style={{ height: 60, borderBottom: '1px solid #E2E8F0', padding: '0 24px', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div className="skeleton-pulse" style={{ width: 24, height: 24, borderRadius: 4 }} />
+            <div className="skeleton-pulse" style={{ width: 120, height: 18, borderRadius: 6 }} />
+          </div>
+          <div style={{ flex: 1, padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {[false, true, false, true, false].map((isSelf, i) => (
+              <div key={i} style={{ display: 'flex', gap: 10, flexDirection: isSelf ? 'row-reverse' : 'row', alignItems: 'flex-end' }}>
+                <div className="skeleton-pulse" style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0 }} />
+                <div className="skeleton-pulse" style={{ width: 140 + i * 20, height: 40, borderRadius: 12 }} />
+              </div>
+            ))}
+          </div>
+        </div>
+        {/* Right sidebar skeleton */}
+        <div style={{ width: 240, flexShrink: 0, borderLeft: '1px solid #E2E8F0', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="skeleton-pulse" style={{ width: '60%', height: 12, borderRadius: 4 }} />
+          {[...Array(4)].map((_, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div className="skeleton-pulse" style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0 }} />
+              <div className="skeleton-pulse" style={{ flex: 1, height: 14, borderRadius: 4 }} />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }

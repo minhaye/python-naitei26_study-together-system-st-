@@ -2,11 +2,12 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { ChevronDown, ChevronRight, UserPlus, Users, ArrowRight } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { getGroups, getMyGroups, listGroupMembers, createGroup, joinGroup } from '../../lib/group.api';
+import { getGroups, getMyGroups, listGroupMembers, createGroup, joinGroup, getMemberCounts, getMyMemberships } from '../../lib/group.api';
 import { ApiError } from '../../lib/apiClient';
 import { JoinByCodeModal } from '../../components/invitations/JoinByCodeModal';
 import type { Group, GroupMember, GroupMemberRole } from '../../lib/group.types';
 import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
+import { StudyGroupCardSkeleton } from '../../components/ui/Skeleton';
 
 interface GroupWithMembership {
     group: Group;
@@ -95,41 +96,33 @@ export function StudyRooms() {
         setIsLoading(true);
         setLoadError(null);
         try {
-            const publicGroups = await getGroups(true);
-            let myGroups: Group[] = [];
-            if (currentUserId) {
-                try {
-                    myGroups = await getMyGroups();
-                } catch {
-                    // My Groups is supplementary to the public discovery list here; a failure
-                    // to load it shouldn't block the page -- it just means an active private
-                    // membership won't show until the next successful load.
-                }
-            }
-            const myGroupIds = new Set(myGroups.map((g) => g.id));
+            const [publicGroups, myGroupsList, memberCountsObj, myMemberships] = await Promise.all([
+                getGroups(true),
+                currentUserId ? getMyGroups().catch(() => []) : Promise.resolve([]),
+                getMemberCounts().catch(() => ({})),
+                currentUserId ? getMyMemberships().catch(() => []) : Promise.resolve([]),
+            ]);
+
             const merged = new Map<string, Group>();
             for (const group of publicGroups) merged.set(group.id, group);
-            for (const group of myGroups) merged.set(group.id, group);
+            for (const group of myGroupsList) merged.set(group.id, group);
 
-            const enriched = await Promise.all(
-                Array.from(merged.values()).map(async (group): Promise<GroupWithMembership> => {
-                    let members: GroupMember[] = [];
-                    try {
-                        members = await listGroupMembers(group.id);
-                    } catch {
-                        // Membership is supplementary here (role badge / My-Groups split);
-                        // a failure to load it shouldn't hide the group itself.
-                    }
-                    const activeMembers = members.filter((m) => m.status === 'active');
-                    const mine = currentUserId ? activeMembers.find((m) => m.user_id === currentUserId) : undefined;
-                    return {
-                        group,
-                        activeMembersCount: activeMembers.length,
-                        isMember: myGroupIds.has(group.id) || !!mine,
-                        role: mine?.role ?? null,
-                    };
-                })
-            );
+            // Membership lookup
+            const myMembershipMap = new Map<string, GroupMember>();
+            for (const member of myMemberships) {
+                myMembershipMap.set(member.group_id, member);
+            }
+
+            const enriched = Array.from(merged.values()).map((group): GroupWithMembership => {
+                const mine = myMembershipMap.get(group.id);
+                return {
+                    group,
+                    activeMembersCount: memberCountsObj[group.id] || 0,
+                    isMember: !!mine,
+                    role: mine?.role ?? null,
+                };
+            });
+
             setGroups(enriched);
         } catch (err) {
             setLoadError(err instanceof ApiError ? err.message : 'Không thể tải danh sách nhóm học.');
@@ -276,8 +269,29 @@ export function StudyRooms() {
                     </div>
                 </div>
 
+                {/* Skeleton khi tải lần đầu */}
                 {isLoading && (
-                    <div style={{ color: '#64748B', fontSize: 14, padding: '24px 0' }}>Đang tải danh sách nhóm học...</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+                        {/* Section header skeleton */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div className="skeleton-pulse" style={{ width: 22, height: 22, borderRadius: 4 }} />
+                                <div className="skeleton-pulse" style={{ width: 200, height: 28, borderRadius: 6 }} />
+                            </div>
+                            <div className="study-groups-grid" style={{ marginTop: 8 }}>
+                                {[...Array(4)].map((_, i) => <StudyGroupCardSkeleton key={i} />)}
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div className="skeleton-pulse" style={{ width: 22, height: 22, borderRadius: 4 }} />
+                                <div className="skeleton-pulse" style={{ width: 220, height: 28, borderRadius: 6 }} />
+                            </div>
+                            <div className="study-groups-grid" style={{ marginTop: 8 }}>
+                                {[...Array(4)].map((_, i) => <StudyGroupCardSkeleton key={i} />)}
+                            </div>
+                        </div>
+                    </div>
                 )}
 
                 {!isLoading && loadError && (

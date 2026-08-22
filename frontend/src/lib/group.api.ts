@@ -13,6 +13,14 @@ export function getMyGroups(): Promise<Group[]> {
   return apiClient.get<Group[]>('/groups/mine');
 }
 
+export function getMyMemberships(): Promise<GroupMember[]> {
+  return apiClient.get<GroupMember[]>('/groups/me/memberships');
+}
+
+export function getMemberCounts(): Promise<Record<string, number>> {
+  return apiClient.get<Record<string, number>>('/groups/stats/member-counts');
+}
+
 export function getGroup(groupId: string): Promise<Group> {
   return apiClient.get<Group>(`/groups/${groupId}`);
 }

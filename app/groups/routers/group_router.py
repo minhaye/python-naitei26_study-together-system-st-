@@ -71,6 +71,22 @@ async def list_my_groups(
     return await service.list_by_member(session, current_user.id)
 
 
+@router.get("/me/memberships", response_model=list[GroupMemberResponse])
+async def get_my_memberships(
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session)
+):
+    """Bulk fetch all active memberships for the caller. Avoids N+1 queries on the frontend."""
+    return await service.list_user_memberships(session, current_user.id)
+
+
+@router.get("/stats/member-counts", response_model=dict[uuid.UUID, int])
+async def get_member_counts(session: AsyncSession = Depends(get_db_session)):
+    """Bulk fetch active member counts for all groups. Avoids N+1 queries on the frontend."""
+    return await service.get_all_active_member_counts(session)
+
+
+
 @router.get("/{group_id}", response_model=GroupResponse)
 async def get_group(group_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)):
     group = await service.get_by_id(session, group_id)
