@@ -35,7 +35,6 @@ export const ForumPage: React.FC = () => {
     selectedFilter,
     setSelectedFilter,
     search,
-    setSearch,
     scrollTop,
     setScrollTop,
   } = forumState;
