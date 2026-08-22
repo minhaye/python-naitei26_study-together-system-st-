@@ -1,7 +1,14 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+# Fixed quick-react set -- same as ALLOWED_MESSAGE_REACTIONS (app/messages/dto/message_dto.py)
+# so Forum reactions feel identical to chat message reactions. Also mirrored as a CHECK
+# constraint on post_reactions.emoji/comment_reactions.emoji (see
+# docs/db/migrations/028_add_forum_reactions.sql) and as QUICK_REACTIONS in
+# frontend/src/pages/forum/components/ReactionPicker.tsx. Keep all three in sync.
+ALLOWED_FORUM_REACTIONS = ("👍", "❤️", "😆", "😮", "😢", "😡")
 
 
 class ForumCategoryCreate(BaseModel):
@@ -47,6 +54,29 @@ class TagResponse(BaseModel):
     created_at: datetime
 
 
+class ReactionSet(BaseModel):
+    emoji: str
+
+    @model_validator(mode="after")
+    def validate_emoji(self) -> "ReactionSet":
+        if self.emoji not in ALLOWED_FORUM_REACTIONS:
+            raise ValueError(f"emoji must be one of {ALLOWED_FORUM_REACTIONS}")
+        return self
+
+
+class ReactionSummary(BaseModel):
+    """Grouped-by-emoji shape the wire actually needs -- never raw per-user reaction rows.
+    `reacted_by_me` is relative to whichever user the request's `user_id` query param names
+    (Forum has no auth dependency on any endpoint today, unlike the equivalent chat
+    MessageReactionSummary). Mirrors MessageReactionSummary (app/messages/dto/message_dto.py)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    emoji: str
+    count: int
+    reacted_by_me: bool
+
+
 class ForumPostResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -59,14 +89,13 @@ class ForumPostResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None
-    
+
     # Optional fields for UI aggregates
     category_name: str | None = None
     author_name: str | None = None
     author_avatar_url: str | None = None
-    likes_count: int = 0
+    reactions: list[ReactionSummary] = Field(default_factory=list)
     comments_count: int = 0
-    is_liked: bool = False
     tags: list[str] = Field(default_factory=list)
 
 
@@ -94,33 +123,4 @@ class CommentResponse(BaseModel):
 
     author_name: str | None = None
     author_avatar_url: str | None = None
-    likes_count: int = 0
-    is_liked: bool = False
-
-
-class PostLikeCreate(BaseModel):
-    post_id: uuid.UUID
-    user_id: uuid.UUID
-
-
-class PostLikeResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: uuid.UUID
-    post_id: uuid.UUID
-    user_id: uuid.UUID
-    created_at: datetime
-
-
-class CommentLikeCreate(BaseModel):
-    comment_id: uuid.UUID
-    user_id: uuid.UUID
-
-
-class CommentLikeResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: uuid.UUID
-    comment_id: uuid.UUID
-    user_id: uuid.UUID
-    created_at: datetime
+    reactions: list[ReactionSummary] = Field(default_factory=list)

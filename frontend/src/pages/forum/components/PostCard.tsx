@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ThumbsUp, MessageSquare, Share2, Loader2, AlertCircle, RefreshCw, Trash2, MoreHorizontal, Edit2 } from 'lucide-react';
-import type { Post, ForumPostCreate, ForumPostUpdate } from '../types/forum.types';
+import type { Post, ForumPostCreate, ForumPostUpdate, ReactionSummary } from '../types/forum.types';
 import { CommentSection } from './CommentSection';
+import { ReactionPicker } from './ReactionPicker';
+import { ReactionCluster } from './ReactionCluster';
+import { DEFAULT_REACTION_EMOJI, REACTION_META_BY_EMOJI, myReactionEmoji } from '../constants/reactions';
 import { Avatar } from '../../../components/ui/Avatar';
 import { RichContentView } from '../../../components/ui/RichContentView';
 import { EditPostModal } from './EditPostModal';
@@ -13,7 +16,8 @@ import { useAuth } from '../../../hooks/useAuth';
 
 interface PostCardProps {
   post: Post;
-  onToggleLike: (postId: string) => void;
+  onReact: (postId: string, emoji: string) => void;
+  onRemoveReaction: (postId: string) => void;
   onUpdatePost?: (postId: string, payload: ForumPostUpdate, categoryName?: string) => Promise<void> | void;
   onDeletePost?: (postId: string) => Promise<void> | void;
   onRetryPost?: (post: Post, payload: Omit<ForumPostCreate, 'author_id'>) => void;
@@ -24,7 +28,8 @@ interface PostCardProps {
 
 export const PostCard: React.FC<PostCardProps> = React.memo(({
   post,
-  onToggleLike,
+  onReact,
+  onRemoveReaction,
   onUpdatePost,
   onDeletePost,
   onRetryPost,
@@ -40,21 +45,23 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({
 
   const [showComments, setShowComments] = useState(defaultShowComments);
   const [hoveredButton, setHoveredButton] = useState<'like' | 'comment' | 'share' | null>(null);
+  const [reactionPickerOpen, setReactionPickerOpen] = useState(false);
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Optimistic UI state cho Like & Comment count (0ms response)
-  const [localIsLiked, setLocalIsLiked] = useState(post.isLiked);
-  const [localLikesCount, setLocalLikesCount] = useState(post.likesCount);
+  // Optimistic UI state cho Reactions & Comment count (0ms response)
+  const [localReactions, setLocalReactions] = useState<ReactionSummary[]>(post.reactions);
   const [localCommentsCount, setLocalCommentsCount] = useState(post.commentsCount);
 
   useEffect(() => {
-    setLocalIsLiked(post.isLiked);
-    setLocalLikesCount(post.likesCount);
+    setLocalReactions(post.reactions);
     setLocalCommentsCount(post.commentsCount);
-  }, [post.isLiked, post.likesCount, post.commentsCount]);
+  }, [post.reactions, post.commentsCount]);
+
+  const myEmoji = myReactionEmoji(localReactions);
+  const activeMeta = myEmoji ? REACTION_META_BY_EMOJI[myEmoji] : null;
 
   // Đóng dropdown 3 chấm khi click bên ngoài
   useEffect(() => {
@@ -69,10 +76,22 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({
 
   const handleLikeClick = () => {
     requireAuth(() => {
-      const nextLiked = !localIsLiked;
-      setLocalIsLiked(nextLiked);
-      setLocalLikesCount((prev) => (nextLiked ? prev + 1 : Math.max(0, prev - 1)));
-      onToggleLike(post.id);
+      if (myEmoji) {
+        onRemoveReaction(post.id);
+      } else {
+        onReact(post.id, DEFAULT_REACTION_EMOJI);
+      }
+    });
+  };
+
+  const handlePickReaction = (emoji: string) => {
+    setReactionPickerOpen(false);
+    requireAuth(() => {
+      if (myEmoji === emoji) {
+        onRemoveReaction(post.id);
+      } else {
+        onReact(post.id, emoji);
+      }
     });
   };
 
@@ -99,7 +118,7 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({
 
   const actionButtonStyle = (
     btnType: 'like' | 'comment' | 'share',
-    active = false
+    activeColor?: string
   ): React.CSSProperties => ({
     flex: 1,
     display: 'flex',
@@ -107,7 +126,7 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({
     justifyContent: 'center',
     gap: 8,
     padding: '12px 0',
-    color: active ? '#3B82F6' : '#64748B',
+    color: activeColor ?? '#64748B',
     background: hoveredButton === btnType ? '#F1F5F9' : 'transparent',
     cursor: 'pointer',
     transition: 'background 0.15s ease, color 0.15s ease',
@@ -381,6 +400,13 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({
         </div>
       )}
 
+      {/* Cụm cảm xúc (hiện các emoji đã dùng + tổng số, ẩn nếu chưa có ai bày tỏ cảm xúc) */}
+      {localReactions.length > 0 && (
+        <div style={{ padding: '0 4px 8px' }}>
+          <ReactionCluster reactions={localReactions} />
+        </div>
+      )}
+
       {/* Actions (Thanh Facebook Action Bar tràn viền sát đáy card) */}
       <div
         style={{
@@ -394,15 +420,23 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({
           overflow: 'hidden',
         }}
       >
-        {/* Nút Thích (0ms Optimistic UI) */}
+        {/* Nút Bày tỏ cảm xúc (0ms Optimistic UI) -- hover để mở bảng chọn emoji, click nhanh = 👍 */}
         <div
-          onClick={handleLikeClick}
-          onMouseEnter={() => setHoveredButton('like')}
-          onMouseLeave={() => setHoveredButton(null)}
-          style={actionButtonStyle('like', localIsLiked)}
+          style={{ position: 'relative', flex: 1 }}
+          onMouseEnter={() => {
+            setHoveredButton('like');
+            setReactionPickerOpen(true);
+          }}
+          onMouseLeave={() => {
+            setHoveredButton(null);
+            setReactionPickerOpen(false);
+          }}
         >
-          <ThumbsUp size={18} fill={localIsLiked ? '#3B82F6' : 'none'} />
-          <span>{localLikesCount}</span>
+          {reactionPickerOpen && <ReactionPicker onSelect={handlePickReaction} align="left" emojiSize={22} />}
+          <div onClick={handleLikeClick} style={actionButtonStyle('like', activeMeta?.color)}>
+            {myEmoji ? <span style={{ fontSize: 18, lineHeight: 1 }}>{myEmoji}</span> : <ThumbsUp size={18} />}
+            <span>{activeMeta?.label ?? 'Thích'}</span>
+          </div>
         </div>
 
         {/* Nút Bình luận */}
@@ -410,7 +444,7 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({
           onClick={() => setShowComments((v) => !v)}
           onMouseEnter={() => setHoveredButton('comment')}
           onMouseLeave={() => setHoveredButton(null)}
-          style={actionButtonStyle('comment', showComments)}
+          style={actionButtonStyle('comment', showComments ? '#3B82F6' : undefined)}
         >
           <MessageSquare size={18} />
           <span>{localCommentsCount} bình luận</span>

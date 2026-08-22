@@ -5,6 +5,7 @@ import { PostCard } from './components/PostCard';
 import { ForumRightSidebar } from './components/ForumRightSidebar';
 import { forumApi } from './lib/forum.api';
 import type { Post, ForumPostUpdate } from './types/forum.types';
+import { applyReactionOptimistic } from './constants/reactions';
 
 import { useAuth } from '../../hooks/useAuth';
 import { useForumState } from './context/ForumStateContext';
@@ -32,23 +33,17 @@ export const ForumPostDetail: React.FC = () => {
       .finally(() => setIsLoading(false));
   }, [id, isLoggedIn, currentUser?.id]);
 
-  const handleToggleLike = (postId: string) => {
+  const handleReact = (postId: string, emoji: string) => {
     requireAuth(async () => {
-      if (!post) return;
-      if (post.isLiked) {
-        await forumApi.unlikePost(postId, currentUser?.id);
-      } else {
-        await forumApi.likePost(postId, currentUser?.id);
-      }
-      setPost((prev) =>
-        prev
-          ? {
-              ...prev,
-              isLiked: !prev.isLiked,
-              likesCount: !prev.isLiked ? prev.likesCount + 1 : Math.max(0, prev.likesCount - 1),
-            }
-          : null
-      );
+      setPost((prev) => (prev ? { ...prev, reactions: applyReactionOptimistic(prev.reactions, emoji) } : null));
+      await forumApi.setPostReaction(postId, emoji, currentUser?.id);
+    });
+  };
+
+  const handleRemoveReaction = (postId: string) => {
+    requireAuth(async () => {
+      setPost((prev) => (prev ? { ...prev, reactions: applyReactionOptimistic(prev.reactions, null) } : null));
+      await forumApi.removePostReaction(postId, currentUser?.id);
     });
   };
 
@@ -135,7 +130,8 @@ export const ForumPostDetail: React.FC = () => {
           {!isLoading && post && (
             <PostCard
               post={post}
-              onToggleLike={handleToggleLike}
+              onReact={handleReact}
+              onRemoveReaction={handleRemoveReaction}
               onUpdatePost={handleUpdatePost}
               onDeletePost={handleDeletePost}
               defaultShowComments={true}

@@ -1393,19 +1393,27 @@ khi trả danh sách bài viết thông thường.
 
 ---
 
-# 27. post_likes — Like bài viết
+# 27. post_reactions — Cảm xúc trên bài viết
+
+**Migration 028** (`docs/db/migrations/028_add_forum_reactions.sql`, expand phase — ✅ đã chạy
+live 2026-08-22) thay thế `post_likes` cũ (boolean-only) bằng multi-emotion reactions, cùng
+shape với `message_reactions` (§ so sánh phần Chat): mỗi user chỉ có **một** reaction trên một
+post tại một thời điểm (không phải nhiều cảm xúc cùng lúc trên cùng 1 post), chọn emoji khác
+sẽ thay thế emoji cũ. Mọi row `post_likes` cũ đã được backfill thành reaction `👍` trước khi
+migration 029 (contract phase — ✅ đã chạy live 2026-08-22) xoá hẳn bảng `post_likes`.
 
 ## Vai trò
 
-Lưu user đã like bài nào.
+Lưu cảm xúc (emoji) mà user đã bày tỏ trên bài viết nào.
 
 ## Fields
 
 ```text
-post_likes
+post_reactions
 ├── id
 ├── post_id
 ├── user_id
+├── emoji        -- CHECK IN ('👍','❤️','😆','😮','😢','😡')
 └── created_at
 ```
 
@@ -1415,12 +1423,13 @@ post_likes
 UNIQUE(post_id, user_id)
 ```
 
-Một user chỉ like một post tối đa một lần.
+Một user chỉ có một reaction trên một post tối đa một lần — chọn emoji mới sẽ ghi đè
+(`ON CONFLICT ... DO UPDATE`) emoji cũ, không cộng dồn.
 
-Unlike:
+Bỏ cảm xúc:
 
 ```text
-DELETE post_likes
+DELETE post_reactions
 WHERE post_id = ? AND user_id = ?
 ```
 
@@ -1478,19 +1487,23 @@ database hiện vẫn hỗ trợ vì `parent_comment_id` self-reference tới `c
 
 ---
 
-# 29. comment_likes
+# 29. comment_reactions — Cảm xúc trên bình luận
+
+Cùng migration 028/029 và cùng lý do như § 27 (`post_reactions`) — thay thế `comment_likes`
+bằng multi-emotion reactions, một reaction mỗi user mỗi comment.
 
 ## Vai trò
 
-Like comment.
+Lưu cảm xúc (emoji) mà user đã bày tỏ trên comment nào.
 
 ## Fields
 
 ```text
-comment_likes
+comment_reactions
 ├── id
 ├── comment_id
 ├── user_id
+├── emoji        -- CHECK IN ('👍','❤️','😆','😮','😢','😡')
 └── created_at
 ```
 
@@ -1500,7 +1513,7 @@ comment_likes
 UNIQUE(comment_id, user_id)
 ```
 
-Một user chỉ like một comment một lần.
+Một user chỉ có một reaction trên một comment tối đa một lần.
 
 ---
 
@@ -1586,11 +1599,11 @@ profiles
     ▼                                             ▼
 groups                                      forum_posts
     │                                             │
-    ├── group_members                             ├── post_likes
+    ├── group_members                             ├── post_reactions
     │                                             │
     ├── channels                                  └── comments
     │      │                                           │
-    │      └── channel_members                         ├── comment_likes
+    │      └── channel_members                         ├── comment_reactions
     │                                                   │
     ├── study_rooms                                     └── replies
     │      │
@@ -1949,20 +1962,22 @@ UNIQUE(direct_user_min_id, direct_user_max_id) WHERE type = 'direct'
 -- đảm bảo 1 cặp user chỉ có tối đa 1 conversation type=direct, kể cả khi
 -- request A→B và B→A tới gần như đồng thời — xem § 15
 
-post_likes:
+post_reactions (§ 27, thay cho post_likes cũ, đã xóa — xem migration 028/029):
 UNIQUE(post_id, user_id)
 
-comment_likes:
+comment_reactions (§ 29, thay cho comment_likes cũ, đã xóa — xem migration 028/029):
 UNIQUE(comment_id, user_id)
 ```
 
-Backend nên xử lý gracefully khi violation xảy ra.
+Backend nên xử lý gracefully khi violation xảy ra — với reactions, "violation" được xử lý bằng
+upsert (`ON CONFLICT ... DO UPDATE SET emoji = ...`) chứ không phải reject, vì chọn emoji khác
+là một hành động hợp lệ (thay thế reaction cũ), không phải lỗi trùng lặp.
 
-Ví dụ API Like Post nên có semantics rõ ràng:
+Ví dụ API Reaction nên có semantics rõ ràng:
 
 ```text
-POST /posts/{id}/like
-DELETE /posts/{id}/like
+PUT /forum/posts/{id}/reactions      -- upsert reaction của user hiện tại (emoji trong body)
+DELETE /forum/posts/{id}/reactions   -- bỏ reaction của user hiện tại
 ```
 
 thay vì tạo duplicate record.
@@ -2171,21 +2186,23 @@ luôn đồng bộ.
 11. resources
 12. forum_categories
 13. forum_posts
-14. post_likes
-15. comments
-16. comment_likes
-17. notifications
-18. conversations              -- migration 004, đã live — xem § 12; 2 cột direct_user_min_id/max_id thêm bởi migration 006 — xem § 14
-19. conversation_members       -- migration 004, đã live — xem § 12; cột last_read_at thêm bởi migration 024, đã chạy live 2026-08-21 — xem § 15
-20. invitations                -- migration 013, đã chạy live và verify thành công 2026-08-18 — xem docs/invitations.md
-21. group_notes                -- migration 019 (đánh số lại từ 016 khi merge origin/master vào feat/notes-persistence, do origin/master đã dùng 016-018 cho forum-hashtag/profile), đã chạy live và verify thành công 2026-08-19 — Ghi chú dùng chung theo Group (không theo Study Room), quyền đọc cho mọi active member, quyền tạo/sửa/xóa chỉ Owner/Moderator — xem docs/db/migrations/README.md
-22. message_reactions          -- migration 025, đã chạy live và verify thành công 2026-08-22 — Reaction emoji (kiểu Messenger) trên messages, cho cả 3 loại conversation (channel/room/direct) — xem § 45
+14. comments
+15. notifications
+16. conversations              -- migration 004, đã live — xem § 12; 2 cột direct_user_min_id/max_id thêm bởi migration 006 — xem § 14
+17. conversation_members       -- migration 004, đã live — xem § 12; cột last_read_at thêm bởi migration 024, đã chạy live 2026-08-21 — xem § 15
+18. invitations                -- migration 013, đã chạy live và verify thành công 2026-08-18 — xem docs/invitations.md
+19. group_notes                -- migration 019 (đánh số lại từ 016 khi merge origin/master vào feat/notes-persistence, do origin/master đã dùng 016-018 cho forum-hashtag/profile), đã chạy live và verify thành công 2026-08-19 — Ghi chú dùng chung theo Group (không theo Study Room), quyền đọc cho mọi active member, quyền tạo/sửa/xóa chỉ Owner/Moderator — xem docs/db/migrations/README.md
+20. message_reactions          -- migration 025, đã chạy live và verify thành công 2026-08-22 — Reaction emoji (kiểu Messenger) trên messages, cho cả 3 loại conversation (channel/room/direct) — xem § 45
+21. post_reactions             -- migration 028, đã chạy live 2026-08-22 — Reaction emoji nhiều cảm xúc trên forum_posts, thay cho post_likes (đã bị migration 029 xóa) — xem § 27
+22. comment_reactions          -- migration 028, đã chạy live 2026-08-22 — Reaction emoji nhiều cảm xúc trên comments, thay cho comment_likes (đã bị migration 029 xóa) — xem § 29
 ```
 
 Tổng cộng:
 
 ```text
-22 tables (tất cả đã live)
+22 tables (tất cả đã live) -- post_likes/comment_likes bị migration 029 xóa hẳn khỏi schema
+(contract phase đã chạy live 2026-08-22 — xem docs/db/migrations/README.md); post_reactions/
+comment_reactions (migration 028) là FK/bảng duy nhất còn lại cho reaction trên Forum.
 ```
 
 `messages.channel_id` đã bị migration 005 xóa hẳn khỏi schema (contract phase đã chạy live — xem § 12); `messages.conversation_id` là FK duy nhất còn lại.

@@ -6,19 +6,15 @@ import { useState, useEffect, useCallback } from 'react';
 import type { Comment, CommentCreate } from '../types/forum.types';
 import { forumApi } from '../lib/forum.api';
 import { useAuth } from '../../../hooks/useAuth';
+import { applyReactionOptimistic } from '../constants/reactions';
 
-/** Cập nhật đệ quy trạng thái isLiked và likesCount của một comment trong cây comment */
-function updateLikeInTree(comments: Comment[], commentId: string): Comment[] {
+/** Cập nhật đệ quy cảm xúc của một comment trong cây comment (emoji = null nghĩa là bỏ cảm xúc) */
+function updateReactionInTree(comments: Comment[], commentId: string, emoji: string | null): Comment[] {
   return comments.map((c) => {
     if (c.id === commentId) {
-      const nextLiked = !c.isLiked;
-      return {
-        ...c,
-        isLiked: nextLiked,
-        likesCount: nextLiked ? c.likesCount + 1 : Math.max(0, c.likesCount - 1),
-      };
+      return { ...c, reactions: applyReactionOptimistic(c.reactions, emoji) };
     }
-    if (c.replies.length > 0) return { ...c, replies: updateLikeInTree(c.replies, commentId) };
+    if (c.replies.length > 0) return { ...c, replies: updateReactionInTree(c.replies, commentId, emoji) };
     return c;
   });
 }
@@ -127,8 +123,7 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
         content,
         createdAt: new Date().toISOString(),
         timeAgo: 'Vừa xong',
-        likesCount: 0,
-        isLiked: false,
+        reactions: [],
         replies: [],
       };
 
@@ -168,8 +163,7 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
         content,
         createdAt: new Date().toISOString(),
         timeAgo: 'Vừa xong',
-        likesCount: 0,
-        isLiked: false,
+        reactions: [],
         replies: [],
       };
 
@@ -228,19 +222,28 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
   };
 
   /**
-   * Toggle thích/bỏ thích một bình luận — Optimistic UI (0ms).
+   * Bày tỏ cảm xúc trên một bình luận — Optimistic UI (0ms đệ quy).
    */
-  const handleToggleCommentLike = (commentId: string, isLiked: boolean) => {
+  const handleReactComment = (commentId: string, emoji: string) => {
     requireAuth(async () => {
       // 1. Cập nhật giao diện 0ms
-      setComments((prev) => updateLikeInTree(prev, commentId));
+      setComments((prev) => updateReactionInTree(prev, commentId, emoji));
 
       // 2. Gọi API ngầm
-      if (isLiked) {
-        await forumApi.unlikeComment(commentId, currentUser?.id);
-      } else {
-        await forumApi.likeComment(commentId, currentUser?.id);
-      }
+      await forumApi.setCommentReaction(commentId, emoji, currentUser?.id);
+    });
+  };
+
+  /**
+   * Bỏ cảm xúc trên một bình luận — Optimistic UI (0ms đệ quy).
+   */
+  const handleRemoveCommentReaction = (commentId: string) => {
+    requireAuth(async () => {
+      // 1. Cập nhật giao diện 0ms
+      setComments((prev) => updateReactionInTree(prev, commentId, null));
+
+      // 2. Gọi API ngầm
+      await forumApi.removeCommentReaction(commentId, currentUser?.id);
     });
   };
 
@@ -251,6 +254,7 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
     handleReply,
     handleUpdateComment,
     handleDeleteComment,
-    handleToggleCommentLike,
+    handleReactComment,
+    handleRemoveCommentReaction,
   };
 }

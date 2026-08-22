@@ -14,6 +14,15 @@ export interface TagResponse {
   created_at: string;
 }
 
+/** Mirrors ReactionSummary (app/forum/dto/forum_dto.py) -- grouped-by-emoji counts, never raw
+ * per-user reaction rows. `reacted_by_me` is relative to whichever user_id was sent with the
+ * request. */
+export interface ReactionSummaryResponse {
+  emoji: string;
+  count: number;
+  reacted_by_me: boolean;
+}
+
 export interface ForumPostResponse {
   id: string;                       // UUID
   author_id: string;                // UUID
@@ -27,9 +36,8 @@ export interface ForumPostResponse {
   category_name?: string;
   author_name?: string;
   author_avatar_url?: string | null;
-  likes_count?: number;
+  reactions?: ReactionSummaryResponse[];
   comments_count?: number;
-  is_liked?: boolean;
   tags?: string[];
 }
 
@@ -43,22 +51,7 @@ export interface CommentResponse {
   updated_at: string;
   author_name?: string;
   author_avatar_url?: string | null;
-  likes_count?: number;
-  is_liked?: boolean;
-}
-
-export interface PostLikeResponse {
-  id: string;
-  post_id: string;
-  user_id: string;
-  created_at: string;
-}
-
-export interface CommentLikeResponse {
-  id: string;
-  comment_id: string;
-  user_id: string;
-  created_at: string;
+  reactions?: ReactionSummaryResponse[];
 }
 
 // ─── Request Payloads — Gửi lên Backend ──────────────────────────────────────
@@ -91,6 +84,14 @@ export interface CommentUpdate {
 
 // ─── UI Models — Biến đổi từ DTO để dùng trên giao diện React ────────────────
 
+/** Grouped-by-emoji reaction count for the UI layer -- camelCase mirror of
+ * ReactionSummaryResponse. */
+export interface ReactionSummary {
+  emoji: string;
+  count: number;
+  reactedByMe: boolean;
+}
+
 export interface Post {
   id: string;
   authorId: string;
@@ -105,9 +106,8 @@ export interface Post {
   updatedAt?: string;
   isEdited?: boolean;
   timeAgo: string;           // Tính client-side: "2 giờ trước"
-  likesCount: number;        // Số lượt thích
+  reactions: ReactionSummary[]; // Cảm xúc theo từng loại emoji (thay cho like đơn thuần)
   commentsCount: number;     // Số lượt bình luận
-  isLiked: boolean;          // Client-side toggle
   tags?: string[];           // Danh sách hashtag
   status?: 'sending' | 'updating' | 'error'; // Optimistic UI: undefined = đã lưu thành công
 }
@@ -124,7 +124,6 @@ export interface Comment {
   updatedAt?: string;
   isEdited?: boolean;
   timeAgo: string;           // Tính client-side
-  likesCount: number;        // Số lượt thích của comment
-  isLiked: boolean;          // Client-side toggle
+  reactions: ReactionSummary[]; // Cảm xúc theo từng loại emoji (thay cho like đơn thuần)
   replies: Comment[];        // FE tự nhóm: comment có parentCommentId = id này
 }

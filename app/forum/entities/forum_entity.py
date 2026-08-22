@@ -47,7 +47,7 @@ class ForumPost(Base):
     author: Mapped["Profile"] = relationship(back_populates="forum_posts")
     category: Mapped["ForumCategory"] = relationship(back_populates="posts")
     comments: Mapped[list["Comment"]] = relationship(back_populates="post")
-    likes: Mapped[list["PostLike"]] = relationship(back_populates="post")
+    reactions: Mapped[list["PostReaction"]] = relationship(back_populates="post")
     notifications: Mapped[list["Notification"]] = relationship(back_populates="post")
     post_tags: Mapped[list["PostTag"]] = relationship(back_populates="post", cascade="all, delete-orphan")
 
@@ -100,12 +100,16 @@ class Comment(Base):
     author: Mapped["Profile"] = relationship(back_populates="comments")
     parent: Mapped["Comment | None"] = relationship(remote_side=[id], back_populates="replies")
     replies: Mapped[list["Comment"]] = relationship(back_populates="parent")
-    likes: Mapped[list["CommentLike"]] = relationship(back_populates="comment")
+    reactions: Mapped[list["CommentReaction"]] = relationship(back_populates="comment")
     notifications: Mapped[list["Notification"]] = relationship(back_populates="comment")
 
 
-class CommentLike(Base):
-    __tablename__ = "comment_likes"
+class CommentReaction(Base):
+    """Facebook-style multi-emotion reaction on a comment -- one row per (comment, user);
+    picking a new emoji replaces the previous one. Mirrors MessageReaction (see
+    app/messages/entities/message_entity.py) and 028_add_forum_reactions.sql."""
+
+    __tablename__ = "comment_reactions"
     __table_args__ = (UniqueConstraint("comment_id", "user_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -113,14 +117,19 @@ class CommentLike(Base):
     )
     comment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("comments.id", ondelete="CASCADE"))
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="CASCADE"))
+    emoji: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
 
-    comment: Mapped["Comment"] = relationship(back_populates="likes")
-    user: Mapped["Profile"] = relationship(back_populates="comment_likes")
+    comment: Mapped["Comment"] = relationship(back_populates="reactions")
+    user: Mapped["Profile"] = relationship(back_populates="comment_reactions")
 
 
-class PostLike(Base):
-    __tablename__ = "post_likes"
+class PostReaction(Base):
+    """Facebook-style multi-emotion reaction on a post -- one row per (post, user); picking a
+    new emoji replaces the previous one. Mirrors MessageReaction (see
+    app/messages/entities/message_entity.py) and 028_add_forum_reactions.sql."""
+
+    __tablename__ = "post_reactions"
     __table_args__ = (UniqueConstraint("post_id", "user_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -128,7 +137,8 @@ class PostLike(Base):
     )
     post_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("forum_posts.id", ondelete="CASCADE"))
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="CASCADE"))
+    emoji: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
 
-    post: Mapped["ForumPost"] = relationship(back_populates="likes")
-    user: Mapped["Profile"] = relationship(back_populates="post_likes")
+    post: Mapped["ForumPost"] = relationship(back_populates="reactions")
+    user: Mapped["Profile"] = relationship(back_populates="post_reactions")

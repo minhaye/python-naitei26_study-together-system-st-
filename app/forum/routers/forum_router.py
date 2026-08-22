@@ -13,8 +13,8 @@ from app.forum.dto.forum_dto import (
     ForumPostCreate,
     ForumPostResponse,
     ForumPostUpdate,
-    PostLikeResponse,
-    CommentLikeResponse,
+    ReactionSet,
+    ReactionSummary,
     TagResponse,
 )
 from app.forum.services.forum_service import ForumService
@@ -313,22 +313,23 @@ async def delete_comment(comment_id: uuid.UUID, session: AsyncSession = Depends(
         )
 
 
-# --- Likes ---
+# --- Reactions ---
 
 
 @router.get("/users/{user_id}/liked-posts", response_model=list[ForumPostResponse])
-async def list_liked_posts(
+async def list_reacted_posts(
     user_id: uuid.UUID,
     skip: int = 0,
     limit: int = 50,
     session: AsyncSession = Depends(get_db_session)
 ):
-    return await service.list_liked_posts(session, user_id, skip=skip, limit=limit)
+    return await service.list_reacted_posts(session, user_id, skip=skip, limit=limit)
 
 
-@router.post("/posts/{post_id}/like", response_model=PostLikeResponse, status_code=status.HTTP_201_CREATED)
-async def like_post(
+@router.put("/posts/{post_id}/reactions", response_model=list[ReactionSummary])
+async def set_post_reaction(
     post_id: uuid.UUID,
+    data: ReactionSet,
     user_id: uuid.UUID,
     session: AsyncSession = Depends(get_db_session)
 ):
@@ -338,50 +339,49 @@ async def like_post(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Post not found"
         )
-    existing = await service.get_post_like(session, post_id, user_id)
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User already liked this post"
-        )
     try:
-        like = await service.like_post(session, post_id, user_id)
+        await service.set_post_reaction(session, post_id, user_id, data.emoji)
         await session.commit()
-        return like
     except Exception as e:
         await session.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Could not like post: {str(e)}"
+            detail=f"Could not set reaction: {str(e)}"
         )
+    return await service.get_post_reactions(session, post_id, user_id)
 
 
-@router.delete("/posts/{post_id}/unlike", status_code=status.HTTP_204_NO_CONTENT)
-async def unlike_post(
+@router.delete("/posts/{post_id}/reactions", response_model=list[ReactionSummary])
+async def remove_post_reaction(
     post_id: uuid.UUID,
     user_id: uuid.UUID,
     session: AsyncSession = Depends(get_db_session)
 ):
-    like = await service.get_post_like(session, post_id, user_id)
-    if not like:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Like not found"
-        )
     try:
-        await service.unlike_post(session, like)
+        await service.remove_post_reaction(session, post_id, user_id)
         await session.commit()
     except Exception as e:
         await session.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Could not unlike post: {str(e)}"
+            detail=f"Could not remove reaction: {str(e)}"
         )
+    return await service.get_post_reactions(session, post_id, user_id)
 
 
-@router.post("/comments/{comment_id}/like", response_model=CommentLikeResponse, status_code=status.HTTP_201_CREATED)
-async def like_comment(
+@router.get("/posts/{post_id}/reactions", response_model=list[ReactionSummary])
+async def get_post_reactions(
+    post_id: uuid.UUID,
+    user_id: uuid.UUID | None = None,
+    session: AsyncSession = Depends(get_db_session)
+):
+    return await service.get_post_reactions(session, post_id, user_id)
+
+
+@router.put("/comments/{comment_id}/reactions", response_model=list[ReactionSummary])
+async def set_comment_reaction(
     comment_id: uuid.UUID,
+    data: ReactionSet,
     user_id: uuid.UUID,
     session: AsyncSession = Depends(get_db_session)
 ):
@@ -391,42 +391,40 @@ async def like_comment(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Comment not found"
         )
-    existing = await service.get_comment_like(session, comment_id, user_id)
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User already liked this comment"
-        )
     try:
-        like = await service.like_comment(session, comment_id, user_id)
+        await service.set_comment_reaction(session, comment_id, user_id, data.emoji)
         await session.commit()
-        return like
     except Exception as e:
         await session.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Could not like comment: {str(e)}"
+            detail=f"Could not set reaction: {str(e)}"
         )
+    return await service.get_comment_reactions(session, comment_id, user_id)
 
 
-@router.delete("/comments/{comment_id}/unlike", status_code=status.HTTP_204_NO_CONTENT)
-async def unlike_comment(
+@router.delete("/comments/{comment_id}/reactions", response_model=list[ReactionSummary])
+async def remove_comment_reaction(
     comment_id: uuid.UUID,
     user_id: uuid.UUID,
     session: AsyncSession = Depends(get_db_session)
 ):
-    like = await service.get_comment_like(session, comment_id, user_id)
-    if not like:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Like not found"
-        )
     try:
-        await service.unlike_comment(session, like)
+        await service.remove_comment_reaction(session, comment_id, user_id)
         await session.commit()
     except Exception as e:
         await session.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Could not unlike comment: {str(e)}"
+            detail=f"Could not remove reaction: {str(e)}"
         )
+    return await service.get_comment_reactions(session, comment_id, user_id)
+
+
+@router.get("/comments/{comment_id}/reactions", response_model=list[ReactionSummary])
+async def get_comment_reactions(
+    comment_id: uuid.UUID,
+    user_id: uuid.UUID | None = None,
+    session: AsyncSession = Depends(get_db_session)
+):
+    return await service.get_comment_reactions(session, comment_id, user_id)

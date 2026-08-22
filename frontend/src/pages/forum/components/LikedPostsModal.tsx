@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { Avatar } from '../../../components/ui/Avatar';
 import type { Post } from '../types/forum.types';
+import { totalReactionCount } from '../constants/reactions';
 
 interface LikedPostsModalProps {
   isOpen: boolean;
@@ -51,7 +52,7 @@ export const LikedPostsModal: React.FC<LikedPostsModalProps> = ({ isOpen, onClos
             borderBottom: '1px solid #E2E8F0',
           }}
         >
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: '700', color: '#0F172A' }}>Bài viết đã thích</h2>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: '700', color: '#0F172A' }}>Bài viết đã bày tỏ cảm xúc</h2>
           <button
             onClick={onClose}
             style={{
@@ -70,7 +71,7 @@ export const LikedPostsModal: React.FC<LikedPostsModalProps> = ({ isOpen, onClos
         <div style={{ flex: 1, overflowY: 'auto', padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
           {posts.length === 0 ? (
             <div style={{ textAlign: 'center', color: '#64748B', padding: '32px 0' }}>
-              Bạn chưa thích bài viết nào.
+              Bạn chưa bày tỏ cảm xúc với bài viết nào.
             </div>
           ) : (
             posts.map((post) => (
@@ -99,7 +100,7 @@ export const LikedPostsModal: React.FC<LikedPostsModalProps> = ({ isOpen, onClos
                     {post.title}
                   </Link>
                   <div style={{ display: 'flex', gap: 12, fontSize: 12, color: '#64748B', paddingTop: 4 }}>
-                    <span>{post.likesCount} thích</span>
+                    <span>{totalReactionCount(post.reactions)} cảm xúc</span>
                     <span>{post.commentsCount} bình luận</span>
                   </div>
                 </div>

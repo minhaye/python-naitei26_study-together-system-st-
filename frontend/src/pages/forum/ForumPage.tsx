@@ -49,7 +49,7 @@ export const ForumPage: React.FC = () => {
     selectedFilter,
     isLoggedIn ? currentUser.id : undefined
   );
-  const { showCreateModal, setShowCreateModal, handleCreatePost, handleUpdatePost, handleDeletePost, handleRetryPost, handleDiscardPost, handleToggleLike } = usePostActions(setPosts);
+  const { showCreateModal, setShowCreateModal, handleCreatePost, handleUpdatePost, handleDeletePost, handleRetryPost, handleDiscardPost, handleReact, handleRemoveReaction } = usePostActions(setPosts);
 
   // Ref cho cột giữa (Middle Feed) để lưu & khôi phục scrollTop
   const feedRef = useRef<HTMLDivElement | null>(null);
@@ -201,7 +201,8 @@ export const ForumPage: React.FC = () => {
               <PostCard
                 key={post.id}
                 post={post}
-                onToggleLike={handleToggleLike}
+                onReact={handleReact}
+                onRemoveReaction={handleRemoveReaction}
                 onUpdatePost={handleUpdatePost}
                 onDeletePost={handleDeletePost}
                 onRetryPost={handleRetryPost}
