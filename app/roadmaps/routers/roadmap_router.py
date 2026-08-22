@@ -15,6 +15,8 @@ from app.roadmaps.dto.roadmap_dto import (
     RoadmapPhaseResponse,
     RoadmapPhaseUpdate,
     RoadmapResponse,
+    RoadmapSuggestQuestionsRequest,
+    RoadmapSuggestQuestionsResponse,
     RoadmapSuggestRequest,
     RoadmapSuggestion,
     RoadmapUpdate,
@@ -36,10 +38,24 @@ async def list_roadmaps(current_user: CurrentUser = Depends(get_current_user), s
     return list(result.scalars())
 
 
+@router.post('/suggest/questions', response_model=RoadmapSuggestQuestionsResponse)
+async def suggest_roadmap_questions(data: RoadmapSuggestQuestionsRequest, current_user: CurrentUser = Depends(get_current_user)):
+    try:
+        return await roadmap_ai_service.suggest_questions(data.description)
+    except RoadmapAiServiceNotConfigured as exc:
+        logger.error("Roadmap AI questions requested but not configured: %s", exc)
+        raise HTTPException(503, 'Tính năng gợi ý bằng AI hiện chưa khả dụng.') from exc
+    except RoadmapAiError as exc:
+        # exc carries the raw provider error (may include request payloads) -- log it for
+        # debugging but never forward it to the client as the HTTP detail.
+        logger.warning("Roadmap AI questions generation failed: %s", exc)
+        raise HTTPException(502, 'Không thể tạo câu hỏi lúc này, vui lòng thử lại sau.') from exc
+
+
 @router.post('/suggest', response_model=RoadmapSuggestion)
 async def suggest_roadmap(data: RoadmapSuggestRequest, current_user: CurrentUser = Depends(get_current_user)):
     try:
-        return await roadmap_ai_service.suggest(data.description)
+        return await roadmap_ai_service.suggest(data.description, data.answers)
     except RoadmapAiServiceNotConfigured as exc:
         logger.error("Roadmap AI suggestion requested but not configured: %s", exc)
         raise HTTPException(503, 'Tính năng gợi ý bằng AI hiện chưa khả dụng.') from exc

@@ -86,7 +86,7 @@ class RoadmapResponse(BaseModel):
     phases: list[RoadmapPhaseResponse]
 
 
-class RoadmapSuggestRequest(BaseModel):
+class RoadmapSuggestQuestionsRequest(BaseModel):
     description: str = Field(min_length=1, max_length=500)
 
     @field_validator('description')
@@ -96,6 +96,34 @@ class RoadmapSuggestRequest(BaseModel):
         if not value:
             raise ValueError('Description must not be blank')
         return value
+
+
+class RoadmapQuestionOption(BaseModel):
+    label: str = Field(min_length=1, max_length=100)
+
+
+class RoadmapQuestion(BaseModel):
+    question: str = Field(min_length=1, max_length=200)
+    options: list[RoadmapQuestionOption] = Field(min_length=2, max_length=4)
+
+
+class RoadmapSuggestQuestionsResponse(BaseModel):
+    questions: list[RoadmapQuestion] = Field(min_length=3, max_length=4)
+
+
+class RoadmapAnswer(BaseModel):
+    question: str = Field(min_length=1, max_length=200)
+    answer: str = Field(min_length=1, max_length=100)
+
+
+class RoadmapSuggestRequest(BaseModel):
+    description: str = Field(min_length=1, max_length=500)
+    answers: list[RoadmapAnswer] = Field(default_factory=list, max_length=4)
+
+    @field_validator('description')
+    @classmethod
+    def strip_description(cls, value: str) -> str:
+        return RoadmapSuggestQuestionsRequest.strip_description(value)
 
 
 class RoadmapPhaseSuggestion(BaseModel):
