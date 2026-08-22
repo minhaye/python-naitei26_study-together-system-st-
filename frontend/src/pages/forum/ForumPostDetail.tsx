@@ -12,7 +12,7 @@ import { useForumState } from './context/ForumStateContext';
 export const ForumPostDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
+  const { currentUser, requireAuth } = useAuth();
   const { updatePostInState, deletePostInState } = useForumState();
 
   const [post, setPost] = useState<Post | null>(null);
@@ -31,22 +31,24 @@ export const ForumPostDetail: React.FC = () => {
       .finally(() => setIsLoading(false));
   }, [id, currentUser?.id]);
 
-  const handleToggleLike = async (postId: string) => {
-    if (!post) return;
-    if (post.isLiked) {
-      await forumApi.unlikePost(postId, currentUser?.id);
-    } else {
-      await forumApi.likePost(postId, currentUser?.id);
-    }
-    setPost((prev) =>
-      prev
-        ? {
-            ...prev,
-            isLiked: !prev.isLiked,
-            likesCount: !prev.isLiked ? prev.likesCount + 1 : Math.max(0, prev.likesCount - 1),
-          }
-        : null
-    );
+  const handleToggleLike = (postId: string) => {
+    requireAuth(async () => {
+      if (!post) return;
+      if (post.isLiked) {
+        await forumApi.unlikePost(postId, currentUser?.id);
+      } else {
+        await forumApi.likePost(postId, currentUser?.id);
+      }
+      setPost((prev) =>
+        prev
+          ? {
+              ...prev,
+              isLiked: !prev.isLiked,
+              likesCount: !prev.isLiked ? prev.likesCount + 1 : Math.max(0, prev.likesCount - 1),
+            }
+          : null
+      );
+    });
   };
 
   const handleUpdatePost = async (

@@ -28,7 +28,7 @@ export const CommentItem: React.FC<CommentItemProps> = ({
   nestingLevel = 0,
   isLastChild = false,
 }) => {
-  const { currentUser } = useAuth();
+  const { currentUser, requireAuth } = useAuth();
   const isAuthor = currentUser?.id === comment.authorId;
 
   const [isEditing, setIsEditing] = useState(false);
@@ -53,11 +53,13 @@ export const CommentItem: React.FC<CommentItemProps> = ({
   }, []);
 
   const handleOpenReplyBox = () => {
-    const nextState = !showReplyBox;
-    setShowReplyBox(nextState);
-    if (nextState && !replyText) {
-      setReplyText(`@${comment.authorName} `);
-    }
+    requireAuth(() => {
+      const nextState = !showReplyBox;
+      setShowReplyBox(nextState);
+      if (nextState && !replyText) {
+        setReplyText(`@${comment.authorName} `);
+      }
+    });
   };
 
   const handleSendReply = () => {

@@ -33,7 +33,7 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({
   isDetailPage = false,
 }) => {
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
+  const { currentUser, requireAuth } = useAuth();
   const { setSelectedTag } = useForumState();
 
   const isAuthor = currentUser?.id === post.authorId;
@@ -68,10 +68,12 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({
   }, []);
 
   const handleLikeClick = () => {
-    const nextLiked = !localIsLiked;
-    setLocalIsLiked(nextLiked);
-    setLocalLikesCount((prev) => (nextLiked ? prev + 1 : Math.max(0, prev - 1)));
-    onToggleLike(post.id);
+    requireAuth(() => {
+      const nextLiked = !localIsLiked;
+      setLocalIsLiked(nextLiked);
+      setLocalLikesCount((prev) => (nextLiked ? prev + 1 : Math.max(0, prev - 1)));
+      onToggleLike(post.id);
+    });
   };
 
   const handleCommentAdded = () => {
