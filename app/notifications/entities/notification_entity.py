@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -45,6 +45,9 @@ class Notification(Base):
     invitation_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("invitations.id", ondelete="CASCADE")
     )
+    # Flexible per-type metadata: task_count, resource_name, room_name, message_preview,
+    # other_count (like aggregation), hours_left, etc.  Varies by NotificationType.
+    data: Mapped[dict | None] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     is_read: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
 
