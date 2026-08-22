@@ -1,12 +1,13 @@
 /**
- * EditComment — Form chỉnh sửa bình luận Inline (Facebook Style).
+ * EditComment — Form chỉnh sửa bình luận Inline với đầy đủ công cụ (TipTap EditTextTool).
  *
- * Tự động Focus vào ô input, hỗ trợ phím Enter để lưu, Escape để hủy,
- * đi kèm 2 nút bấm nhỏ "Lưu" và "Hủy" bên dưới bubble comment.
+ * Tích hợp EditTextTool hỗ trợ ảnh 🖼️, công thức Toán +/–, định dạng rich text,
+ * bảo toàn ảnh cũ và thẻ tag tác giả (@Mention) khi chỉnh sửa.
  */
 
 import React, { useState } from 'react';
 import { FORUM_COLORS } from '../constants/colors';
+import { EditTextTool } from '../../../components/ui/EditTextTool';
 
 interface EditCommentProps {
   initialContent: string;
@@ -19,27 +20,30 @@ export const EditComment: React.FC<EditCommentProps> = ({
   onSave,
   onCancel,
 }) => {
-  // Loại bỏ các thẻ HTML wrapper nếu có để người dùng chỉnh sửa văn bản gốc
-  const getRawText = (html: string) => {
-    // Nếu chứa thẻ mention span do FE tạo, giữ lại text
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    return doc.body.textContent || '';
-  };
-
-  const [text, setText] = useState(getRawText(initialContent));
+  const [content, setContent] = useState(initialContent);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSave = async () => {
-    if (!text.trim() || isSubmitting) return;
+  const hasValidContent = () => {
+    if (!content) return false;
+    const hasImage = /<img[^>]*>/i.test(content);
+    const textOnly = content.replace(/<[^>]*>/g, '').trim();
+    return textOnly.length > 0 || hasImage;
+  };
 
-    let finalContent = text.trim();
-    // Nếu text có @Tag tác giả ở đầu, tự bọc lại thẻ span màu xanh
-    const mentionRegex = /^(@[^\s<]+(?:\s+[^\s<]+)?)/;
-    const match = finalContent.match(mentionRegex);
-    if (match && !finalContent.includes('<span style=')) {
-      const mentionTag = match[1];
-      const restText = finalContent.slice(mentionTag.length);
-      finalContent = `<span style="color: #1D4ED8; font-weight: 600; cursor: pointer;">${mentionTag}</span>${restText}`;
+  const handleSave = async () => {
+    if (!hasValidContent() || isSubmitting) return;
+
+    let finalContent = content.trim();
+
+    // Nếu văn bản có @Tag tác giả ở đầu (kể cả bọc trong <p> của TipTap) mà chưa có thẻ span màu xanh, tự động bọc lại
+    if (!finalContent.includes('<span style=')) {
+      const mentionRegex = /^(?:<p>)?\s*(@[\w\u00C0-\u024F\u1EA0-\u1EF9]+(?:\s+[\w\u00C0-\u024F\u1EA0-\u1EF9]+)?)/i;
+      if (mentionRegex.test(finalContent)) {
+        finalContent = finalContent.replace(mentionRegex, (match, tag) => {
+          const hasP = match.startsWith('<p>');
+          return `${hasP ? '<p>' : ''}<span style="color: #1D4ED8; font-weight: 600; cursor: pointer;">${tag}</span>`;
+        });
+      }
     }
 
     setIsSubmitting(true);
@@ -50,76 +54,53 @@ export const EditComment: React.FC<EditCommentProps> = ({
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSave();
-    } else if (e.key === 'Escape') {
-      onCancel();
-    }
-  };
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%', marginTop: 2 }}>
-      <input
-        autoFocus
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={handleKeyDown}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', marginTop: 4 }}>
+      <EditTextTool
+        content={content}
+        onChange={setContent}
         placeholder="Chỉnh sửa bình luận..."
-        style={{
-          width: '100%',
-          padding: '8px 12px',
-          background: '#FFFFFF',
-          border: `1px solid ${FORUM_COLORS.primary}`,
-          borderRadius: 16,
-          outline: 'none',
-          fontSize: 13,
-          color: FORUM_COLORS.textPrimary,
-          boxShadow: '0 0 0 3px rgba(59, 130, 246, 0.15)',
-        }}
+        minHeight={80}
       />
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={!text.trim() || isSubmitting}
-          style={{
-            background: FORUM_COLORS.primary,
-            color: '#FFFFFF',
-            border: 'none',
-            borderRadius: 12,
-            padding: '4px 12px',
-            fontSize: 12,
-            fontWeight: '600',
-            cursor: !text.trim() || isSubmitting ? 'not-allowed' : 'pointer',
-            opacity: !text.trim() || isSubmitting ? 0.6 : 1,
-            transition: 'all 0.15s ease',
-          }}
-        >
-          {isSubmitting ? 'Đang lưu...' : 'Lưu'}
-        </button>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>
         <button
           type="button"
           onClick={onCancel}
           style={{
             background: 'transparent',
             color: FORUM_COLORS.textMuted,
-            border: 'none',
-            padding: '4px 8px',
+            border: '1px solid #CBD5E1',
+            borderRadius: 8,
+            padding: '5px 12px',
             fontSize: 12,
             fontWeight: '500',
             cursor: 'pointer',
-            transition: 'color 0.15s ease',
+            transition: 'all 0.15s ease',
           }}
           onMouseOver={(e) => (e.currentTarget.style.color = FORUM_COLORS.textPrimary)}
           onMouseOut={(e) => (e.currentTarget.style.color = FORUM_COLORS.textMuted)}
         >
           Hủy
         </button>
-        <span style={{ fontSize: 11, color: FORUM_COLORS.textDisabled, marginLeft: 4 }}>
-          Nhấn Enter để lưu, Esc để hủy
-        </span>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={!hasValidContent() || isSubmitting}
+          style={{
+            background: FORUM_COLORS.primary,
+            color: '#FFFFFF',
+            border: 'none',
+            borderRadius: 8,
+            padding: '5px 14px',
+            fontSize: 12,
+            fontWeight: '600',
+            cursor: !hasValidContent() || isSubmitting ? 'not-allowed' : 'pointer',
+            opacity: !hasValidContent() || isSubmitting ? 0.6 : 1,
+            transition: 'all 0.15s ease',
+          }}
+        >
+          {isSubmitting ? 'Đang lưu...' : 'Lưu'}
+        </button>
       </div>
     </div>
   );

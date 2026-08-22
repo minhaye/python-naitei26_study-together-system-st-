@@ -25,6 +25,7 @@ export interface EditTextToolProps {
   placeholder?: string;
   style?: React.CSSProperties;
   minHeight?: number;
+  autoFocus?: boolean | 'start' | 'end' | 'all';
 }
 
 /**
@@ -46,7 +47,7 @@ const ToolbarButton: React.FC<{
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       style={{
-        background: isActive ? '#CBD5E1' : isHovered ? '#E2E8F0' : 'transparent',
+        background: isActive ? '#EFF6FF' : isHovered ? '#F1F5F9' : 'transparent',
         border: 'none',
         borderRadius: 6,
         padding: '6px 10px',
@@ -82,6 +83,7 @@ export const EditTextTool: React.FC<EditTextToolProps> = ({
   placeholder = 'Nhập nội dung câu hỏi hoặc câu trả lời...',
   style,
   minHeight = 120,
+  autoFocus = 'end',
 }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMathModalOpen, setIsMathModalOpen] = useState(false);
@@ -95,12 +97,14 @@ export const EditTextTool: React.FC<EditTextToolProps> = ({
       Superscript,
       Image.configure({
         inline: true,
+        allowBase64: true,
         HTMLAttributes: {
           style: 'max-height: 360px; border-radius: 12px; object-fit: cover; margin: 8px 0; border: 1px solid #E2E8F0;',
         },
       }),
     ],
     content,
+    autofocus: autoFocus,
     onUpdate: ({ editor }) => {
       onChange?.(editor.getHTML());
     },

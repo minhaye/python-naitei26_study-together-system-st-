@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { ThumbsUp, CornerDownRight, Send, Edit2, Trash2, MoreHorizontal } from 'lucide-react';
 import { Avatar } from '../../../components/ui/Avatar';
 import { RichContentView } from '../../../components/ui/RichContentView';
+import { EditTextTool } from '../../../components/ui/EditTextTool';
 import { FORUM_COLORS } from '../constants/colors';
 import type { Comment } from '../types/forum.types';
 import { EditComment } from './EditComment';
@@ -21,6 +22,12 @@ interface CommentItemProps {
   isLastChild?: boolean; // Đánh dấu comment con cuối cùng trong nhánh
 }
 
+const getPlainText = (html: string) => {
+  if (!html) return '';
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  return doc.body.textContent || '';
+};
+
 export const CommentItem: React.FC<CommentItemProps> = ({
   comment,
   onReply,
@@ -37,6 +44,7 @@ export const CommentItem: React.FC<CommentItemProps> = ({
 
   const [isEditing, setIsEditing] = useState(false);
   const [showReplyBox, setShowReplyBox] = useState(false);
+  const [showReplyRichEditor, setShowReplyRichEditor] = useState(false);
   const [showReplies, setShowReplies] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [reactionPickerOpen, setReactionPickerOpen] = useState(false);
@@ -89,6 +97,9 @@ export const CommentItem: React.FC<CommentItemProps> = ({
       if (nextState && !replyText) {
         setReplyText(`@${comment.authorName} `);
       }
+      if (!nextState) {
+        setShowReplyRichEditor(false);
+      }
     });
   };
 
@@ -97,14 +108,23 @@ export const CommentItem: React.FC<CommentItemProps> = ({
 
     let finalContent = replyText.trim();
     const mentionStr = `@${comment.authorName}`;
-    if (finalContent.startsWith(mentionStr)) {
-      const restText = finalContent.substring(mentionStr.length);
-      finalContent = `<span style="color: #1D4ED8; font-weight: 600; cursor: pointer;">${mentionStr}</span>${restText}`;
+
+    // Tự động đóng gói tag @Mention màu xanh nổi bật ngay cả khi nằm trong thẻ <p> hoặc có thêm chữ/ảnh phía sau
+    if (!finalContent.includes('<span style=')) {
+      const escapeReg = mentionStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const mentionRegex = new RegExp(`^(?:<p>)?\\s*(${escapeReg})`, 'i');
+      if (mentionRegex.test(finalContent)) {
+        finalContent = finalContent.replace(mentionRegex, (match, tag) => {
+          const hasP = match.startsWith('<p>');
+          return `${hasP ? '<p>' : ''}<span style="color: #1D4ED8; font-weight: 600; cursor: pointer;">${tag}</span>`;
+        });
+      }
     }
 
     onReply(comment.id, finalContent);
     setReplyText('');
     setShowReplyBox(false);
+    setShowReplyRichEditor(false);
     setShowReplies(true);
   };
 
@@ -431,43 +451,95 @@ export const CommentItem: React.FC<CommentItemProps> = ({
           </button>
         )}
 
-        {/* Khung gõ Reply */}
+        {/* Khung gõ Reply (Mặc định nhỏ gọn, click/focus mở rộng EditTextTool phong phú) */}
         {showReplyBox && (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
-            <input
-              autoFocus
-              value={replyText}
-              onChange={(e) => setReplyText(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSendReply()}
-              placeholder={`Trả lời ${comment.authorName}...`}
-              style={{
-                flex: 1,
-                padding: '8px 12px',
-                background: FORUM_COLORS.subtle,
-                border: `1px solid ${FORUM_COLORS.border}`,
-                borderRadius: 20,
-                outline: 'none',
-                fontSize: 13,
-                color: FORUM_COLORS.textPrimary,
-              }}
-            />
-            <button
-              onClick={handleSendReply}
-              style={{
-                background: FORUM_COLORS.primary,
-                border: 'none',
-                borderRadius: '50%',
-                width: 32,
-                height: 32,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}
-            >
-              <Send size={14} color="white" />
-            </button>
+          <div style={{ marginTop: 8, width: '100%' }}>
+            {!showReplyRichEditor ? (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', width: '100%' }}>
+                <input
+                  value={getPlainText(replyText)}
+                  onFocus={() => setShowReplyRichEditor(true)}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSendReply()}
+                  placeholder={`Trả lời ${comment.authorName}...`}
+                  style={{
+                    flex: 1,
+                    padding: '8px 12px',
+                    background: FORUM_COLORS.subtle,
+                    border: `1px solid ${FORUM_COLORS.border}`,
+                    borderRadius: 20,
+                    outline: 'none',
+                    fontSize: 13,
+                    color: FORUM_COLORS.textPrimary,
+                    cursor: 'text',
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={handleSendReply}
+                  style={{
+                    background: FORUM_COLORS.primary,
+                    border: 'none',
+                    borderRadius: '50%',
+                    width: 32,
+                    height: 32,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Send size={14} color="white" />
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+                <EditTextTool
+                  content={replyText}
+                  onChange={setReplyText}
+                  placeholder={`Trả lời ${comment.authorName}...`}
+                  minHeight={80}
+                />
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowReplyRichEditor(false);
+                      setShowReplyBox(false);
+                    }}
+                    style={{
+                      padding: '5px 12px',
+                      background: 'transparent',
+                      border: '1px solid #CBD5E1',
+                      borderRadius: 8,
+                      fontSize: 12,
+                      fontWeight: '500',
+                      color: '#64748B',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Thu gọn
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSendReply}
+                    style={{
+                      padding: '5px 14px',
+                      background: FORUM_COLORS.primary,
+                      border: 'none',
+                      borderRadius: 8,
+                      fontSize: 12,
+                      fontWeight: '600',
+                      color: 'white',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Gửi phản hồi
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

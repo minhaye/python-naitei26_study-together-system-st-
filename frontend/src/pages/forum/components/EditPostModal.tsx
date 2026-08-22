@@ -48,7 +48,13 @@ export const EditPostModal: React.FC<EditPostModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setTitle(post.title);
-      setContent(post.content);
+      
+      // Nếu bài viết có post.imagePath và trong content chưa chứa link/dữ liệu ảnh đó, gộp vào để TipTap hiển thị ảnh
+      const initialContent = post.imagePath && !post.content.includes(post.imagePath)
+        ? `${post.content}<p><img src="${post.imagePath}" /></p>`
+        : post.content;
+      
+      setContent(initialContent);
       setCategoryId(post.categoryId);
       setEditorKey((prev) => prev + 1);
 
