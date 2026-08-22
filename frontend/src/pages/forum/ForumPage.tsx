@@ -22,7 +22,7 @@ import { PostSkeleton } from '../../components/ui/Skeleton';
 import { useForumState } from './context/ForumStateContext';
 
 export const ForumPage: React.FC = () => {
-  const { isLoggedIn, currentUser } = useAuth();
+  const { isLoggedIn, currentUser, requireAuth } = useAuth();
   const forumState = useForumState();
 
   const {
@@ -154,7 +154,7 @@ export const ForumPage: React.FC = () => {
             onClearTag={() => setSelectedTag(null)}
             selectedFilter={selectedFilter}
             onSelectFilter={setSelectedFilter}
-            onOpenCreateModal={() => setShowCreateModal(true)}
+            onOpenCreateModal={() => requireAuth(() => setShowCreateModal(true))}
           />
 
           {/* Unauthenticated Alert Banner */}

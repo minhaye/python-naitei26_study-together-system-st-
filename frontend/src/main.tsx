@@ -5,6 +5,7 @@ import './index.css'
 import { AppRoutes } from './routes'
 import { AuthProvider } from './contexts/AuthContext'
 import { UnreadMessagesProvider } from './contexts/UnreadMessagesProvider'
+import { ColdStartOverlay } from './components/common/ColdStartOverlay'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -15,5 +16,6 @@ createRoot(document.getElementById('root')!).render(
         </UnreadMessagesProvider>
       </AuthProvider>
     </BrowserRouter>
+    <ColdStartOverlay />
   </StrictMode>,
 )

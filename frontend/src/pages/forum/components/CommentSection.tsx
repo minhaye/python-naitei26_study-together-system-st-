@@ -30,7 +30,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
   initialLimit = 3,
   onCommentAdded,
 }) => {
-  const { currentUser } = useAuth();
+  const { currentUser, isLoggedIn, requireAuth } = useAuth();
   const { comments, isLoading, handleAddComment, handleReply, handleUpdateComment, handleDeleteComment, handleToggleCommentLike } =
     useComments(postId, onCommentAdded);
   const [newComment, setNewComment] = useState('');
@@ -38,14 +38,20 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
   const [expandedAll, setExpandedAll] = useState(false);
 
   const handleSubmit = () => {
-    if (!newComment.trim()) return;
-    const hasImage = /<img[^>]*>/i.test(newComment);
-    const textOnly = newComment.replace(/<[^>]*>/g, '').trim();
-    if (!textOnly && !hasImage) return;
+    requireAuth(() => {
+      if (!newComment.trim()) return;
+      const hasImage = /<img[^>]*>/i.test(newComment);
+      const textOnly = newComment.replace(/<[^>]*>/g, '').trim();
+      if (!textOnly && !hasImage) return;
 
-    handleAddComment(newComment);
-    setNewComment('');
-    setShowRichEditor(false);
+      handleAddComment(newComment);
+      setNewComment('');
+      setShowRichEditor(false);
+    });
+  };
+
+  const handleFocusInput = () => {
+    requireAuth(() => setShowRichEditor(true));
   };
 
   const displayedComments = isDetailPage || expandedAll
@@ -72,9 +78,14 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', width: '100%' }}>
               <input
                 value={newComment}
-                onFocus={() => setShowRichEditor(true)}
+                readOnly={!isLoggedIn}
+                onFocus={handleFocusInput}
                 onChange={(e) => setNewComment(e.target.value)}
-                placeholder="Viết bình luận (bấm để mở công cụ soạn thảo, chèn toán, ảnh)..."
+                placeholder={
+                  isLoggedIn
+                    ? 'Viết bình luận (bấm để mở công cụ soạn thảo, chèn toán, ảnh)...'
+                    : 'Đăng nhập để bình luận...'
+                }
                 style={{
                   flex: 1,
                   padding: '9px 16px',
@@ -84,6 +95,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
                   outline: 'none',
                   fontSize: 14,
                   color: FORUM_COLORS.textPrimary,
+                  cursor: isLoggedIn ? 'text' : 'pointer',
                 }}
               />
               <button
@@ -99,6 +111,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
                   alignItems: 'center',
                   justifyContent: 'center',
                   flexShrink: 0,
+                  opacity: isLoggedIn ? 1 : 0.5,
                 }}
               >
                 <Send size={15} color="white" />
