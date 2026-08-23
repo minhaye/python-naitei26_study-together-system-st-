@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Heart,
@@ -12,10 +12,14 @@ import {
   AlertTriangle,
   Mail,
   UserPlus,
+  Check,
+  X,
 } from 'lucide-react';
 import type { NotificationItem as NotificationItemType } from '../../types/notification';
 import { formatNotification } from './notificationFormatter';
 import { Avatar } from '../ui/Avatar';
+import { declineInvitation, redeemInvitationById } from '../../lib/invitation.api';
+import { targetRoute } from '../../lib/invitationNavigation';
 
 interface NotificationItemProps {
   item: NotificationItemType;
@@ -54,6 +58,8 @@ function renderIcon(iconName: string) {
 export const NotificationItem: React.FC<NotificationItemProps> = memo(({ item, onMarkAsRead, onCloseModal }) => {
   const navigate = useNavigate();
   const formatted = formatNotification(item);
+  const [isBusy, setIsBusy] = useState(false);
+  const [actionDone, setActionDone] = useState<'accepted' | 'declined' | 'error' | null>(null);
 
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -64,6 +70,42 @@ export const NotificationItem: React.FC<NotificationItemProps> = memo(({ item, o
       onCloseModal();
     }
     navigate(formatted.targetLink);
+  };
+
+  const handleAcceptInvitation = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!item.invitation_id || isBusy) return;
+    setIsBusy(true);
+    try {
+      const result = await redeemInvitationById(item.invitation_id);
+      onMarkAsRead(item.id, item.category);
+      setActionDone('accepted');
+      if (onCloseModal) onCloseModal();
+      if (result.outcome === 'group_membership_required') {
+        navigate(`/groups/${result.target.group_id}`);
+        return;
+      }
+      navigate(targetRoute(result.target));
+    } catch {
+      setActionDone('error');
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleDeclineInvitation = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!item.invitation_id || isBusy) return;
+    setIsBusy(true);
+    try {
+      await declineInvitation(item.invitation_id);
+      onMarkAsRead(item.id, item.category);
+      setActionDone('declined');
+    } catch {
+      setActionDone('error');
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   return (
@@ -121,6 +163,59 @@ export const NotificationItem: React.FC<NotificationItemProps> = memo(({ item, o
             {formatted.previewText}
           </span>
         </div>
+
+        {/* Action Buttons for Invitations */}
+        {item.invitation_id && (
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            {actionDone === 'accepted' ? (
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#10B981' }}>✓ Đã tham gia</span>
+            ) : actionDone === 'declined' ? (
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#64748B' }}>Đã từ chối</span>
+            ) : (
+              <>
+                <button
+                  onClick={handleDeclineInvitation}
+                  disabled={isBusy}
+                  style={{
+                    padding: '4px 10px',
+                    background: 'white',
+                    color: '#64748B',
+                    border: '1px solid #CBD5E1',
+                    borderRadius: 6,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: isBusy ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                >
+                  <X size={12} /> Từ chối
+                </button>
+                <button
+                  onClick={handleAcceptInvitation}
+                  disabled={isBusy}
+                  style={{
+                    padding: '4px 10px',
+                    background: '#00236F',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: 6,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: isBusy ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                >
+                  <Check size={12} /> Tham gia
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
         <div
           style={{
             fontSize: 12,
