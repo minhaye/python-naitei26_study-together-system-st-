@@ -8,7 +8,6 @@ import {
   PhoneOff,
   MessageSquare,
   Users,
-  FileText,
   Send,
   ArrowLeft,
   Share2,
@@ -43,6 +42,7 @@ import { MeetingProvider } from './meeting/MeetingProvider';
 import { MeetingVideoGrid } from './meeting/MeetingVideoGrid';
 import { MeetingControls } from './meeting/MeetingControls';
 import { SyncedWhiteboard } from './meeting/SyncedWhiteboard';
+import { PresentationViewer } from './meeting/PresentationViewer';
 import { PreJoinLobby } from './meeting/PreJoinLobby';
 import type { MediaJoinChoice } from './meeting/PreJoinLobby';
 
@@ -627,7 +627,7 @@ export function StudyRoom() {
                   onClick={() => setActiveBoardTab('presentation')}
                   style={{padding: '6px 14px', borderRadius: 6, border: 'none', background: activeBoardTab === 'presentation' ? '#EFF6FF' : 'transparent', color: activeBoardTab === 'presentation' ? '#1D4ED8' : '#64748B', fontWeight: '600', fontSize: 13, cursor: 'pointer'}}
                 >
-                  📄 Slide Bài giảng (Chương 4.pdf)
+                  📄 Slide Bài giảng{room.presentation_state ? ` (${room.presentation_state.file_name})` : ''}
                 </button>
               </div>
 
@@ -647,21 +647,19 @@ export function StudyRoom() {
               
               {activeBoardTab === 'whiteboard' ? (
                 <div style={{position: 'absolute', inset: 0}}>
-                  {room && (
-                    <SyncedWhiteboard 
-                      roomId={room.id}
-                      initialState={room.whiteboard_state}
-                      isReadonly={!(isGroupManager || currentUserRole === 'host' || currentUserRole === 'moderator')}
-                    />
-                  )}
+                  <SyncedWhiteboard
+                    roomId={room.id}
+                    initialState={room.whiteboard_state}
+                    isReadonly={!(isGroupManager || currentUserRole === 'host' || currentUserRole === 'moderator')}
+                  />
                 </div>
               ) : (
-                <div style={{width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FFFFFF', backgroundImage: 'radial-gradient(#CBD5E1 1px, transparent 1px)', backgroundSize: '24px 24px'}}>
-                  <div style={{width: '80%', height: '90%', background: 'white', borderRadius: 12, border: '1px solid #CBD5E1', boxShadow: '0 8px 20px rgba(0,0,0,0.08)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32}}>
-                    <FileText size={64} color="#3B82F6" style={{marginBottom: 16}} />
-                    <h3 style={{fontSize: 20, fontWeight: '700', color: '#0F172A', margin: '0 0 8px 0'}}>Slide Bài Giảng Chương 4: Cơ Học Lượng Tử</h3>
-                    <p style={{color: '#64748B', fontSize: 14, margin: 0}}>Trang 12 / 45 • Đang trình chiếu trực tiếp bởi Thầy Hoàng</p>
-                  </div>
+                <div style={{position: 'absolute', inset: 0, background: '#FFFFFF', backgroundImage: 'radial-gradient(#CBD5E1 1px, transparent 1px)', backgroundSize: '24px 24px'}}>
+                  <PresentationViewer
+                    roomId={room.id}
+                    initialState={room.presentation_state}
+                    isReadonly={!(isGroupManager || currentUserRole === 'host' || currentUserRole === 'moderator')}
+                  />
                 </div>
               )}
 

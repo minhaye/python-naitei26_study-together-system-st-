@@ -604,6 +604,31 @@ async def test_update_room_allowed_for_active_group_owner(async_client, monkeypa
     assert response.status_code == 200
 
 
+async def test_update_room_ignores_whiteboard_and_presentation_state_fields(async_client, monkeypatch, as_fake_user):
+    """StudyRoomUpdate deliberately has no whiteboard_state/presentation_state fields (see its
+    docstring) -- PUT /study-rooms/{room_id} is only gated by is_group_manager (group-scoped),
+    weaker than can_edit_whiteboard's room-scoped host/moderator gate used by the dedicated
+    /whiteboard and /presentation endpoints. Exercises the REAL service.update (not mocked),
+    so this actually proves the extra JSON fields get silently dropped by Pydantic rather than
+    reaching StudyRoomsService.update's blanket `model_dump(exclude_unset=True)` apply."""
+    room = _make_room(host_id=uuid.uuid4())
+    room.whiteboard_state = {"original": True}
+    room.presentation_state = {"original": True}
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id, role=GroupMemberRole.OWNER))
+
+    response = await async_client.put(
+        f"/study-rooms/{room.id}",
+        json={"name": "New", "whiteboard_state": {"hijacked": True}, "presentation_state": {"hijacked": True}},
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "New"
+    assert room.whiteboard_state == {"original": True}
+    assert room.presentation_state == {"original": True}
+
+
 async def test_update_room_allowed_for_active_group_moderator(async_client, monkeypatch, as_fake_user):
     room = _make_room(host_id=uuid.uuid4())
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
@@ -1720,3 +1745,365 @@ async def test_get_room_still_200_for_ended_but_not_deleted_room(async_client, m
 
     response = await async_client.get(f"/study-rooms/{room.id}")
     assert response.status_code == 200
+
+
+# --- Whiteboard: PUT /{room_id}/whiteboard (persisted-state sync) ---
+
+
+async def test_update_whiteboard_requires_auth(async_client):
+    response = await async_client.put(f"/study-rooms/{uuid.uuid4()}/whiteboard", json={"foo": "bar"})
+    assert response.status_code == 401
+
+
+async def test_update_whiteboard_not_found_for_missing_room(async_client, monkeypatch, as_fake_user):
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=None))
+
+    response = await async_client.put(f"/study-rooms/{uuid.uuid4()}/whiteboard", json={"foo": "bar"}, headers=AUTH_HEADERS)
+    assert response.status_code == 404
+
+
+async def test_update_whiteboard_forbidden_for_participant(async_client, monkeypatch, as_fake_user):
+    """A plain PARTICIPANT can view/receive the live board but not push a persisted snapshot --
+    mirrors can_edit_whiteboard's host/moderator gate."""
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, as_fake_user.id, role=StudyRoomMemberRole.PARTICIPANT)),
+    )
+
+    response = await async_client.put(f"/study-rooms/{room.id}/whiteboard", json={"foo": "bar"}, headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+async def test_update_whiteboard_forbidden_for_non_member(async_client, monkeypatch, as_fake_user):
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
+    monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
+
+    response = await async_client.put(f"/study-rooms/{room.id}/whiteboard", json={"foo": "bar"}, headers=AUTH_HEADERS)
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize("role", [StudyRoomMemberRole.HOST, StudyRoomMemberRole.MODERATOR])
+async def test_update_whiteboard_allowed_for_editors(async_client, monkeypatch, as_fake_user, role):
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, as_fake_user.id, role=role)),
+    )
+
+    response = await async_client.put(
+        f"/study-rooms/{room.id}/whiteboard", json={"document": {"shape:1": {"x": 1}}}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 200
+    assert room.whiteboard_state == {"document": {"shape:1": {"x": 1}}}
+
+
+@pytest.mark.parametrize("group_role", [GroupMemberRole.OWNER, GroupMemberRole.MODERATOR])
+async def test_update_whiteboard_allowed_for_group_manager_with_default_participant_room_role(
+    async_client, monkeypatch, as_fake_user, group_role
+):
+    """Regression test: a Group owner/moderator's study_room_members.role defaults to
+    PARTICIPANT on join (join_room never assigns HOST/MODERATOR) -- can_edit_whiteboard must
+    still grant them edit rights via the is_group_manager branch, matching the frontend's own
+    `isGroupManager || ...` gate (StudyRoom.tsx). Caught live: a real Group moderator test
+    account got a read-only board and a 403 on whiteboard/presentation asset uploads despite
+    the UI showing them full drawing tools, because can_edit_whiteboard originally checked
+    only the room-scoped role."""
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id, role=group_role))
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, as_fake_user.id, role=StudyRoomMemberRole.PARTICIPANT)),
+    )
+
+    response = await async_client.put(
+        f"/study-rooms/{room.id}/whiteboard", json={"document": {"shape:1": {"x": 1}}}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 200
+    assert room.whiteboard_state == {"document": {"shape:1": {"x": 1}}}
+
+
+async def test_update_whiteboard_deleted_room_denied_even_for_host(async_client, monkeypatch, as_fake_user):
+    room = _make_room(host_id=as_fake_user.id, deleted_at=datetime.now(timezone.utc))
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+
+    response = await async_client.put(f"/study-rooms/{room.id}/whiteboard", json={"foo": "bar"}, headers=AUTH_HEADERS)
+    assert response.status_code == 404
+
+
+# --- Whiteboard assets: upload-url / download-url (image/document sharing) ---
+
+
+async def test_whiteboard_upload_url_requires_auth(async_client):
+    response = await async_client.post(
+        f"/study-rooms/{uuid.uuid4()}/whiteboard/assets/upload-url",
+        json={"file_name": "diagram.png", "content_type": "image/png", "file_size": 1024},
+    )
+    assert response.status_code == 401
+
+
+async def test_whiteboard_upload_url_forbidden_for_participant(async_client, monkeypatch, as_fake_user):
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, as_fake_user.id, role=StudyRoomMemberRole.PARTICIPANT)),
+    )
+
+    response = await async_client.post(
+        f"/study-rooms/{room.id}/whiteboard/assets/upload-url",
+        json={"file_name": "diagram.png", "content_type": "image/png", "file_size": 1024},
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 403
+
+
+async def test_whiteboard_upload_url_allowed_for_host(async_client, monkeypatch, as_fake_user):
+    room = _make_room(host_id=as_fake_user.id)
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, as_fake_user.id, role=StudyRoomMemberRole.HOST)),
+    )
+    monkeypatch.setattr(
+        study_room_router.attachments_service,
+        "create_signed_upload_url",
+        AsyncMock(
+            return_value={
+                "path": f"study-rooms/{room.id}/{as_fake_user.id}/uuid/diagram.png",
+                "token": "tok",
+                "upload_url": "https://x/upload",
+            }
+        ),
+    )
+
+    response = await async_client.post(
+        f"/study-rooms/{room.id}/whiteboard/assets/upload-url",
+        json={"file_name": "diagram.png", "content_type": "image/png", "file_size": 1024},
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 200
+    assert response.json()["token"] == "tok"
+
+
+async def test_whiteboard_upload_url_allowed_for_group_manager_with_default_participant_room_role(
+    async_client, monkeypatch, as_fake_user
+):
+    """Same regression as test_update_whiteboard_allowed_for_group_manager_with_default_participant_room_role,
+    exercised on the asset upload-url endpoint (used by both whiteboard image sharing and
+    presentation deck uploads)."""
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id, role=GroupMemberRole.MODERATOR))
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, as_fake_user.id, role=StudyRoomMemberRole.PARTICIPANT)),
+    )
+    monkeypatch.setattr(
+        study_room_router.attachments_service,
+        "create_signed_upload_url",
+        AsyncMock(
+            return_value={
+                "path": f"study-rooms/{room.id}/{as_fake_user.id}/uuid/deck.pdf",
+                "token": "tok",
+                "upload_url": "https://x/upload",
+            }
+        ),
+    )
+
+    response = await async_client.post(
+        f"/study-rooms/{room.id}/whiteboard/assets/upload-url",
+        json={"file_name": "deck.pdf", "content_type": "application/pdf", "file_size": 1024},
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 200
+    assert response.json()["token"] == "tok"
+
+
+async def test_whiteboard_download_url_allowed_for_any_active_participant(async_client, monkeypatch, as_fake_user):
+    """Viewing a shared board asset is not editor-only -- any active room participant can
+    resolve a signed URL, even though only host/moderator could have uploaded it."""
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, as_fake_user.id, role=StudyRoomMemberRole.PARTICIPANT)),
+    )
+    monkeypatch.setattr(
+        study_room_router.attachments_service,
+        "create_signed_download_url",
+        AsyncMock(return_value={"url": "https://x/download", "expires_in": 300}),
+    )
+    other_uploader = uuid.uuid4()
+    path = f"study-rooms/{room.id}/{other_uploader}/{uuid.uuid4()}/diagram.png"
+
+    response = await async_client.get(
+        f"/study-rooms/{room.id}/whiteboard/assets/download-url", params={"path": path}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 200
+    assert response.json() == {"url": "https://x/download", "expires_in": 300}
+
+
+async def test_whiteboard_download_url_rejects_path_outside_room(async_client, monkeypatch, as_fake_user):
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, as_fake_user.id, role=StudyRoomMemberRole.PARTICIPANT)),
+    )
+    foreign_room_path = f"study-rooms/{uuid.uuid4()}/{uuid.uuid4()}/{uuid.uuid4()}/diagram.png"
+
+    response = await async_client.get(
+        f"/study-rooms/{room.id}/whiteboard/assets/download-url", params={"path": foreign_room_path}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 400
+
+
+async def test_whiteboard_download_url_forbidden_for_non_member(async_client, monkeypatch, as_fake_user):
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
+    monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
+    path = f"study-rooms/{room.id}/{uuid.uuid4()}/{uuid.uuid4()}/diagram.png"
+
+    response = await async_client.get(
+        f"/study-rooms/{room.id}/whiteboard/assets/download-url", params={"path": path}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 403
+
+
+# --- Presentation: PUT /{room_id}/presentation (synced slide deck) ---
+
+
+async def test_update_presentation_requires_auth(async_client):
+    response = await async_client.put(f"/study-rooms/{uuid.uuid4()}/presentation", json={"page": 1})
+    assert response.status_code == 401
+
+
+async def test_update_presentation_not_found_for_missing_room(async_client, monkeypatch, as_fake_user):
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=None))
+
+    response = await async_client.put(
+        f"/study-rooms/{uuid.uuid4()}/presentation", json={"page": 1}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 404
+
+
+async def test_update_presentation_forbidden_for_participant(async_client, monkeypatch, as_fake_user):
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, as_fake_user.id, role=StudyRoomMemberRole.PARTICIPANT)),
+    )
+
+    response = await async_client.put(
+        f"/study-rooms/{room.id}/presentation", json={"page": 1}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 403
+
+
+async def test_update_presentation_forbidden_for_non_member(async_client, monkeypatch, as_fake_user):
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
+    monkeypatch.setattr(permissions.study_rooms_service, "get_member", AsyncMock(return_value=None))
+
+    response = await async_client.put(
+        f"/study-rooms/{room.id}/presentation", json={"page": 1}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize("role", [StudyRoomMemberRole.HOST, StudyRoomMemberRole.MODERATOR])
+async def test_update_presentation_allowed_for_editors(async_client, monkeypatch, as_fake_user, role):
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, as_fake_user.id, role=role)),
+    )
+    state = {
+        "asset_path": f"study-rooms/{room.id}/{as_fake_user.id}/uuid/deck.pdf",
+        "file_name": "deck.pdf",
+        "page": 3,
+        "page_count": 12,
+    }
+
+    response = await async_client.put(f"/study-rooms/{room.id}/presentation", json=state, headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    assert room.presentation_state == state
+
+
+async def test_update_presentation_allowed_for_group_manager_with_default_participant_room_role(
+    async_client, monkeypatch, as_fake_user
+):
+    """Same regression as the whiteboard PUT/upload-url versions, on the presentation
+    endpoint."""
+    room = _make_room()
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id, role=GroupMemberRole.OWNER))
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, as_fake_user.id, role=StudyRoomMemberRole.PARTICIPANT)),
+    )
+    state = {"asset_path": "x", "file_name": "deck.pdf", "page": 1, "page_count": 3}
+
+    response = await async_client.put(f"/study-rooms/{room.id}/presentation", json=state, headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    assert room.presentation_state == state
+
+
+async def test_update_presentation_allows_clearing_the_deck(async_client, monkeypatch, as_fake_user):
+    """Sending null clears the deck (e.g. host removes it) -- same null-clears-state
+    convention as the whiteboard PUT."""
+    room = _make_room()
+    room.presentation_state = {"asset_path": "x", "file_name": "y", "page": 1, "page_count": 1}
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_group_membership(monkeypatch, _group_member(room.group_id, as_fake_user.id))
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, as_fake_user.id, role=StudyRoomMemberRole.HOST)),
+    )
+
+    response = await async_client.put(f"/study-rooms/{room.id}/presentation", json=None, headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    assert room.presentation_state is None
+
+
+async def test_update_presentation_deleted_room_denied_even_for_host(async_client, monkeypatch, as_fake_user):
+    room = _make_room(host_id=as_fake_user.id, deleted_at=datetime.now(timezone.utc))
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+
+    response = await async_client.put(
+        f"/study-rooms/{room.id}/presentation", json={"page": 1}, headers=AUTH_HEADERS
+    )
+    assert response.status_code == 404

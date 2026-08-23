@@ -40,6 +40,10 @@ class StudyRoom(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="RESTRICT"))
     whiteboard_state: Mapped[dict | None] = mapped_column(JSONB)
+    # {asset_path, file_name, page, page_count} | None -- the shared "Slide Bài giảng" deck's
+    # current state, synced the same way as whiteboard_state (see study_room_router's
+    # /presentation endpoint and usePresentationSync.ts on the frontend).
+    presentation_state: Mapped[dict | None] = mapped_column(JSONB)
 
     group: Mapped["Group"] = relationship(back_populates="study_rooms")
     # foreign_keys pinned explicitly: with `deleted_by` now also FK'd to profiles, this

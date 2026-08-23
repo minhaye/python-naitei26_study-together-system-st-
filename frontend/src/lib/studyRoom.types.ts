@@ -27,6 +27,18 @@ export interface StudyRoom {
    * there is no /study-rooms/{id}/messages route. */
   conversation_id: string | null;
   whiteboard_state: Record<string, any> | null;
+  presentation_state: PresentationState | null;
+}
+
+/** The shared "Slide Bài giảng" deck's current state -- `asset_path` is a Storage object path
+ * (resolved to a signed URL via getWhiteboardAssetDownloadUrl, same room-asset endpoints the
+ * whiteboard's image sharing uses), not a URL itself, since it's persisted/synced indefinitely
+ * and signed URLs expire. Mirrors the shape written by PUT /study-rooms/{room_id}/presentation. */
+export interface PresentationState {
+  asset_path: string;
+  file_name: string;
+  page: number;
+  page_count: number;
 }
 
 /** Mirrors StudyRoomMemberResponse. `user` is the canonical identity source -- see
