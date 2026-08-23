@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { NotesStackPanel, type NotesStackPanelProps } from './NotesStackPanel';
 import type { Note } from '../../lib/note.types';
 
-const author = { id: 'user-1', username: 'alice', display_name: 'Alice', avatar_url: null };
+const author = { id: 'user-1', username: 'alice', display_name: 'Alice', avatar_url: null, role: 'user' as const };
 
 function makeNote(overrides: Partial<Note> = {}): Note {
   return {

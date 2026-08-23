@@ -15,7 +15,8 @@ import {
     Trash2,
     Ticket,
     Download,
-    Image as ImageIcon
+    Image as ImageIcon,
+    ShieldCheck
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useChannelMessagesRealtime } from '../../hooks/useChannelMessagesRealtime';
@@ -626,11 +627,18 @@ export function StudyGroupDetail() {
   const senderDisplay = (message: Message) => {
     const isSelf = message.sender_id === currentUserId;
     const name = isSelf ? `${currentUser.name} (Bạn)` : getDisplayName(message.sender);
+    // message.sender.role is the platform-wide moderator/admin role (app/db/enums.py
+    // ProfileRole) -- deliberately distinct from GroupMember.role ('owner'/'moderator'/
+    // 'member', the group's own điều hành viên concept used elsewhere in this file, e.g.
+    // isGroupManager). A platform moderator's messages get a highlighted badge/color here
+    // regardless of their role within this particular group.
+    const isModerator = message.sender.role === 'moderator' || message.sender.role === 'admin';
     return {
       name,
       initials: isSelf ? currentUser.initials : getAvatarInitials(name),
       color: isSelf ? currentUser.color : getAvatarColor(name),
       avatarUrl: isSelf ? currentUser.avatarUrl : message.sender.avatar_url,
+      isModerator,
     };
   };
 
@@ -1167,19 +1175,45 @@ export function StudyGroupDetail() {
                                     const display = senderDisplay(msg);
                                     const isSelf = msg.sender_id === currentUserId;
                                     return (
-                                        <div key={msg.id} style={{display: 'flex', gap: 16}}>
+                                        <div
+                                            key={msg.id}
+                                            style={{
+                                                display: 'flex',
+                                                gap: 16,
+                                                padding: display.isModerator ? '6px 10px' : 0,
+                                                margin: display.isModerator ? '-6px -10px' : 0,
+                                                background: display.isModerator ? '#F5F3FF' : 'transparent',
+                                                borderLeft: display.isModerator ? '3px solid #7C3AED' : '3px solid transparent',
+                                                borderRadius: display.isModerator ? 8 : 0,
+                                            }}
+                                        >
                                             <MessageUserTrigger userId={msg.sender_id} isSelf={isSelf}>
-                                                {display.avatarUrl ? (
-                                                    <img src={display.avatarUrl} alt={display.name} style={{width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', flexShrink: 0}} />
-                                                ) : (
-                                                    <div style={{width: 40, height: 40, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flexShrink: 0}}>
-                                                        {display.initials}
-                                                    </div>
-                                                )}
+                                                <div style={{position: 'relative', flexShrink: 0}}>
+                                                    {display.avatarUrl ? (
+                                                        <img src={display.avatarUrl} alt={display.name} style={{width: 40, height: 40, borderRadius: '50%', objectFit: 'cover'}} />
+                                                    ) : (
+                                                        <div style={{width: 40, height: 40, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700}}>
+                                                            {display.initials}
+                                                        </div>
+                                                    )}
+                                                    {display.isModerator && (
+                                                        <div
+                                                            title="Kiểm duyệt viên"
+                                                            style={{position: 'absolute', bottom: -2, right: -2, width: 18, height: 18, borderRadius: '50%', background: '#7C3AED', border: '2px solid white', display: 'flex', alignItems: 'center', justifyContent: 'center'}}
+                                                        >
+                                                            <ShieldCheck size={10} color="white" strokeWidth={3} />
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </MessageUserTrigger>
                                             <div>
                                                 <div style={{display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4}}>
-                                                    <span style={{color: '#0F172A', fontSize: 15, fontWeight: '600'}}>{display.name}</span>
+                                                    <span style={{color: display.isModerator ? '#7C3AED' : '#0F172A', fontSize: 15, fontWeight: '600'}}>{display.name}</span>
+                                                    {display.isModerator && (
+                                                        <span style={{display: 'flex', alignItems: 'center', gap: 3, color: '#7C3AED', fontSize: 11.5, fontWeight: 700, background: '#EDE9FE', padding: '1px 6px', borderRadius: 4}}>
+                                                            <ShieldCheck size={11} /> Kiểm duyệt viên
+                                                        </span>
+                                                    )}
                                                     <span style={{color: '#94A3B8', fontSize: 12}}>{formatMessageTime(msg.created_at)}</span>
                                                 </div>
                                                 {msg.content && (

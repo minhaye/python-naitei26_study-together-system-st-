@@ -14,7 +14,7 @@ function member(overrides: Partial<GroupMember> = {}): GroupMember {
     role: overrides.role ?? 'member',
     status: 'active',
     joined_at: new Date().toISOString(),
-    user: { id: overrides.user_id ?? 'user-1', username: 'alice', display_name: 'Alice', avatar_url: null },
+    user: { id: overrides.user_id ?? 'user-1', username: 'alice', display_name: 'Alice', avatar_url: null, role: 'user' },
     ...overrides,
   };
 }
@@ -23,8 +23,8 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof GroupMembers
   const props = {
     members: [
       member({ id: 'm-owner', user_id: 'owner-1', role: 'owner' as const }),
-      member({ id: 'm-mod', user_id: 'mod-1', role: 'moderator' as const, user: { id: 'mod-1', username: 'bob', display_name: 'Bob', avatar_url: null } }),
-      member({ id: 'm-member', user_id: 'member-1', role: 'member' as const, user: { id: 'member-1', username: 'carol', display_name: 'Carol', avatar_url: null } }),
+      member({ id: 'm-mod', user_id: 'mod-1', role: 'moderator' as const, user: { id: 'mod-1', username: 'bob', display_name: 'Bob', avatar_url: null, role: 'user' } }),
+      member({ id: 'm-member', user_id: 'member-1', role: 'member' as const, user: { id: 'member-1', username: 'carol', display_name: 'Carol', avatar_url: null, role: 'user' } }),
     ],
     currentUserId: 'owner-1',
     currentUser,

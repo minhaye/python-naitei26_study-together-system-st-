@@ -9,7 +9,7 @@ from app.auth.dto.auth_dto import CurrentUser
 from app.channels.entities.channel_entity import Channel, ChannelMember
 from app.channels.routers import channel_router
 from app.core import permissions
-from app.db.enums import GroupMemberRole, MemberStatus
+from app.db.enums import GroupMemberRole, MemberStatus, ProfileRole
 from app.db.session import get_db_session
 from app.groups.entities.group_entity import GroupMember
 from app.main import app
@@ -71,7 +71,7 @@ def _channel_member(channel_id, user_id) -> ChannelMember:
     )
     # ChannelMemberResponse.user is required (see app/channels/dto/channel_dto.py) -- mirrors
     # how ChannelsService.get_member/add_member eager-loads/assigns it for real.
-    member.user = Profile(id=user_id, username=None, display_name="Test User", avatar_url=None)
+    member.user = Profile(id=user_id, username=None, display_name="Test User", avatar_url=None, role=ProfileRole.USER)
     return member
 
 

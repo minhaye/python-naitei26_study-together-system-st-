@@ -38,7 +38,7 @@ const members: StudyRoomMember[] = [
     role: 'host',
     joined_at: '2026-01-01T00:00:00Z',
     left_at: null,
-    user: { id: 'user-1', username: null, display_name: 'Minh Anh', avatar_url: null },
+    user: { id: 'user-1', username: null, display_name: 'Minh Anh', avatar_url: null, role: 'user' },
   },
 ];
 

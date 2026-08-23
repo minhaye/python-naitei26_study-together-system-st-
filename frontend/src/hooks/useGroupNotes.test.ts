@@ -52,7 +52,7 @@ function createFakeChannel() {
   };
 }
 
-const author = { id: 'user-1', username: 'alice', display_name: 'Alice', avatar_url: null };
+const author = { id: 'user-1', username: 'alice', display_name: 'Alice', avatar_url: null, role: 'user' as const };
 
 function makeNote(overrides: Partial<Note> = {}): Note {
   return {

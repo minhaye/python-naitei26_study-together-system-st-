@@ -8,7 +8,7 @@ from app.auth.dependencies import get_current_user
 from app.auth.dto.auth_dto import CurrentUser
 from app.channels.entities.channel_entity import Channel, ChannelMember
 from app.core import permissions
-from app.db.enums import GroupMemberRole, InvitationMethod, MemberStatus, StudyRoomStatus
+from app.db.enums import GroupMemberRole, InvitationMethod, MemberStatus, ProfileRole, StudyRoomStatus
 from app.db.session import get_db_session
 from app.groups.entities.group_entity import Group, GroupMember
 from app.invitations.entities.invitation_entity import Invitation
@@ -102,7 +102,7 @@ def _invitation(
 
 
 def _profile(user_id, display_name="Alice") -> Profile:
-    return Profile(id=user_id, display_name=display_name)
+    return Profile(id=user_id, display_name=display_name, role=ProfileRole.USER)
 
 
 # --- InvitationsService: pure logic (no DB) ---

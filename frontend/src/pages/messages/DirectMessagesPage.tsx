@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { MessageCircle, MessagesSquare, Send, Image as ImageIcon } from 'lucide-react';
+import { MessageCircle, MessagesSquare, Send, Image as ImageIcon, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useRoomMessages } from '../../hooks/useRoomMessages';
 import { useMessageReactionActions } from '../../hooks/useMessageReactionActions';
@@ -114,12 +114,17 @@ export function DirectMessagesPage() {
   const senderDisplay = (message: Message) => {
     const isSelf = message.sender_id === currentUser.id;
     const name = isSelf ? `${currentUser.name} (Bạn)` : getDisplayName(message.sender);
+    // message.sender.role is the platform-wide role (app/db/enums.py ProfileRole), not the
+    // group-level GroupMember.role -- a message from a moderator/admin gets a distinct mod
+    // badge/color regardless of who's viewing it, per the highlight requirement.
+    const isModerator = message.sender.role === 'moderator' || message.sender.role === 'admin';
     return {
       name,
       initials: isSelf ? currentUser.initials : getAvatarInitials(name),
       color: isSelf ? currentUser.color : getAvatarColor(name),
       avatarUrl: isSelf ? currentUser.avatarUrl : message.sender.avatar_url,
       isSelf,
+      isModerator,
     };
   };
 
@@ -263,20 +268,36 @@ export function DirectMessagesPage() {
                   const display = senderDisplay(msg);
                   return (
                     <div key={msg.id} style={{ display: 'flex', gap: 10, flexDirection: display.isSelf ? 'row-reverse' : 'row' }}>
-                      {display.avatarUrl ? (
-                        <img src={display.avatarUrl} alt={display.name} style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
-                      ) : (
-                        <div style={{ width: 32, height: 32, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12, flexShrink: 0 }}>
-                          {display.initials}
-                        </div>
-                      )}
+                      <div style={{ position: 'relative', flexShrink: 0 }}>
+                        {display.avatarUrl ? (
+                          <img src={display.avatarUrl} alt={display.name} style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
+                        ) : (
+                          <div style={{ width: 32, height: 32, borderRadius: '50%', background: display.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12 }}>
+                            {display.initials}
+                          </div>
+                        )}
+                        {display.isModerator && (
+                          <div
+                            title="Kiểm duyệt viên"
+                            style={{ position: 'absolute', bottom: -2, right: -2, width: 16, height: 16, borderRadius: '50%', background: '#7C3AED', border: '2px solid white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          >
+                            <ShieldCheck size={9} color="white" strokeWidth={3} />
+                          </div>
+                        )}
+                      </div>
                       <div style={{ maxWidth: '70%', display: 'flex', flexDirection: 'column', alignItems: display.isSelf ? 'flex-end' : 'flex-start' }}>
+                        {display.isModerator && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4, color: '#7C3AED', fontSize: 11.5, fontWeight: 700 }}>
+                            <ShieldCheck size={12} /> Kiểm duyệt viên
+                          </div>
+                        )}
                         <div
                           style={{
                             padding: '10px 14px',
                             borderRadius: display.isSelf ? '14px 2px 14px 14px' : '2px 14px 14px 14px',
-                            background: display.isSelf ? '#00236F' : '#F1F5F9',
-                            color: display.isSelf ? 'white' : '#0F172A',
+                            background: display.isModerator ? '#F5F3FF' : display.isSelf ? '#00236F' : '#F1F5F9',
+                            color: display.isModerator ? '#4C1D95' : display.isSelf ? 'white' : '#0F172A',
+                            border: display.isModerator ? '1px solid #C4B5FD' : 'none',
                             fontSize: 14,
                             lineHeight: '1.4',
                             wordBreak: 'break-word',

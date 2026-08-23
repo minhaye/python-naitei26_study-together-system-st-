@@ -11,7 +11,7 @@ from app.auth.dto.auth_dto import CurrentUser
 from app.conversations.entities.conversation_entity import Conversation, ConversationMember
 from app.conversations.routers import conversation_router
 from app.conversations.services.conversation_service import ConversationsService
-from app.db.enums import ConversationType
+from app.db.enums import ConversationType, ProfileRole
 from app.db.session import get_db_session
 from app.main import app
 from app.profiles.entities.profile_entity import Profile
@@ -39,7 +39,7 @@ def as_fake_user():
 
 
 def _make_profile(user_id=None, username="user") -> Profile:
-    return Profile(id=user_id or uuid.uuid4(), username=username, display_name=username, avatar_url=None, bio=None)
+    return Profile(id=user_id or uuid.uuid4(), username=username, display_name=username, avatar_url=None, bio=None, role=ProfileRole.USER)
 
 
 def _make_direct_conversation(user_a_id, user_b_id, created_by=None) -> Conversation:

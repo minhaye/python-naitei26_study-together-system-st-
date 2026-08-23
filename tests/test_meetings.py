@@ -9,7 +9,7 @@ from app.auth.dependencies import get_current_user
 from app.auth.dto.auth_dto import CurrentUser
 from app.core import permissions
 from app.core.config import settings
-from app.db.enums import GroupMemberRole, MemberStatus, StudyRoomStatus
+from app.db.enums import GroupMemberRole, MemberStatus, ProfileRole, StudyRoomStatus
 from app.db.session import get_db_session
 from app.groups.entities.group_entity import GroupMember
 from app.main import app
@@ -367,7 +367,7 @@ async def test_meeting_token_grants_are_minimal(async_client, monkeypatch, as_fa
 
 async def test_meeting_token_uses_display_name_when_available(async_client, monkeypatch, as_fake_user):
     room = _make_room(host_id=as_fake_user.id)
-    profile = Profile(id=as_fake_user.id, display_name="Study Buddy")
+    profile = Profile(id=as_fake_user.id, display_name="Study Buddy", role=ProfileRole.USER)
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
     _mock_active_group_membership(monkeypatch)
     monkeypatch.setattr(
