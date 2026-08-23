@@ -132,7 +132,7 @@ class AttachmentsService:
         items = response.json()
         result = {}
         for item in items:
-            if "error" not in item and "signedURL" in item:
+            if not item.get("error") and item.get("signedURL"):
                 result[item["path"]] = f"{self._storage_url}{item['signedURL']}"
         return result
 
