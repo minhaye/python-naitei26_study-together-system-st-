@@ -5,9 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user, get_current_user_optional
 from app.auth.dto.auth_dto import CurrentUser
 from app.core.config import settings
-from app.core.permissions import is_active_group_member, is_group_manager, is_group_owner
+from app.core.permissions import get_active_ban, is_active_group_member, is_group_manager, is_group_owner
 from app.db.session import get_db_session
-from app.db.enums import GroupMemberRole, MemberStatus
+from app.db.enums import BanType, GroupMemberRole, MemberStatus
 from app.groups.dto.group_dto import (
     GroupBackgroundConfirm,
     GroupCreate,
@@ -18,9 +18,11 @@ from app.groups.dto.group_dto import (
 )
 from app.groups.entities.group_entity import Group
 from app.groups.services.group_service import GroupsService
+from app.moderation.services.moderation_service import ModerationService
 
 router = APIRouter(prefix="/groups", tags=["Groups"])
 service = GroupsService()
+moderation_service = ModerationService()
 
 
 @router.post("/", response_model=GroupResponse, status_code=status.HTTP_201_CREATED)
@@ -29,6 +31,11 @@ async def create_group(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    ban = await get_active_ban(session, current_user.id, BanType.CREATE_GROUP)
+    if ban:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, moderation_service.format_ban_message(ban, "tạo nhóm học tập")
+        )
     try:
         # The authenticated caller always becomes the owner; there is no client-supplied
         # owner_id to trust or ignore (see GroupCreate).
@@ -238,6 +245,11 @@ async def add_member(
     if is_self_join:
         if not group.is_public:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "This group is private; self-join is not supported")
+        ban = await get_active_ban(session, current_user.id, BanType.JOIN_GROUP)
+        if ban:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, moderation_service.format_ban_message(ban, "tham gia nhóm học tập")
+            )
     elif not await is_group_manager(session, group_id, current_user.id):
         raise HTTPException(
             status.HTTP_403_FORBIDDEN, "Only the group owner or a moderator can add other members"

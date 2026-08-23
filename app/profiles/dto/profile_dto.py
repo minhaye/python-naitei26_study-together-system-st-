@@ -3,6 +3,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.db.enums import ProfileRole
+
 
 class ProfileCreate(BaseModel):
     id: uuid.UUID
@@ -34,6 +36,7 @@ class ProfileResponse(BaseModel):
     avatar_url: str | None
     bio: str | None
     organization: str | None
+    role: ProfileRole
     created_at: datetime
     updated_at: datetime
 

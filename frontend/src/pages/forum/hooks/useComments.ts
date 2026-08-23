@@ -82,7 +82,7 @@ function replaceTempIdInTree(
 }
 
 export function useComments(postId: string, onCommentAdded?: () => void) {
-  const { requireAuth, currentUser, isLoggedIn } = useAuth();
+  const { requireAuth, currentUser } = useAuth();
   const [comments, setComments] = useState<Comment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -107,15 +107,14 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
 
     // 2. Revalidate ngầm từ Server
     try {
-      const userId = isLoggedIn ? currentUser?.id : undefined;
-      const data = await forumApi.getComments(postId, userId);
+      const data = await forumApi.getComments(postId);
       setComments(data);
     } catch (err) {
       console.error('Failed to load comments:', err);
     } finally {
       setIsLoading(false);
     }
-  }, [postId, isLoggedIn, currentUser?.id]);
+  }, [postId]);
 
   useEffect(() => {
     loadComments();
@@ -148,7 +147,6 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
       // 2. Gọi API ngầm lưu vào bộ nhớ Store
       const payload: CommentCreate = {
         post_id: postId,
-        author_id: currentUser.id,
         content,
         parent_comment_id: null,
       };
@@ -188,7 +186,6 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
       // 2. Gọi API ngầm lưu vào bộ nhớ Store
       const payload: CommentCreate = {
         post_id: postId,
-        author_id: currentUser.id,
         content,
         parent_comment_id: parentId,
       };
@@ -221,14 +218,14 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
   /**
    * Xóa bình luận — Optimistic UI (0ms đệ quy).
    */
-  const handleDeleteComment = (commentId: string) => {
+  const handleDeleteComment = (commentId: string, reason?: string) => {
     return requireAuth(async () => {
       // 1. Cập nhật UI ngay lập tức 0ms
       setComments((prev) => deleteCommentInTree(prev, commentId));
 
       // 2. Gọi API delete ở background
       try {
-        await forumApi.deleteComment(commentId, postId);
+        await forumApi.deleteComment(commentId, postId, reason);
       } catch (error) {
         console.error('Failed to delete comment', error);
       }
@@ -244,7 +241,7 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
       setComments((prev) => updateReactionInTree(prev, commentId, emoji));
 
       // 2. Gọi API ngầm
-      await forumApi.setCommentReaction(commentId, emoji, currentUser?.id, postId);
+      await forumApi.setCommentReaction(commentId, emoji, postId);
     });
   };
 
@@ -257,7 +254,7 @@ export function useComments(postId: string, onCommentAdded?: () => void) {
       setComments((prev) => updateReactionInTree(prev, commentId, null));
 
       // 2. Gọi API ngầm
-      await forumApi.removeCommentReaction(commentId, currentUser?.id, postId);
+      await forumApi.removeCommentReaction(commentId, postId);
     });
   };
 

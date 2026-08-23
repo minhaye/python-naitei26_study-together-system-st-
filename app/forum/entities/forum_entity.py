@@ -43,8 +43,9 @@ class ForumPost(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="RESTRICT"))
 
-    author: Mapped["Profile"] = relationship(back_populates="forum_posts")
+    author: Mapped["Profile"] = relationship(back_populates="forum_posts", foreign_keys=[author_id])
     category: Mapped["ForumCategory"] = relationship(back_populates="posts")
     comments: Mapped[list["Comment"]] = relationship(back_populates="post")
     notifications: Mapped[list["Notification"]] = relationship(back_populates="post")

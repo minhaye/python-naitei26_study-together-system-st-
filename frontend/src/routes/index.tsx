@@ -2,6 +2,8 @@ import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { HomePage } from '../pages/HomePage';
 import { ForumPostDetail } from '../pages/forum/ForumPostDetail';
+import { ForumModerationPage } from '../pages/forum/moderation/ForumModerationPage';
+import { ModeratorRoute } from '../components/routing/ModeratorRoute';
 import { InvitationPreviewPage } from '../pages/invitations/InvitationPreviewPage';
 import { StudyRooms } from '../pages/StudyGroup/StudyGroups';
 import { StudyGroupDetail } from '../pages/StudyGroup/StudyGroupDetail';
@@ -48,6 +50,9 @@ export function AppRoutes() {
             <Route path="settings" element={<AccountSettingsPage />} />
             <Route path="messages" element={<DirectMessagesPage />} />
             <Route path="messages/:conversationId" element={<DirectMessagesPage />} />
+            <Route element={<ModeratorRoute />}>
+              <Route path="forum/moderation" element={<ForumModerationPage />} />
+            </Route>
           </Route>
         </Route>
       </Routes>

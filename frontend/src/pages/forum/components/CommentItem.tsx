@@ -9,12 +9,13 @@ import { EditComment } from './EditComment';
 import { ReactionPicker } from './ReactionPicker';
 import { DEFAULT_REACTION_EMOJI, REACTION_META_BY_EMOJI, myReactionEmoji, topReactionEmojis, totalReactionCount } from '../constants/reactions';
 import { useAuth } from '../../../hooks/useAuth';
+import { ReasonPromptModal } from '../../../components/ui/ReasonPromptModal';
 
 interface CommentItemProps {
   comment: Comment;
   onReply: (parentId: string, content: string) => void;
   onEdit?: (commentId: string, newContent: string) => void;
-  onDelete?: (commentId: string) => void;
+  onDelete?: (commentId: string, reason?: string) => void;
   onReact: (commentId: string, emoji: string) => void;
   onRemoveReaction: (commentId: string) => void;
   isReply?: boolean;
@@ -38,7 +39,7 @@ export const CommentItem: React.FC<CommentItemProps> = React.memo(({
   nestingLevel = 0,
   isLastChild = false,
 }) => {
-  const { currentUser, requireAuth } = useAuth();
+  const { currentUser, requireAuth, isModerator } = useAuth();
   const isAuthor = currentUser?.id === comment.authorId;
 
   const [isEditing, setIsEditing] = useState(false);
@@ -50,6 +51,7 @@ export const CommentItem: React.FC<CommentItemProps> = React.memo(({
   const [replyHovered, setReplyHovered] = useState(false);
   const [isBubbleHovered, setIsBubbleHovered] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isModeratorDeleteModalOpen, setIsModeratorDeleteModalOpen] = useState(false);
 
   const myEmoji = myReactionEmoji(comment.reactions);
   const activeMeta = myEmoji ? REACTION_META_BY_EMOJI[myEmoji] : null;
@@ -262,8 +264,8 @@ export const CommentItem: React.FC<CommentItemProps> = React.memo(({
               </div>
             </div>
 
-            {/* Menu 3 chấm Facebook (chỉ tác giả thấy khi hover hoặc mở menu) */}
-            {isAuthor && (
+            {/* Menu 3 chấm Facebook (tác giả hoặc kiểm duyệt viên thấy khi hover hoặc mở menu) */}
+            {(isAuthor || isModerator) && (
               <div ref={menuRef} style={{ position: 'relative', flexShrink: 0 }}>
                 <button
                   type="button"
@@ -302,34 +304,40 @@ export const CommentItem: React.FC<CommentItemProps> = React.memo(({
                       overflow: 'hidden',
                     }}
                   >
-                    <div
-                      onClick={() => {
-                        setIsMenuOpen(false);
-                        setIsEditing(true);
-                      }}
-                      style={{
-                        padding: '8px 12px',
-                        fontSize: 12,
-                        fontWeight: '600',
-                        color: '#1E293B',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        transition: 'background 0.15s ease',
-                      }}
-                      onMouseOver={(e) => (e.currentTarget.style.background = '#F8FAFC')}
-                      onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
-                    >
-                      <Edit2 size={13} color="#3B82F6" />
-                      <span>Chỉnh sửa</span>
-                    </div>
+                    {isAuthor && (
+                      <div
+                        onClick={() => {
+                          setIsMenuOpen(false);
+                          setIsEditing(true);
+                        }}
+                        style={{
+                          padding: '8px 12px',
+                          fontSize: 12,
+                          fontWeight: '600',
+                          color: '#1E293B',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          transition: 'background 0.15s ease',
+                        }}
+                        onMouseOver={(e) => (e.currentTarget.style.background = '#F8FAFC')}
+                        onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        <Edit2 size={13} color="#3B82F6" />
+                        <span>Chỉnh sửa</span>
+                      </div>
+                    )}
 
                     <div
                       onClick={() => {
                         setIsMenuOpen(false);
-                        if (window.confirm('Bạn có chắc chắn muốn xóa bình luận này?')) {
-                          onDelete?.(comment.id);
+                        if (isAuthor) {
+                          if (window.confirm('Bạn có chắc chắn muốn xóa bình luận này?')) {
+                            onDelete?.(comment.id);
+                          }
+                        } else {
+                          setIsModeratorDeleteModalOpen(true);
                         }
                       }}
                       style={{
@@ -347,7 +355,7 @@ export const CommentItem: React.FC<CommentItemProps> = React.memo(({
                       onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
                     >
                       <Trash2 size={13} color="#DC2626" />
-                      <span>Xóa</span>
+                      <span>{isAuthor ? 'Xóa' : 'Xóa (Kiểm duyệt viên)'}</span>
                     </div>
                   </div>
                 )}
@@ -569,6 +577,20 @@ export const CommentItem: React.FC<CommentItemProps> = React.memo(({
               />
             ))}
           </div>
+        )}
+
+        {/* Modal Xóa bình luận (Kiểm duyệt viên) -- ghi lý do vào lịch sử kiểm duyệt */}
+        {isModeratorDeleteModalOpen && (
+          <ReasonPromptModal
+            isOpen={isModeratorDeleteModalOpen}
+            onClose={() => setIsModeratorDeleteModalOpen(false)}
+            title="Xóa bình luận vi phạm"
+            description="Bình luận sẽ bị gỡ khỏi diễn đàn. Lý do (nếu có) sẽ được lưu vào lịch sử kiểm duyệt."
+            confirmLabel="Xóa bình luận"
+            onConfirm={async (reason) => {
+              onDelete?.(comment.id, reason || undefined);
+            }}
+          />
         )}
       </div>
     </div>

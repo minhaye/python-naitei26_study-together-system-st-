@@ -16,10 +16,11 @@ from app.conversations.services.conversation_service import ConversationsService
 from app.core.permissions import (
     can_access_conversation,
     can_send_to_conversation,
+    get_active_ban,
     is_group_manager,
     is_room_conversation_open_for_writes,
 )
-from app.db.enums import ConversationType
+from app.db.enums import BanType, ConversationType
 from app.db.session import get_db_session
 from app.messages.dto.message_dto import (
     MessageCreate,
@@ -30,6 +31,7 @@ from app.messages.dto.message_dto import (
     MessageUpdate,
 )
 from app.messages.services.message_service import MessagesService
+from app.moderation.services.moderation_service import ModerationService
 from app.study_rooms.services.study_room_service import StudyRoomsService
 
 logger = logging.getLogger(__name__)
@@ -40,6 +42,7 @@ channel_service = ChannelsService()
 conversation_service = ConversationsService()
 attachments_service = AttachmentsService()
 study_room_service = StudyRoomsService()
+moderation_service = ModerationService()
 
 
 async def _load_conversation(session: AsyncSession, conversation_id: uuid.UUID) -> Conversation:
@@ -141,6 +144,12 @@ async def create_message(
 ):
     conversation = await _load_conversation(session, conversation_id)
     await _authorize_send(session, conversation, current_user.id)
+
+    ban = await get_active_ban(session, current_user.id, BanType.MESSAGE)
+    if ban:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, moderation_service.format_ban_message(ban, "nhắn tin")
+        )
 
     if data.attachment_path:
         if conversation.type == ConversationType.CHANNEL:

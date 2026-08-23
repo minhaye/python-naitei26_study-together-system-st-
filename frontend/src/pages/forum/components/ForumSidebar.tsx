@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { 
-  Search, X, Hash, Code, LineChart, Megaphone, 
-  Calculator, FlaskConical, Languages, Stethoscope, 
-  Scale, BookOpen, Lightbulb, PenTool, GraduationCap, 
+import {
+  Search, X, Hash, Code, LineChart, Megaphone,
+  Calculator, FlaskConical, Languages, Stethoscope,
+  Scale, BookOpen, Lightbulb, PenTool, GraduationCap,
   School, HeartPulse, Briefcase, Smile, MessageCircle,
   LayoutGrid
 } from 'lucide-react';
@@ -284,6 +284,7 @@ export const ForumSidebar: React.FC<ForumSidebarProps> = ({
             );
           })}
         </div>
+
       </div>
     </aside>
   );

@@ -13,13 +13,14 @@ import type { Post, ForumPostCreate, ForumPostUpdate } from '../types/forum.type
 import { forumApi } from '../lib/forum.api';
 import { useAuth } from '../../../hooks/useAuth';
 import { applyReactionOptimistic } from '../constants/reactions';
+import { ApiError } from '../../../lib/apiClient';
 
 
 export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Post[]>>) {
   const { requireAuth, currentUser } = useAuth();
   const [showCreateModal, setShowCreateModal] = useState(false);
 
-  const handleCreatePost = (payload: Omit<ForumPostCreate, 'author_id'>, categoryName?: string) => {
+  const handleCreatePost = (payload: ForumPostCreate, categoryName?: string) => {
     return requireAuth(async () => {
       // Tạo id tạm để theo dõi bài viết optimistic
       const optimisticId = `optimistic-${crypto.randomUUID()}`;
@@ -49,12 +50,7 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
 
       try {
         // Gửi API ở background
-        const newPost = await forumApi.createPost(
-          { ...payload, author_id: currentUser.id },
-          currentUser.name,
-          categoryName,
-          currentUser.avatarUrl
-        );
+        const newPost = await forumApi.createPost(payload, currentUser.name, categoryName, currentUser.avatarUrl);
 
         // Thay thế post tạm bằng post thực từ server
         setPosts((prev) =>
@@ -66,8 +62,9 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
       } catch (error) {
         console.error('Failed to create post', error);
         // Không xóa bài — chuyển sang trạng thái lỗi, để người dùng tự quyết định
+        const errorMessage = error instanceof ApiError ? error.message : undefined;
         setPosts((prev) =>
-          prev.map((p) => (p.id === optimisticId ? { ...p, status: 'error' } : p))
+          prev.map((p) => (p.id === optimisticId ? { ...p, status: 'error', errorMessage } : p))
         );
       }
     });
@@ -114,14 +111,14 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
     });
   };
 
-  const handleDeletePost = (postId: string) => {
+  const handleDeletePost = (postId: string, reason?: string) => {
     return requireAuth(async () => {
       // 1. Optimistic UI: Xóa khỏi danh sách ngay lập tức
       setPosts((prev) => prev.filter((p) => p.id !== postId));
 
       try {
         // 2. Gửi API delete ở background
-        await forumApi.deletePost(postId);
+        await forumApi.deletePost(postId, reason);
         window.dispatchEvent(new CustomEvent('post_created'));
       } catch (error) {
         console.error('Failed to delete post', error);
@@ -129,7 +126,7 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
     });
   };
 
-  const handleRetryPost = (failedPost: Post, payload: Omit<ForumPostCreate, 'author_id'>) => {
+  const handleRetryPost = (failedPost: Post, payload: ForumPostCreate) => {
     requireAuth(async () => {
       // Chuyển lại trạng thái 'sending'
       setPosts((prev) =>
@@ -137,7 +134,7 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
       );
       try {
         const newPost = await forumApi.createPost(
-          { ...payload, author_id: currentUser.id },
+          payload,
           currentUser.name,
           failedPost.categoryName,
           currentUser.avatarUrl
@@ -146,9 +143,10 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
           prev.map((p) => (p.id === failedPost.id ? { ...newPost, status: undefined } : p))
         );
         window.dispatchEvent(new CustomEvent('post_created'));
-      } catch {
+      } catch (error) {
+        const errorMessage = error instanceof ApiError ? error.message : undefined;
         setPosts((prev) =>
-          prev.map((p) => (p.id === failedPost.id ? { ...p, status: 'error' } : p))
+          prev.map((p) => (p.id === failedPost.id ? { ...p, status: 'error', errorMessage } : p))
         );
       }
     });
@@ -173,7 +171,7 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
 
       // 2. Gửi API lên backend ở background
       try {
-        await forumApi.setPostReaction(postId, emoji, currentUser.id);
+        await forumApi.setPostReaction(postId, emoji);
         window.dispatchEvent(new CustomEvent('post_liked_toggled'));
       } catch (error) {
         console.error('Failed to set reaction', error);
@@ -198,7 +196,7 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
       );
 
       try {
-        await forumApi.removePostReaction(postId, currentUser.id);
+        await forumApi.removePostReaction(postId);
         window.dispatchEvent(new CustomEvent('post_liked_toggled'));
       } catch (error) {
         console.error('Failed to remove reaction', error);

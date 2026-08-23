@@ -5,12 +5,15 @@ import { supabase } from '../lib/supabase';
 import { setAccessTokenProvider } from '../lib/apiClient';
 import { fetchCurrentUser } from '../lib/auth.api';
 import { fetchProfile } from '../lib/profile.api';
+import { moderationApi } from '../lib/moderation.api';
+import type { BanResponse } from '../lib/moderation.types';
 import { AuthContext } from './auth-context';
 import type { AuthProfile } from './auth-context';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<AuthProfile | null>(null);
+  const [bans, setBans] = useState<BanResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const sessionRef = useRef<Session | null>(null);
   const verifiedUserIdRef = useRef<string | null>(null);
@@ -32,6 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         avatarUrl: data.avatar_url,
         bio: data.bio,
         organization: data.organization,
+        role: data.role,
       };
       setProfile(nextProfile);
       return nextProfile;
@@ -43,6 +47,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const refreshBans = async (): Promise<void> => {
+    if (!sessionRef.current?.user.id) {
+      setBans([]);
+      return;
+    }
+    try {
+      setBans(await moderationApi.listMyBans());
+    } catch (err) {
+      // Non-critical: proactive restriction banners just won't show; the backend still
+      // enforces bans at action time regardless of this fetch's outcome.
+      console.error('Failed to fetch own restrictions', err);
+    }
+  };
+
   useEffect(() => {
     setAccessTokenProvider(() => sessionRef.current?.access_token ?? null);
     const applySession = async (nextSession: Session | null) => {
@@ -50,13 +68,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(nextSession);
       const userId = nextSession?.user?.id ?? null;
       if (userId) {
-        await refreshProfile();
+        await Promise.all([refreshProfile(), refreshBans()]);
         if (verifiedUserIdRef.current !== userId) {
           verifiedUserIdRef.current = userId;
           fetchCurrentUser().catch((err) => console.error('Failed to verify session with GET /auth/me', err));
         }
       } else {
         setProfile(null);
+        setBans([]);
         verifiedUserIdRef.current = null;
       }
     };
@@ -87,8 +106,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     else localStorage.removeItem('dev_session');
     sessionRef.current = nextSession;
     setSession(nextSession);
-    if (!nextSession) setProfile(null);
+    if (!nextSession) {
+      setProfile(null);
+      setBans([]);
+    }
   };
 
-  return <AuthContext.Provider value={{ session, user: session?.user ?? null, profile, loading, setDevSession, refreshProfile }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ session, user: session?.user ?? null, profile, bans, loading, setDevSession, refreshProfile }}>{children}</AuthContext.Provider>;
 }

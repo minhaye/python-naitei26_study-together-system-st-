@@ -6,9 +6,12 @@ from app.channels.entities.channel_entity import Channel
 from app.channels.services.channel_service import ChannelsService
 from app.conversations.entities.conversation_entity import Conversation
 from app.conversations.services.conversation_service import ConversationsService
-from app.db.enums import ConversationType, GroupMemberRole, MemberStatus, StudyRoomStatus
+from app.db.enums import BanType, ConversationType, GroupMemberRole, MemberStatus, ProfileRole, StudyRoomStatus
 from app.groups.entities.group_entity import Group
 from app.groups.services.group_service import GroupsService
+from app.moderation.entities.moderation_entity import UserBan
+from app.moderation.services.moderation_service import ModerationService
+from app.profiles.services.profile_service import ProfilesService
 from app.study_rooms.entities.study_room_entity import StudyRoom
 from app.study_rooms.services.study_room_service import StudyRoomsService
 
@@ -16,6 +19,22 @@ channels_service = ChannelsService()
 groups_service = GroupsService()
 study_rooms_service = StudyRoomsService()
 conversations_service = ConversationsService()
+profiles_service = ProfilesService()
+moderation_service = ModerationService()
+
+
+async def is_forum_moderator(session: AsyncSession, user_id: uuid.UUID) -> bool:
+    profile = await profiles_service.get_by_id(session, user_id)
+    return profile is not None and profile.role in (ProfileRole.MODERATOR, ProfileRole.ADMIN)
+
+
+async def is_admin(session: AsyncSession, user_id: uuid.UUID) -> bool:
+    profile = await profiles_service.get_by_id(session, user_id)
+    return profile is not None and profile.role == ProfileRole.ADMIN
+
+
+async def get_active_ban(session: AsyncSession, user_id: uuid.UUID, ban_type: BanType) -> UserBan | None:
+    return await moderation_service.get_active_ban(session, user_id, ban_type)
 
 
 async def is_active_group_member(session: AsyncSession, group_id: uuid.UUID, user_id: uuid.UUID) -> bool:

@@ -10,6 +10,7 @@ import { Avatar } from '../../../components/ui/Avatar';
 import { RichContentView } from '../../../components/ui/RichContentView';
 import { EditPostModal } from './EditPostModal';
 import { MessageUserTrigger } from '../../../components/messages/MessageUserTrigger';
+import { ReasonPromptModal } from '../../../components/ui/ReasonPromptModal';
 
 import { useForumState } from '../context/ForumStateContext';
 import { useAuth } from '../../../hooks/useAuth';
@@ -19,8 +20,8 @@ interface PostCardProps {
   onReact: (postId: string, emoji: string) => void;
   onRemoveReaction: (postId: string) => void;
   onUpdatePost?: (postId: string, payload: ForumPostUpdate, categoryName?: string) => Promise<void> | void;
-  onDeletePost?: (postId: string) => Promise<void> | void;
-  onRetryPost?: (post: Post, payload: Omit<ForumPostCreate, 'author_id'>) => void;
+  onDeletePost?: (postId: string, reason?: string) => Promise<void> | void;
+  onRetryPost?: (post: Post, payload: ForumPostCreate) => void;
   onDiscardPost?: (postId: string) => void;
   defaultShowComments?: boolean;
   isDetailPage?: boolean;
@@ -38,7 +39,7 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({
   isDetailPage = false,
 }) => {
   const navigate = useNavigate();
-  const { currentUser, requireAuth } = useAuth();
+  const { currentUser, requireAuth, isModerator } = useAuth();
   const { setSelectedTag } = useForumState();
 
   const isAuthor = currentUser?.id === post.authorId;
@@ -49,6 +50,7 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isModeratorDeleteModalOpen, setIsModeratorDeleteModalOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Optimistic UI state cho Reactions & Comment count (0ms response)
@@ -104,6 +106,11 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({
     if (window.confirm('Bạn có chắc chắn muốn xóa bài viết này? Hành động này không thể hoàn tác.')) {
       await onDeletePost?.(post.id);
     }
+  };
+
+  const handleModeratorDeleteClick = () => {
+    setIsMenuOpen(false);
+    setIsModeratorDeleteModalOpen(true);
   };
 
   // Bóc tách ảnh và văn bản riêng để tính độ dài chữ chuẩn kiểu Facebook (không tính chuỗi Base64 ảnh)
@@ -203,7 +210,7 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <AlertCircle size={14} />
-            <span>Không thể thao tác. Kiểm tra kết nối và thử lại.</span>
+            <span>{post.errorMessage || 'Không thể thao tác. Kiểm tra kết nối và thử lại.'}</span>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             {onRetryPost && (
@@ -253,8 +260,9 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({
           </div>
         </div>
 
-        {/* Menu 3 chấm (Chỉ hiển thị cho Tác giả bài viết) */}
-        {isAuthor && (
+        {/* Menu 3 chấm: Tác giả thấy Chỉnh sửa + Xóa, Kiểm duyệt viên (không phải tác giả)
+            chỉ thấy Xóa (kèm lý do) -- backend độc lập kiểm tra lại quyền này. */}
+        {(isAuthor || isModerator) && (
           <div ref={menuRef} style={{ position: 'relative' }}>
             <button
               onClick={() => setIsMenuOpen((v) => !v)}
@@ -294,31 +302,33 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({
                   overflow: 'hidden',
                 }}
               >
-                <div
-                  onClick={() => {
-                    setIsMenuOpen(false);
-                    setIsEditModalOpen(true);
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    padding: '10px 16px',
-                    fontSize: 13,
-                    fontWeight: '600',
-                    color: '#1E293B',
-                    cursor: 'pointer',
-                    transition: 'background 0.15s ease',
-                  }}
-                  onMouseOver={(e) => (e.currentTarget.style.background = '#F8FAFC')}
-                  onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
-                >
-                  <Edit2 size={15} color="#3B82F6" />
-                  <span>Chỉnh sửa bài viết</span>
-                </div>
+                {isAuthor && (
+                  <div
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      setIsEditModalOpen(true);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '10px 16px',
+                      fontSize: 13,
+                      fontWeight: '600',
+                      color: '#1E293B',
+                      cursor: 'pointer',
+                      transition: 'background 0.15s ease',
+                    }}
+                    onMouseOver={(e) => (e.currentTarget.style.background = '#F8FAFC')}
+                    onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <Edit2 size={15} color="#3B82F6" />
+                    <span>Chỉnh sửa bài viết</span>
+                  </div>
+                )}
 
                 <div
-                  onClick={handleConfirmDelete}
+                  onClick={isAuthor ? handleConfirmDelete : handleModeratorDeleteClick}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -334,7 +344,7 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({
                   onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
                 >
                   <Trash2 size={15} color="#DC2626" />
-                  <span>Xóa bài viết</span>
+                  <span>{isAuthor ? 'Xóa bài viết' : 'Xóa bài viết (Kiểm duyệt viên)'}</span>
                 </div>
               </div>
             )}
@@ -489,6 +499,20 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({
           post={post}
           onSave={async (payload, categoryName) => {
             await onUpdatePost?.(post.id, payload, categoryName);
+          }}
+        />
+      )}
+
+      {/* Modal Xóa bài viết (Kiểm duyệt viên) -- ghi lý do vào lịch sử kiểm duyệt */}
+      {isModeratorDeleteModalOpen && (
+        <ReasonPromptModal
+          isOpen={isModeratorDeleteModalOpen}
+          onClose={() => setIsModeratorDeleteModalOpen(false)}
+          title="Xóa bài viết vi phạm"
+          description="Bài viết sẽ bị gỡ khỏi diễn đàn. Lý do (nếu có) sẽ được lưu vào lịch sử kiểm duyệt."
+          confirmLabel="Xóa bài viết"
+          onConfirm={async (reason) => {
+            await onDeletePost?.(post.id, reason || undefined);
           }}
         />
       )}

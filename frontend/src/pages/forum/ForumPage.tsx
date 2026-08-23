@@ -19,10 +19,12 @@ import { useAuth } from '../../hooks/useAuth';
 import { forumApi } from './lib/forum.api';
 import type { ForumCategoryResponse } from './types/forum.types';
 import { PostSkeleton } from '../../components/ui/Skeleton';
+import { RestrictionBanner } from '../../components/ui/RestrictionBanner';
 import { useForumState } from './context/ForumStateContext';
 
 export const ForumPage: React.FC = () => {
-  const { isLoggedIn, currentUser, requireAuth } = useAuth();
+  const { isLoggedIn, currentUser, requireAuth, getBan } = useAuth();
+  const postBan = getBan('post');
   const forumState = useForumState();
 
   const {
@@ -159,7 +161,11 @@ export const ForumPage: React.FC = () => {
             selectedFilter={selectedFilter}
             onSelectFilter={setSelectedFilter}
             onOpenCreateModal={() => requireAuth(() => setShowCreateModal(true))}
+            createDisabled={!!postBan}
           />
+
+          {/* Restriction Banner -- pinned up front, not just after a failed post/comment */}
+          {postBan && <RestrictionBanner ban={postBan} actionLabel="đăng bài và bình luận trong diễn đàn" />}
 
           {/* Unauthenticated Alert Banner */}
           {!isLoggedIn && (

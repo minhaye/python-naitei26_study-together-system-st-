@@ -9,9 +9,12 @@ export interface UserSummary {
   avatar_url: string | null;
 }
 
+export type ProfileRole = 'user' | 'moderator' | 'admin';
+
 export interface Profile extends UserSummary {
   bio: string | null;
   organization: string | null;
+  role: ProfileRole;
   created_at: string;
   updated_at: string;
 }

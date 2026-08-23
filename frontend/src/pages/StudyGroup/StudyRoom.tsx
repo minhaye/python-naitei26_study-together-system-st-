@@ -34,6 +34,7 @@ import { MessageAttachmentImage } from '../../components/chat/MessageAttachmentI
 import { MessageReactions } from '../../components/chat/MessageReactions';
 import { SelectedImagePreview } from '../../components/chat/SelectedImagePreview';
 import { ErrorBoundary } from '../../components/ui/ErrorBoundary';
+import { RestrictionBanner } from '../../components/ui/RestrictionBanner';
 import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
 import { getDisplayName } from '../../utils/userDisplay';
 import { InviteModal } from '../../components/invitations/InviteModal';
@@ -73,7 +74,8 @@ function CenteredRoomMessage({ title, subtitle, onBack, children }: CenteredRoom
 export function StudyRoom() {
   const navigate = useNavigate();
   const { id: roomId } = useParams();
-  const { currentUser } = useAuth();
+  const { currentUser, getBan } = useAuth();
+  const messageBan = getBan('message');
 
   const {
     room,
@@ -307,7 +309,7 @@ export function StudyRoom() {
   const handleSendMessage = async () => {
     const trimmed = chatInput.trim();
     const conversationId = room?.conversation_id ?? null;
-    if ((!trimmed && !imageAttachment.hasImage) || !conversationId || isSendingMessage || imageAttachment.isUploading) return;
+    if ((!trimmed && !imageAttachment.hasImage) || !conversationId || isSendingMessage || imageAttachment.isUploading || messageBan) return;
     try {
       // Upload first, create the message second -- a failed upload must never produce an
       // orphaned/misleading message record (see useMessageImageAttachment.uploadImage).
@@ -382,6 +384,7 @@ export function StudyRoom() {
         userAvatarUrl={currentUser.avatarUrl ?? undefined}
         isJoining={isJoining}
         joinError={actionError?.message}
+        restrictionBan={isCurrentUserMember ? undefined : getBan('join_room')}
         onJoin={async (choice) => {
           setMediaChoice(choice);
           if (isCurrentUserMember) {
@@ -821,6 +824,7 @@ export function StudyRoom() {
 
                 {/* Chat Input */}
                 <div style={{padding: 16, background: '#0F172A', borderTop: '1px solid #334155', display: 'flex', flexDirection: 'column', gap: 8}}>
+                  {messageBan && <RestrictionBanner ban={messageBan} actionLabel="nhắn tin" variant="dark" />}
                   {(sendMessageError || imageAttachment.uploadError || imageAttachment.pickError) && (
                     <div style={{padding: '8px 12px', background: '#450A0A', border: '1px solid #7F1D1D', borderRadius: 8, color: '#FCA5A5', fontSize: 12}}>
                       {sendMessageError?.message || imageAttachment.uploadError?.message || imageAttachment.pickError}
@@ -844,25 +848,25 @@ export function StudyRoom() {
                     <button
                       type="button"
                       onClick={() => chatImageInputRef.current?.click()}
-                      disabled={!room?.conversation_id || isSendingMessage}
+                      disabled={!room?.conversation_id || isSendingMessage || !!messageBan}
                       aria-label="Đính kèm ảnh"
-                      style={{background: '#1E293B', border: '1px solid #334155', color: '#94A3B8', padding: 10, borderRadius: 8, display: 'flex', cursor: !room?.conversation_id || isSendingMessage ? 'default' : 'pointer', opacity: !room?.conversation_id || isSendingMessage ? 0.6 : 1}}
+                      style={{background: '#1E293B', border: '1px solid #334155', color: '#94A3B8', padding: 10, borderRadius: 8, display: 'flex', cursor: !room?.conversation_id || isSendingMessage || messageBan ? 'default' : 'pointer', opacity: !room?.conversation_id || isSendingMessage || messageBan ? 0.6 : 1}}
                     >
                       <ImageIcon size={16} />
                     </button>
                     <input
                       type="text"
-                      placeholder="Nhập tin nhắn vào phòng học..."
+                      placeholder={messageBan ? 'Bạn đang bị hạn chế nhắn tin...' : 'Nhập tin nhắn vào phòng học...'}
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                      disabled={!room?.conversation_id || isSendingMessage}
-                      style={{flex: 1, padding: '10px 14px', background: '#1E293B', border: '1px solid #334155', borderRadius: 8, outline: 'none', color: 'white', fontSize: 13, opacity: !room?.conversation_id || isSendingMessage ? 0.6 : 1}}
+                      disabled={!room?.conversation_id || isSendingMessage || !!messageBan}
+                      style={{flex: 1, padding: '10px 14px', background: '#1E293B', border: '1px solid #334155', borderRadius: 8, outline: 'none', color: 'white', fontSize: 13, opacity: !room?.conversation_id || isSendingMessage || messageBan ? 0.6 : 1}}
                     />
                     <button
                       onClick={handleSendMessage}
-                      disabled={(!chatInput.trim() && !imageAttachment.hasImage) || !room?.conversation_id || isSendingMessage || imageAttachment.isUploading}
-                      style={{background: '#2563EB', border: 'none', color: 'white', padding: 10, borderRadius: 8, cursor: ((!chatInput.trim() && !imageAttachment.hasImage) || !room?.conversation_id || isSendingMessage || imageAttachment.isUploading) ? 'default' : 'pointer', opacity: ((!chatInput.trim() && !imageAttachment.hasImage) || !room?.conversation_id || isSendingMessage || imageAttachment.isUploading) ? 0.6 : 1}}
+                      disabled={(!chatInput.trim() && !imageAttachment.hasImage) || !room?.conversation_id || isSendingMessage || imageAttachment.isUploading || !!messageBan}
+                      style={{background: '#2563EB', border: 'none', color: 'white', padding: 10, borderRadius: 8, cursor: ((!chatInput.trim() && !imageAttachment.hasImage) || !room?.conversation_id || isSendingMessage || imageAttachment.isUploading || messageBan) ? 'default' : 'pointer', opacity: ((!chatInput.trim() && !imageAttachment.hasImage) || !room?.conversation_id || isSendingMessage || imageAttachment.isUploading || messageBan) ? 0.6 : 1}}
                     >
                       <Send size={16} />
                     </button>

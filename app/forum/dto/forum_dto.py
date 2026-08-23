@@ -31,7 +31,6 @@ class ForumCategoryResponse(BaseModel):
 
 
 class ForumPostCreate(BaseModel):
-    author_id: uuid.UUID
     category_id: uuid.UUID
     title: str = Field(min_length=1, max_length=200)
     content: str = Field(min_length=1)
@@ -66,9 +65,8 @@ class ReactionSet(BaseModel):
 
 class ReactionSummary(BaseModel):
     """Grouped-by-emoji shape the wire actually needs -- never raw per-user reaction rows.
-    `reacted_by_me` is relative to whichever user the request's `user_id` query param names
-    (Forum has no auth dependency on any endpoint today, unlike the equivalent chat
-    MessageReactionSummary). Mirrors MessageReactionSummary (app/messages/dto/message_dto.py)."""
+    `reacted_by_me` is relative to the authenticated caller (or None for an anonymous
+    viewer). Mirrors MessageReactionSummary (app/messages/dto/message_dto.py)."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -89,6 +87,7 @@ class ForumPostResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None
+    deleted_by: uuid.UUID | None = None
 
     # Optional fields for UI aggregates
     category_name: str | None = None
@@ -101,7 +100,6 @@ class ForumPostResponse(BaseModel):
 
 class CommentCreate(BaseModel):
     post_id: uuid.UUID
-    author_id: uuid.UUID
     parent_comment_id: uuid.UUID | None = None
     content: str = Field(min_length=1)
 

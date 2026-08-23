@@ -25,6 +25,9 @@ interface ForumFilterBarProps {
   selectedFilter: FilterOption;
   onSelectFilter: (filter: FilterOption) => void;
   onOpenCreateModal: () => void;
+  /** True when the current user is under an active 'post' restriction -- dims the "Đặt câu
+   * hỏi" button and prevents opening the composer instead of letting them find out on submit. */
+  createDisabled?: boolean;
 }
 
 export const ForumFilterBar: React.FC<ForumFilterBarProps> = ({
@@ -34,6 +37,7 @@ export const ForumFilterBar: React.FC<ForumFilterBarProps> = ({
   selectedFilter,
   onSelectFilter,
   onOpenCreateModal,
+  createDisabled = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -171,6 +175,8 @@ export const ForumFilterBar: React.FC<ForumFilterBarProps> = ({
         {/* Nút Đặt câu hỏi */}
         <button
           onClick={onOpenCreateModal}
+          disabled={createDisabled}
+          title={createDisabled ? 'Bạn đang bị hạn chế đăng bài' : undefined}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -179,10 +185,11 @@ export const ForumFilterBar: React.FC<ForumFilterBarProps> = ({
             background: '#00236F',
             border: 'none',
             borderRadius: 8,
-            cursor: 'pointer',
+            cursor: createDisabled ? 'not-allowed' : 'pointer',
             color: 'white',
             fontSize: 14,
             fontWeight: '600',
+            opacity: createDisabled ? 0.5 : 1,
           }}
         >
           <Edit3 size={16} />

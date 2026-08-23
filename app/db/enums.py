@@ -70,6 +70,43 @@ class StudyRoomStatus(str, enum.Enum):
     ENDED = "ended"
 
 
+class ProfileRole(str, enum.Enum):
+    USER = "user"
+    MODERATOR = "moderator"
+    ADMIN = "admin"
+
+
+class BanType(str, enum.Enum):
+    POST = "post"
+    MESSAGE = "message"
+    CREATE_GROUP = "create_group"
+    JOIN_GROUP = "join_group"
+    JOIN_ROOM = "join_room"
+
+
+class ReportReason(str, enum.Enum):
+    SPAM = "spam"
+    HARASSMENT = "harassment"
+    INAPPROPRIATE_CONTENT = "inappropriate_content"
+    IMPERSONATION = "impersonation"
+    OTHER = "other"
+
+
+class ReportStatus(str, enum.Enum):
+    PENDING = "pending"
+    RESOLVED = "resolved"
+    DISMISSED = "dismissed"
+
+
+class ForumModerationActionType(str, enum.Enum):
+    DELETE_POST = "delete_post"
+    DELETE_COMMENT = "delete_comment"
+    BAN_USER = "ban_user"
+    UNBAN_USER = "unban_user"
+    GRANT_MODERATOR = "grant_moderator"
+    REVOKE_MODERATOR = "revoke_moderator"
+
+
 def pg_enum(enum_cls: type[enum.Enum], pg_name: str) -> PgEnum:
     """Bind a Python str-enum to an existing PostgreSQL enum type (create_type=False: the type already exists in Supabase)."""
     return PgEnum(enum_cls, name=pg_name, create_type=False, values_callable=lambda cls: [e.value for e in cls])

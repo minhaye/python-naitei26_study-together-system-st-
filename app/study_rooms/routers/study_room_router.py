@@ -10,14 +10,16 @@ from app.core.permissions import (
     can_join_room,
     can_join_room_meeting,
     can_manage_room,
+    get_active_ban,
     is_active_group_member,
     is_group_manager,
 )
 from app.db.session import get_db_session
-from app.db.enums import ModerationAction, StudyRoomMemberRole
+from app.db.enums import BanType, ModerationAction, StudyRoomMemberRole
 from app.groups.services.group_service import GroupsService
 from app.meetings.dto.meeting_dto import MeetingTokenResponse
 from app.meetings.services.livekit_service import LiveKitService
+from app.moderation.services.moderation_service import ModerationService
 from app.profiles.services.profile_service import ProfilesService
 from app.study_rooms.dto.study_room_dto import (
     RoomModerationActionCreate,
@@ -35,6 +37,7 @@ service = StudyRoomsService()
 groups_service = GroupsService()
 profiles_service = ProfilesService()
 livekit_service = LiveKitService()
+moderation_service = ModerationService()
 
 _SELF_SERVICE_MODERATION_ACTIONS = {ModerationAction.RAISE_HAND, ModerationAction.LOWER_HAND}
 
@@ -236,6 +239,12 @@ async def join_room(
     # must not be able to join or rejoin a room under that group.
     if not await is_active_group_member(session, room.group_id, current_user.id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only an active group member can join this study room")
+
+    ban = await get_active_ban(session, current_user.id, BanType.JOIN_ROOM)
+    if ban:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, moderation_service.format_ban_message(ban, "tham gia phòng học")
+        )
 
     # Check existing membership. The joining identity is always the caller --
     # never a client-supplied user_id -- and the role is always PARTICIPANT;

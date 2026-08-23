@@ -30,6 +30,14 @@ def override_db_session():
     app.dependency_overrides.pop(get_db_session, None)
 
 
+@pytest.fixture(autouse=True)
+def _no_active_bans(monkeypatch):
+    """create_group/add_member now check for an active CREATE_GROUP/JOIN_GROUP ban --
+    default every test to "not banned" so unrelated tests don't have to know about the
+    moderation feature. Tests that want to exercise a ban override this per-test."""
+    monkeypatch.setattr(permissions.moderation_service, "get_active_ban", AsyncMock(return_value=None))
+
+
 @pytest.fixture
 def fake_user():
     return CurrentUser(id=uuid.uuid4(), email="user@example.com", role="authenticated")

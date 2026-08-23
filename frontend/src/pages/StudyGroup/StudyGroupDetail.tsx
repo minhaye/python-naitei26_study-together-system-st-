@@ -26,6 +26,7 @@ import { MessageAttachmentImage } from '../../components/chat/MessageAttachmentI
 import { MessageReactions } from '../../components/chat/MessageReactions';
 import { SelectedImagePreview } from '../../components/chat/SelectedImagePreview';
 import { ErrorBoundary } from '../../components/ui/ErrorBoundary';
+import { RestrictionBanner } from '../../components/ui/RestrictionBanner';
 import { useGroupTableRealtime } from '../../hooks/useGroupTableRealtime';
 import { useGroupResources } from '../../hooks/useGroupResources';
 import { useGroupNotes } from '../../hooks/useGroupNotes';
@@ -60,7 +61,8 @@ export function StudyGroupDetail() {
   const navigate = useNavigate();
   const { id: groupId } = useParams();
   const chatEndRef = useRef<HTMLDivElement | null>(null);
-  const { user, currentUser } = useAuth();
+  const { user, currentUser, getBan } = useAuth();
+  const messageBan = getBan('message');
   const currentUserId = user?.id ?? null;
 
   // Dynamic States
@@ -570,7 +572,7 @@ export function StudyGroupDetail() {
   const handleSendMessage = async () => {
     const trimmed = chatInput.trim();
     const conversationId = activeChannelObj?.conversation_id ?? null;
-    if ((!trimmed && !imageAttachment.hasImage) || !conversationId || isSendingMessage || imageAttachment.isUploading) return;
+    if ((!trimmed && !imageAttachment.hasImage) || !conversationId || isSendingMessage || imageAttachment.isUploading || messageBan) return;
 
     const targetChannelId = activeChannel;
     setIsSendingMessage(true);
@@ -1202,6 +1204,11 @@ export function StudyGroupDetail() {
 
                     {/* Chat Input */}
                     <div style={{padding: '0 24px 24px 24px'}}>
+                        {messageBan && (
+                            <div style={{marginBottom: 8}}>
+                                <RestrictionBanner ban={messageBan} actionLabel="nhắn tin" />
+                            </div>
+                        )}
                         {(sendMessageError || imageAttachment.uploadError || imageAttachment.pickError) && (
                             <div style={{marginBottom: 8, padding: '8px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, color: '#B91C1C', fontSize: 12.5}}>
                                 {sendMessageError || imageAttachment.uploadError?.message || imageAttachment.pickError}
@@ -1225,8 +1232,8 @@ export function StudyGroupDetail() {
                             <button
                                 type="button"
                                 onClick={() => chatImageInputRef.current?.click()}
-                                disabled={!activeChannelObj?.conversation_id || isSendingMessage}
-                                style={{background: 'transparent', border: 'none', padding: 0, display: 'flex', cursor: (!activeChannelObj?.conversation_id || isSendingMessage) ? 'not-allowed' : 'pointer', opacity: (!activeChannelObj?.conversation_id || isSendingMessage) ? 0.5 : 1}}
+                                disabled={!activeChannelObj?.conversation_id || isSendingMessage || !!messageBan}
+                                style={{background: 'transparent', border: 'none', padding: 0, display: 'flex', cursor: (!activeChannelObj?.conversation_id || isSendingMessage || messageBan) ? 'not-allowed' : 'pointer', opacity: (!activeChannelObj?.conversation_id || isSendingMessage || messageBan) ? 0.5 : 1}}
                                 aria-label="Đính kèm ảnh"
                             >
                               <ImageIcon size={20} color="#64748B" />
@@ -1236,14 +1243,14 @@ export function StudyGroupDetail() {
                                 value={chatInput}
                                 onChange={(e) => setChatInput(e.target.value)}
                                 onKeyDown={handleKeyPress}
-                                disabled={!activeChannelObj?.conversation_id || isSendingMessage}
-                                placeholder={activeChannelObj ? `Nhắn tin cho #${activeChannelObj.name}...` : 'Chọn một kênh để bắt đầu'}
+                                disabled={!activeChannelObj?.conversation_id || isSendingMessage || !!messageBan}
+                                placeholder={messageBan ? 'Bạn đang bị hạn chế nhắn tin...' : activeChannelObj ? `Nhắn tin cho #${activeChannelObj.name}...` : 'Chọn một kênh để bắt đầu'}
                                 style={{border: 'none', background: 'transparent', flex: 1, outline: 'none', fontSize: 15, color: '#0F172A'}}
                             />
                             <button
                                 onClick={handleSendMessage}
-                                disabled={(!chatInput.trim() && !imageAttachment.hasImage) || !activeChannelObj?.conversation_id || isSendingMessage || imageAttachment.isUploading}
-                                style={{background: 'transparent', border: 'none', padding: 0, display: 'flex', cursor: ((chatInput.trim() || imageAttachment.hasImage) && !isSendingMessage && !imageAttachment.isUploading) ? 'pointer' : 'not-allowed', opacity: ((chatInput.trim() || imageAttachment.hasImage) && !isSendingMessage && !imageAttachment.isUploading) ? 1 : 0.5}}
+                                disabled={(!chatInput.trim() && !imageAttachment.hasImage) || !activeChannelObj?.conversation_id || isSendingMessage || imageAttachment.isUploading || !!messageBan}
+                                style={{background: 'transparent', border: 'none', padding: 0, display: 'flex', cursor: ((chatInput.trim() || imageAttachment.hasImage) && !isSendingMessage && !imageAttachment.isUploading && !messageBan) ? 'pointer' : 'not-allowed', opacity: ((chatInput.trim() || imageAttachment.hasImage) && !isSendingMessage && !imageAttachment.isUploading && !messageBan) ? 1 : 0.5}}
                             >
                               <Send size={20} color="#00236F" />
                             </button>

@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MessageCircle } from 'lucide-react';
+import { MessageCircle, ShieldAlert, Flag } from 'lucide-react';
 import { ApiError } from '../../lib/apiClient';
 import { createOrGetDirectConversation } from '../../lib/conversation.api';
 import { useUnreadMessages } from '../../contexts/unread-messages-context';
+import { useAuth } from '../../hooks/useAuth';
+import { BanUserModal } from '../../pages/forum/moderation/components/BanUserModal';
+import { ReportUserModal } from '../ui/ReportUserModal';
 
 export interface MessageUserTriggerProps {
   /** Target user's id -- passed straight through to POST /conversations/direct. */
@@ -25,9 +28,12 @@ export interface MessageUserTriggerProps {
 export function MessageUserTrigger({ userId, isSelf = false, children, style }: MessageUserTriggerProps) {
   const navigate = useNavigate();
   const { refresh } = useUnreadMessages();
+  const { isModerator, requireAuth } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isBanModalOpen, setIsBanModalOpen] = useState(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -99,7 +105,88 @@ export function MessageUserTrigger({ userId, isSelf = false, children, style }: 
             <MessageCircle size={15} color="#00236F" />
             {isCreating ? 'Đang mở...' : 'Nhắn tin'}
           </button>
+
+          {/* Bất kỳ người dùng đã đăng nhập nào cũng thấy -- chưa đăng nhập sẽ được điều
+              hướng sang /login (cùng quy ước requireAuth với ForumPage/CommentSection). */}
+          <button
+            onClick={() => {
+              setIsOpen(false);
+              requireAuth(() => setIsReportModalOpen(true));
+            }}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 10px',
+              background: 'transparent',
+              border: 'none',
+              borderRadius: 8,
+              color: '#0F172A',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            <Flag size={15} color="#B45309" />
+            Báo cáo
+          </button>
+
+          {/* Chỉ Kiểm duyệt viên/Admin thấy -- backend độc lập kiểm tra lại quyền này trên
+              từng endpoint /moderation/*, đây chỉ là UI. */}
+          {isModerator && (
+            <button
+              onClick={() => {
+                setIsOpen(false);
+                setIsBanModalOpen(true);
+              }}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '8px 10px',
+                background: 'transparent',
+                border: 'none',
+                borderRadius: 8,
+                color: '#DC2626',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              <ShieldAlert size={15} color="#DC2626" />
+              Hạn chế (Restrict)
+            </button>
+          )}
+
           {error && <div style={{ padding: '4px 10px', color: '#B91C1C', fontSize: 11.5 }}>{error}</div>}
+        </div>
+      )}
+
+      {/* stopPropagation: Modal renders via a DOM portal (document.body), but React still
+          bubbles its synthetic events through the *component* tree, not the DOM tree -- so
+          it's still a React descendant of this trigger's onClick-toggling wrapper. Without
+          this, any click inside the modal (including the backdrop) would bubble up and
+          toggle the "Nhắn tin" popover open/closed as a side effect. */}
+      {isModerator && isBanModalOpen && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <BanUserModal
+            isOpen={isBanModalOpen}
+            onClose={() => setIsBanModalOpen(false)}
+            onCreated={() => setIsBanModalOpen(false)}
+            presetUserId={userId}
+          />
+        </div>
+      )}
+
+      {isReportModalOpen && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <ReportUserModal
+            isOpen={isReportModalOpen}
+            onClose={() => setIsReportModalOpen(false)}
+            reportedUserId={userId}
+          />
         </div>
       )}
     </div>
