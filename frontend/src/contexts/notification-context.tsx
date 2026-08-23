@@ -75,11 +75,21 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   }, [isLoggedIn, fetchUnreadCounts, fetchNotifications]);
 
-  // Realtime subscription via Supabase
+  // Realtime subscription via Supabase with detailed debugging logs
   useEffect(() => {
-    if (!isLoggedIn || !currentUser?.id || currentUser.id === 'user-current') return;
+    if (!isLoggedIn || !currentUser?.id) {
+      console.warn('[RealtimeNoti] ⚠️ Skipped subscription: User is not logged in or missing ID.');
+      return;
+    }
+
+    if (currentUser.id === 'user-current') {
+      console.warn('[RealtimeNoti] ⚠️ Skipped subscription: User ID is mock "user-current".');
+      return;
+    }
 
     const userId = currentUser.id;
+    console.log(`[RealtimeNoti] 🔄 Initializing Realtime Channel for user: ${userId}`);
+
     const channel = supabase
       .channel(`notifications:user:${userId}`)
       .on(
@@ -90,11 +100,13 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           table: 'notifications',
           filter: `user_id=eq.${userId}`,
         },
-        async () => {
+        async (payload) => {
+          console.log('[RealtimeNoti] 🔔 NEW INSERT PAYLOAD RECEIVED FROM POSTGRES:', payload);
           try {
             const list = await notificationApi.listNotifications({ limit: 1 });
             if (list.length > 0) {
               const newItem = list[0];
+              console.log('[RealtimeNoti] 📦 Fetched latest notification item:', newItem);
               setNotifications((prev) => [newItem, ...prev.filter((n) => n.id !== newItem.id)]);
               const cat = newItem.category || 'forum';
               setUnreadCounts((prev) => ({
@@ -103,14 +115,21 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 [cat]: (prev[cat] || 0) + 1,
               }));
             }
-          } catch {
+          } catch (err) {
+            console.error('[RealtimeNoti] ❌ Failed to fetch latest notification on realtime trigger:', err);
             setUnreadCounts((prev) => ({ ...prev, total: prev.total + 1 }));
           }
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        console.log(`[RealtimeNoti] 📡 Subscription status: ${status}`);
+        if (err) {
+          console.error('[RealtimeNoti] ❌ Subscription error:', err);
+        }
+      });
 
     return () => {
+      console.log(`[RealtimeNoti] 🔌 Cleaning up Realtime channel for user: ${userId}`);
       supabase.removeChannel(channel);
     };
   }, [isLoggedIn, currentUser?.id]);

@@ -296,8 +296,8 @@ class ForumService:
             actor_name = (actor.display_name or actor.username or "Thành viên") if actor else "Thành viên"
             post_title = (post.title if post else None) or "Bài viết"
 
-            if comment.parent_id:
-                parent_cmt = await session.get(Comment, comment.parent_id)
+            if comment.parent_comment_id:
+                parent_cmt = await session.get(Comment, comment.parent_comment_id)
                 if parent_cmt:
                     await notifications_service.notify_comment_reply(
                         session,
@@ -320,8 +320,8 @@ class ForumService:
                     actor_id=comment.author_id,
                     actor_name=actor_name,
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[ForumService] Error creating notification for comment: {e}")
 
         return comment
 
@@ -504,6 +504,24 @@ class ForumService:
         )
         await session.execute(stmt)
         await session.flush()
+
+        try:
+            comment = await session.get(Comment, comment_id)
+            if comment:
+                actor = await profiles_service.get_by_id(session, user_id)
+                actor_name = (actor.display_name or actor.username or "Thành viên") if actor else "Thành viên"
+                await notifications_service.notify_comment_reply(
+                    session,
+                    post_id=comment.post_id,
+                    post_title="Bình luận",
+                    comment_id=comment_id,
+                    parent_author_id=comment.author_id,
+                    reply_content=f"đã thả cảm xúc {emoji} vào bình luận của bạn",
+                    actor_id=user_id,
+                    actor_name=actor_name,
+                )
+        except Exception as e:
+            print(f"[ForumService] Error creating notification for comment reaction: {e}")
 
     async def remove_comment_reaction(self, session: AsyncSession, comment_id: uuid.UUID, user_id: uuid.UUID) -> None:
         """Idempotent: a no-op if the caller has no reaction on this comment."""

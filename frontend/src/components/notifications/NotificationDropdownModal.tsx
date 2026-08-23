@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { CheckCheck, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { CheckCheck, X, MoreHorizontal } from 'lucide-react';
 import type { NotificationCategory } from '../../types/notification';
 import { useNotifications } from '../../contexts/notification-context';
 import { NotificationTabContent } from './NotificationTabContent';
@@ -10,11 +10,11 @@ interface NotificationDropdownModalProps {
   onClose: () => void;
 }
 
-const TABS: { key: NotificationCategory; label: string; icon: string }[] = [
-  { key: 'forum', label: 'Diễn đàn', icon: '💬' },
-  { key: 'group', label: 'Nhóm học', icon: '👥' },
-  { key: 'goal', label: 'Mục tiêu', icon: '🎯' },
-  { key: 'message', label: 'Tin nhắn', icon: '✉️' },
+const TABS: { key: NotificationCategory; label: string }[] = [
+  { key: 'forum', label: 'Diễn đàn' },
+  { key: 'group', label: 'Nhóm học' },
+  { key: 'goal', label: 'Mục tiêu' },
+  { key: 'message', label: 'Tin nhắn' },
 ];
 
 export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps> = ({
@@ -22,6 +22,12 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
   onClose,
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
+  const tabBarRef = useRef<HTMLDivElement>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+
+  const [visibleCount, setVisibleCount] = useState<number>(4);
+  const [isMoreOpen, setIsMoreOpen] = useState<boolean>(false);
+
   const {
     notifications,
     unreadCounts,
@@ -32,13 +38,34 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
     markAllAsRead,
   } = useNotifications();
 
-  // Close on click outside
+  // ResizeObserver to dynamically determine visible tabs count based on width
+  useEffect(() => {
+    if (!isOpen || !tabBarRef.current) return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.width < 410) {
+          setVisibleCount(2);
+        } else {
+          setVisibleCount(4);
+        }
+      }
+    });
+
+    observer.observe(tabBarRef.current);
+    return () => observer.disconnect();
+  }, [isOpen]);
+
+  // Close modal & popover on click outside
   useEffect(() => {
     if (!isOpen) return;
 
     const handleClickOutside = (event: MouseEvent) => {
       if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
         onClose();
+      }
+      if (moreMenuRef.current && !moreMenuRef.current.contains(event.target as Node)) {
+        setIsMoreOpen(false);
       }
     };
 
@@ -51,6 +78,13 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
   if (!isOpen) return null;
 
   const currentTabUnread = unreadCounts[activeCategory] || 0;
+  const visibleTabs = TABS.slice(0, visibleCount);
+  const overflowTabs = TABS.slice(visibleCount);
+  const isOverflowActive = overflowTabs.some((tab) => tab.key === activeCategory);
+  const overflowUnreadTotal = overflowTabs.reduce(
+    (sum, tab) => sum + (unreadCounts[tab.key] || 0),
+    0
+  );
 
   return (
     <div
@@ -89,7 +123,7 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
             <span
               style={{
                 backgroundColor: '#EFF6FF',
-                color: '#2563EB',
+                color: '#1877F2',
                 fontSize: 12,
                 fontWeight: 600,
                 padding: '2px 8px',
@@ -111,7 +145,7 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
               gap: 4,
               background: 'none',
               border: 'none',
-              color: '#2563EB',
+              color: '#1877F2',
               fontSize: 13,
               fontWeight: 600,
               cursor: 'pointer',
@@ -144,56 +178,145 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
         </div>
       </div>
 
-      {/* 4 Tabs Bar */}
+      {/* Facebook Style Pill Tabs Bar */}
       <div
+        ref={tabBarRef}
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 4,
-          padding: '8px 12px',
-          backgroundColor: '#F8FAFC',
-          borderBottom: '1px solid #E2E8F0',
-          overflowX: 'auto',
+          gap: 6,
+          padding: '10px 16px 8px 16px',
+          backgroundColor: 'white',
+          position: 'relative',
         }}
       >
-        {TABS.map((tab) => {
+        {visibleTabs.map((tab) => {
           const isActive = activeCategory === tab.key;
           const count = unreadCounts[tab.key] || 0;
 
           return (
             <button
               key={tab.key}
-              onClick={() => setActiveCategory(tab.key)}
+              onClick={() => {
+                setActiveCategory(tab.key);
+                setIsMoreOpen(false);
+              }}
               style={{
-                flex: 1,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 6,
-                padding: '8px 10px',
-                borderRadius: 8,
+                padding: '6px 14px',
+                borderRadius: 20,
                 border: 'none',
-                backgroundColor: isActive ? 'white' : 'transparent',
-                color: isActive ? '#0F172A' : '#64748B',
+                backgroundColor: isActive ? '#E7F3FF' : 'transparent',
+                color: isActive ? '#1877F2' : '#050505',
                 fontSize: 13,
-                fontWeight: isActive ? 600 : 500,
+                fontWeight: 600,
                 cursor: 'pointer',
-                boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
                 transition: 'all 0.15s ease',
                 position: 'relative',
                 whiteSpace: 'nowrap',
               }}
+              className={isActive ? '' : 'hover:bg-[#F2F3F5] transition-colors'}
             >
-              <span>{tab.icon}</span>
               <span>{tab.label}</span>
               <CountBadge count={count} style={{ position: 'relative', top: 'auto', right: 'auto' }} />
             </button>
           );
         })}
+
+        {/* Overflow "..." button if some tabs are hidden */}
+        {overflowTabs.length > 0 && (
+          <div style={{ position: 'relative' }} ref={moreMenuRef}>
+            <button
+              onClick={() => setIsMoreOpen(!isMoreOpen)}
+              title="Xem thêm mục lọc"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 4,
+                padding: '6px 12px',
+                borderRadius: 20,
+                border: 'none',
+                backgroundColor: isOverflowActive || isMoreOpen ? '#E7F3FF' : 'transparent',
+                color: isOverflowActive || isMoreOpen ? '#1877F2' : '#050505',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                position: 'relative',
+              }}
+              className={isOverflowActive || isMoreOpen ? '' : 'hover:bg-[#F2F3F5] transition-colors'}
+            >
+              <MoreHorizontal size={18} />
+              <CountBadge count={overflowUnreadTotal} style={{ position: 'relative', top: 'auto', right: 'auto' }} />
+            </button>
+
+            {/* Dropdown Popover Menu */}
+            {isMoreOpen && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  right: 0,
+                  backgroundColor: 'white',
+                  borderRadius: 12,
+                  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+                  border: '1px solid #E2E8F0',
+                  padding: 6,
+                  zIndex: 120,
+                  minWidth: 160,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 2,
+                  animation: 'fadeIn 0.12s ease-out',
+                }}
+              >
+                {overflowTabs.map((tab) => {
+                  const isActive = activeCategory === tab.key;
+                  const count = unreadCounts[tab.key] || 0;
+
+                  return (
+                    <button
+                      key={tab.key}
+                      onClick={() => {
+                        setActiveCategory(tab.key);
+                        setIsMoreOpen(false);
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        width: '100%',
+                        padding: '8px 12px',
+                        borderRadius: 8,
+                        border: 'none',
+                        backgroundColor: isActive ? '#E7F3FF' : 'transparent',
+                        color: isActive ? '#1877F2' : '#050505',
+                        fontSize: 13,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        transition: 'background-color 0.15s ease',
+                      }}
+                      className={isActive ? '' : 'hover:bg-slate-100'}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span>{tab.label}</span>
+                      </div>
+                      <CountBadge count={count} style={{ position: 'relative', top: 'auto', right: 'auto' }} />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Tab List Content */}
-      <div style={{ padding: '8px 4px' }}>
+      <div style={{ padding: '4px 4px 8px 4px' }}>
         <NotificationTabContent
           notifications={notifications}
           activeCategory={activeCategory}
@@ -219,7 +342,7 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
             style={{
               background: 'none',
               border: 'none',
-              color: '#2563EB',
+              color: '#1877F2',
               fontSize: 13,
               fontWeight: 600,
               cursor: 'pointer',

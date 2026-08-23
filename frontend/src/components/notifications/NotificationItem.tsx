@@ -119,12 +119,12 @@ export const NotificationItem: React.FC<NotificationItemProps> = memo(({ item, o
         minHeight: 68,
         borderRadius: 8,
         cursor: 'pointer',
-        backgroundColor: item.is_read ? 'transparent' : '#F0F7FF',
+        backgroundColor: 'transparent',
         transition: 'background-color 0.15s ease',
         position: 'relative',
         contain: 'content',
       }}
-      className="hover:bg-slate-100/80"
+      className="hover:bg-slate-100 transition-colors"
     >
       {/* Avatar with type badge overlay */}
       <div style={{ position: 'relative', flexShrink: 0 }}>
@@ -134,14 +134,16 @@ export const NotificationItem: React.FC<NotificationItemProps> = memo(({ item, o
             position: 'absolute',
             bottom: -2,
             right: -2,
-            width: 20,
-            height: 20,
+            width: 22,
+            height: 22,
             borderRadius: '50%',
             backgroundColor: 'white',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+            border: '2px solid #ffffff',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.18)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            lineHeight: 0,
           }}
         >
           {renderIcon(formatted.iconName)}
@@ -149,17 +151,28 @@ export const NotificationItem: React.FC<NotificationItemProps> = memo(({ item, o
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, minWidth: 0, paddingRight: item.is_read ? 0 : 12 }}>
+      <div style={{ flex: 1, minWidth: 0, paddingRight: item.is_read ? 0 : 8 }}>
         <div
           style={{
             fontSize: 14,
             lineHeight: '20px',
-            color: '#1E293B',
             wordBreak: 'break-word',
           }}
         >
-          <span style={{ fontWeight: 600, color: '#0F172A' }}>{formatted.actorName}</span>{' '}
-          <span style={{ fontWeight: item.is_read ? 400 : 500, color: item.is_read ? '#475569' : '#0F172A' }}>
+          <span
+            style={{
+              fontWeight: item.is_read ? 600 : 700,
+              color: item.is_read ? '#65676B' : '#050505',
+            }}
+          >
+            {formatted.actorName}
+          </span>{' '}
+          <span
+            style={{
+              fontWeight: item.is_read ? 400 : 500,
+              color: item.is_read ? '#65676B' : '#050505',
+            }}
+          >
             {formatted.previewText}
           </span>
         </div>
@@ -197,7 +210,7 @@ export const NotificationItem: React.FC<NotificationItemProps> = memo(({ item, o
                   disabled={isBusy}
                   style={{
                     padding: '4px 10px',
-                    background: '#00236F',
+                    background: '#1877F2',
                     color: 'white',
                     border: 'none',
                     borderRadius: 6,
@@ -219,8 +232,8 @@ export const NotificationItem: React.FC<NotificationItemProps> = memo(({ item, o
         <div
           style={{
             fontSize: 12,
-            color: item.is_read ? '#94A3B8' : '#2563EB',
-            fontWeight: item.is_read ? 400 : 500,
+            color: item.is_read ? '#8A8D91' : '#1877F2',
+            fontWeight: item.is_read ? 400 : 600,
             marginTop: 4,
           }}
         >
@@ -232,12 +245,12 @@ export const NotificationItem: React.FC<NotificationItemProps> = memo(({ item, o
       {!item.is_read && (
         <div
           style={{
-            width: 10,
-            height: 10,
+            width: 12,
+            height: 12,
             borderRadius: '50%',
-            backgroundColor: '#2563EB',
+            backgroundColor: '#1877F2',
             flexShrink: 0,
-            marginTop: 8,
+            alignSelf: 'center',
           }}
         />
       )}
