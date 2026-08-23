@@ -5,6 +5,7 @@ import { BAN_TYPE_LABELS, type BanResponse } from '../../../../lib/moderation.ty
 import { ApiError } from '../../../../lib/apiClient';
 import { Button } from '../../../../components/ui/Button';
 import { BanUserModal } from './BanUserModal';
+import { MessageUserTrigger } from '../../../../components/messages/MessageUserTrigger';
 
 export const BannedUsersTable: React.FC = () => {
   const [bans, setBans] = useState<BanResponse[]>([]);
@@ -68,7 +69,9 @@ export const BannedUsersTable: React.FC = () => {
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', background: 'white', border: '1px solid #E2E8F0', borderRadius: 10 }}
             >
               <div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: '#0F172A' }}>{ban.user_name ?? ban.user_id}</div>
+                <MessageUserTrigger userId={ban.user_id}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#0F172A' }}>{ban.user_name ?? ban.user_id}</div>
+                </MessageUserTrigger>
                 <div style={{ fontSize: 12.5, color: '#64748B', marginTop: 2 }}>
                   {BAN_TYPE_LABELS[ban.ban_type]} • Hết hạn: {formatExpiry(ban)}
                 </div>

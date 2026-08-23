@@ -132,7 +132,8 @@ export const forumApi = {
     categoryId: string | null,
     skip = 0,
     limit = 5,
-    tag?: string | null
+    tag?: string | null,
+    authorId?: string | null
   ): Promise<Post[]> => {
     let url = `/forum/posts?skip=${skip}&limit=${limit}`;
     if (categoryId) {
@@ -140,6 +141,9 @@ export const forumApi = {
     }
     if (tag) {
       url += `&tag=${encodeURIComponent(tag)}`;
+    }
+    if (authorId) {
+      url += `&author_id=${authorId}`;
     }
     const response = await apiClient.get<ForumPostResponse[]>(url);
     return response.map((p) => mapPost(p));

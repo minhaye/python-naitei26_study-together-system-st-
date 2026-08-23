@@ -4,6 +4,7 @@ import { moderationApi } from '../../../../lib/moderation.api';
 import { REPORT_REASON_LABELS, type ReportResponse } from '../../../../lib/moderation.types';
 import { ApiError } from '../../../../lib/apiClient';
 import { BanUserModal } from './BanUserModal';
+import { MessageUserTrigger } from '../../../../components/messages/MessageUserTrigger';
 
 export const ReportsTable: React.FC = () => {
   const [reports, setReports] = useState<ReportResponse[]>([]);
@@ -73,11 +74,17 @@ export const ReportsTable: React.FC = () => {
             >
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: '#0F172A' }}>
-                    {report.reported_user_name ?? report.reported_user_id}
-                  </div>
+                  <MessageUserTrigger userId={report.reported_user_id}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: '#0F172A' }}>
+                      {report.reported_user_name ?? report.reported_user_id}
+                    </div>
+                  </MessageUserTrigger>
                   <div style={{ fontSize: 12.5, color: '#64748B', marginTop: 2 }}>
-                    Báo cáo bởi {report.reporter_name ?? report.reporter_id} • {formatDate(report.created_at)}
+                    Báo cáo bởi{' '}
+                    <MessageUserTrigger userId={report.reporter_id} style={{ display: 'inline' }}>
+                      {report.reporter_name ?? report.reporter_id}
+                    </MessageUserTrigger>{' '}
+                    • {formatDate(report.created_at)}
                   </div>
                   <div style={{ marginTop: 6, display: 'inline-flex', padding: '2px 8px', background: '#FEF3C7', color: '#B45309', borderRadius: 999, fontSize: 11.5, fontWeight: 600 }}>
                     {REPORT_REASON_LABELS[report.reason]}

@@ -28,7 +28,7 @@ export interface ReportUserModalProps {
   reportedUserId: string;
 }
 
-/** Popup any logged-in user can open (via MessageUserTrigger's "Báo cáo" item) to report
+/** Popup any logged-in user can open (via ProfilePage's "Báo cáo" button) to report
  * another user for moderator review -- see ReportsTable.tsx for the moderator-facing side. */
 export const ReportUserModal: React.FC<ReportUserModalProps> = ({ isOpen, onClose, reportedUserId }) => {
   const [target, setTarget] = useState<Profile | null>(null);

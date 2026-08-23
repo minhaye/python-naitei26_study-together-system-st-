@@ -17,6 +17,7 @@ import type { Conversation } from '../../lib/conversation.types';
 import type { Message } from '../../lib/message.types';
 import { ConversationItemSkeleton, MessageBubbleSkeleton } from '../../components/ui/Skeleton';
 import { RestrictionBanner } from '../../components/ui/RestrictionBanner';
+import { MessageUserTrigger } from '../../components/messages/MessageUserTrigger';
 
 /** Direct-message inbox: a conversation list (left) + the selected thread (right). Reuses
  * useRoomMessages -- despite the name, it has no Room-specific logic, it's already generic
@@ -223,27 +224,33 @@ export function DirectMessagesPage() {
         ) : (
           <>
             <div style={{ padding: '16px 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', gap: 12 }}>
-              {selectedConversation.other_participant?.avatar_url ? (
-                <img src={selectedConversation.other_participant.avatar_url} alt="" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />
-              ) : (
-                <div
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: '50%',
-                    background: getAvatarColor(getDisplayName(selectedConversation.other_participant)),
-                    color: 'white',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontWeight: 700,
-                    fontSize: 13,
-                  }}
-                >
-                  {getAvatarInitials(getDisplayName(selectedConversation.other_participant))}
-                </div>
-              )}
-              <div style={{ fontWeight: 700, fontSize: 15, color: '#0F172A' }}>{getDisplayName(selectedConversation.other_participant)}</div>
+              <MessageUserTrigger
+                userId={selectedConversation.other_participant?.id ?? ''}
+                isSelf={!selectedConversation.other_participant}
+                style={{ display: 'flex', alignItems: 'center', gap: 12 }}
+              >
+                {selectedConversation.other_participant?.avatar_url ? (
+                  <img src={selectedConversation.other_participant.avatar_url} alt="" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />
+                ) : (
+                  <div
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: '50%',
+                      background: getAvatarColor(getDisplayName(selectedConversation.other_participant)),
+                      color: 'white',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: 700,
+                      fontSize: 13,
+                    }}
+                  >
+                    {getAvatarInitials(getDisplayName(selectedConversation.other_participant))}
+                  </div>
+                )}
+                <div style={{ fontWeight: 700, fontSize: 15, color: '#0F172A' }}>{getDisplayName(selectedConversation.other_participant)}</div>
+              </MessageUserTrigger>
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
