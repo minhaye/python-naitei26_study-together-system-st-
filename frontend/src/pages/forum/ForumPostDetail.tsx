@@ -13,7 +13,7 @@ import { useForumState } from './context/ForumStateContext';
 export const ForumPostDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { isLoggedIn, currentUser, requireAuth } = useAuth();
+  const { requireAuth } = useAuth();
   const { updatePostInState, deletePostInState } = useForumState();
 
   const [post, setPost] = useState<Post | null>(null);
@@ -22,28 +22,26 @@ export const ForumPostDetail: React.FC = () => {
   useEffect(() => {
     if (!id) return;
     setIsLoading(true);
-    // Chỉ truyền userId thực (UUID hợp lệ) khi đã đăng nhập, không gửi 'user-current' lên backend
-    const userId = isLoggedIn ? currentUser?.id : undefined;
     forumApi
-      .getPosts(null, 0, 9999, null, userId)
+      .getPosts(null, 0, 9999, null)
       .then((all) => {
         const found = all.find((p) => p.id === id);
         if (found) setPost(found);
       })
       .finally(() => setIsLoading(false));
-  }, [id, isLoggedIn, currentUser?.id]);
+  }, [id]);
 
   const handleReact = (postId: string, emoji: string) => {
     requireAuth(async () => {
       setPost((prev) => (prev ? { ...prev, reactions: applyReactionOptimistic(prev.reactions, emoji) } : null));
-      await forumApi.setPostReaction(postId, emoji, currentUser?.id);
+      await forumApi.setPostReaction(postId, emoji);
     });
   };
 
   const handleRemoveReaction = (postId: string) => {
     requireAuth(async () => {
       setPost((prev) => (prev ? { ...prev, reactions: applyReactionOptimistic(prev.reactions, null) } : null));
-      await forumApi.removePostReaction(postId, currentUser?.id);
+      await forumApi.removePostReaction(postId);
     });
   };
 
@@ -78,11 +76,11 @@ export const ForumPostDetail: React.FC = () => {
     }
   };
 
-  const handleDeletePost = async (postId: string) => {
+  const handleDeletePost = async (postId: string, reason?: string) => {
     deletePostInState(postId);
     navigate('/');
     try {
-      await forumApi.deletePost(postId);
+      await forumApi.deletePost(postId, reason);
     } catch (error) {
       console.error('Failed to delete post detail', error);
     }

@@ -64,7 +64,7 @@ export function useForumPosts(
     setIsLoading(true);
 
     try {
-      const newPosts = await forumApi.getPosts(categoryId, skip, PAGE_SIZE, selectedTag, currentUserId);
+      const newPosts = await forumApi.getPosts(categoryId, skip, PAGE_SIZE, selectedTag);
       const processed = applyFilterAndSearch(newPosts, filter, search, currentUserId);
 
       setPosts((prev) => {
@@ -117,7 +117,7 @@ export function useForumPosts(
 
       // 2. REVALIDATE: Fetch ngầm dữ liệu mới
       try {
-        const firstPage = await forumApi.getPosts(categoryId, 0, PAGE_SIZE, selectedTag, currentUserId);
+        const firstPage = await forumApi.getPosts(categoryId, 0, PAGE_SIZE, selectedTag);
         const processed = applyFilterAndSearch(firstPage, filter, search, currentUserId);
 
         setPosts((prev) => {

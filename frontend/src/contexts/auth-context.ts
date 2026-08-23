@@ -1,5 +1,7 @@
 import { createContext, useContext } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
+import type { ProfileRole } from '../lib/profile.types';
+import type { BanResponse } from '../lib/moderation.types';
 
 export interface AuthProfile {
   id: string;
@@ -8,12 +10,16 @@ export interface AuthProfile {
   avatarUrl: string | null;
   bio: string | null;
   organization: string | null;
+  role: ProfileRole;
 }
 
 export interface AuthContextValue {
   session: Session | null;
   user: User | null;
   profile: AuthProfile | null;
+  /** Caller's own active restrictions (see GET /moderation/bans/me) -- fetched alongside
+   * `profile` on every session change, empty for a guest or an unrestricted user. */
+  bans: BanResponse[];
   loading: boolean;
   setDevSession: (session: Session | null) => void;
   refreshProfile: () => Promise<AuthProfile | null>;

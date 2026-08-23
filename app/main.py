@@ -17,6 +17,7 @@ from app.study_rooms.routers.study_room_router import router as study_rooms_rout
 from app.resources.routers.resource_router import router as resources_router
 from app.notes.routers.note_router import router as notes_router
 from app.forum.routers.forum_router import router as forum_router
+from app.moderation.routers.moderation_router import router as moderation_router
 from app.notifications.routers.notification_router import router as notifications_router
 from app.invitations.routers.invitation_router import router as invitations_router
 from app.tasks.routers.task_router import router as tasks_router
@@ -73,6 +74,7 @@ app.include_router(study_rooms_router)
 app.include_router(resources_router)
 app.include_router(notes_router)
 app.include_router(forum_router)
+app.include_router(moderation_router)
 app.include_router(notifications_router)
 app.include_router(invitations_router)
 app.include_router(tasks_router)

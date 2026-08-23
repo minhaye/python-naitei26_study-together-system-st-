@@ -1,4 +1,4 @@
-import { Search, Settings } from 'lucide-react';
+import { Search, Settings, ShieldCheck } from 'lucide-react';
 import { NavLink, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useAuthContext } from '../../contexts/auth-context';
@@ -9,7 +9,7 @@ import { PendingInvitationsBell } from '../invitations/PendingInvitationsBell';
 import { useUnreadMessages } from '../../contexts/unread-messages-context';
 
 export function Header() {
-  const { isLoggedIn, currentUser } = useAuth();
+  const { isLoggedIn, currentUser, isModerator } = useAuth();
   const { totalUnread } = useUnreadMessages();
   const { setDevSession, profile } = useAuthContext();
   const navigate = useNavigate();
@@ -77,6 +77,24 @@ export function Header() {
                             <CountBadge count={totalUnread} style={{top: -6, right: -14}} />
                         </span>
                     </NavLink>
+                    {isModerator && (
+                        <NavLink to="/forum/moderation" style={({isActive}) => ({
+                            paddingBottom: 4,
+                            borderBottom: isActive ? '2px #7C3AED solid' : '2px transparent solid',
+                            justifyContent: 'center', alignItems: 'center', display: 'flex', flexDirection: 'row', gap: 6,
+                            color: isActive ? '#7C3AED' : '#444651',
+                            fontSize: 16, fontFamily: 'Inter', fontWeight: isActive ? '600' : '400',
+                            lineHeight: '24px', textDecoration: 'none', cursor: 'pointer',
+                            transition: 'all 0.2s'
+                        })}>
+                            {({isActive}) => (
+                                <>
+                                    <ShieldCheck size={17} color={isActive ? '#7C3AED' : '#444651'} />
+                                    Kiểm duyệt
+                                </>
+                            )}
+                        </NavLink>
+                    )}
                 </div>
             </div>
             <div style={{justifyContent: 'flex-start', alignItems: 'center', gap: 24, display: 'flex'}}>

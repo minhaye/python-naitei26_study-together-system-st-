@@ -91,8 +91,8 @@ class ForumService:
 
     # --- Posts ---
 
-    async def create_post(self, session: AsyncSession, data: ForumPostCreate) -> ForumPost:
-        post = ForumPost(**data.model_dump())
+    async def create_post(self, session: AsyncSession, data: ForumPostCreate, author_id: uuid.UUID) -> ForumPost:
+        post = ForumPost(**data.model_dump(), author_id=author_id)
         session.add(post)
         await session.flush()
 
@@ -255,8 +255,11 @@ class ForumService:
 
         return post
 
-    async def soft_delete_post(self, session: AsyncSession, post: ForumPost) -> ForumPost:
+    async def soft_delete_post(
+        self, session: AsyncSession, post: ForumPost, deleted_by: uuid.UUID | None = None
+    ) -> ForumPost:
         post.deleted_at = datetime.now(timezone.utc)
+        post.deleted_by = deleted_by
         # Clear post_tags so trigger decrements tag post_count
         await self._sync_post_tags(session, post.id, [])
         await session.flush()
@@ -279,8 +282,8 @@ class ForumService:
 
     # --- Comments ---
 
-    async def create_comment(self, session: AsyncSession, data: CommentCreate) -> Comment:
-        comment = Comment(**data.model_dump())
+    async def create_comment(self, session: AsyncSession, data: CommentCreate, author_id: uuid.UUID) -> Comment:
+        comment = Comment(**data.model_dump(), author_id=author_id)
         session.add(comment)
         await session.flush()
         # A brand-new comment can't have reactions yet -- see create_post's identical note.

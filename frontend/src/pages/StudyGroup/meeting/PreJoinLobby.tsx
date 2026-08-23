@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Mic, MicOff, Video as VideoIcon, VideoOff, Loader2 } from 'lucide-react';
+import { RestrictionBanner } from '../../../components/ui/RestrictionBanner';
+import type { BanResponse } from '../../../lib/moderation.types';
 
 export interface MediaJoinChoice {
   audioEnabled: boolean;
@@ -17,6 +19,9 @@ interface PreJoinLobbyProps {
   userAvatarUrl?: string;
   isJoining?: boolean;
   joinError?: string;
+  /** Caller's own active 'join_room' restriction, if any -- shown up front and disables the
+   * join button instead of only surfacing a 403 after they click it. */
+  restrictionBan?: BanResponse;
   onJoin: (choice: MediaJoinChoice) => void;
   onBack: () => void;
 }
@@ -60,6 +65,7 @@ export function PreJoinLobby({
   userAvatarUrl,
   isJoining = false,
   joinError,
+  restrictionBan,
   onJoin,
   onBack,
 }: PreJoinLobbyProps) {
@@ -148,6 +154,7 @@ export function PreJoinLobby({
   }, [camEnabled, micEnabled, selectedCameraId, selectedMicId]);
 
   const handleJoin = () => {
+    if (restrictionBan) return;
     onJoin({
       audioEnabled: micEnabled,
       videoEnabled: camEnabled,
@@ -231,6 +238,8 @@ export function PreJoinLobby({
             <p style={{color: '#64748B', fontSize: 13, margin: '10px 0 0'}}>Kiểm tra camera và micro trước khi vào phòng học.</p>
           </div>
 
+          {restrictionBan && <RestrictionBanner ban={restrictionBan} actionLabel="tham gia phòng học" variant="dark" />}
+
           {permissionError && (
             <div style={{background: '#450A0A', border: '1px solid #7F1D1D', borderRadius: 8, padding: '10px 12px', color: '#FCA5A5', fontSize: 12.5}}>
               {permissionError}
@@ -285,8 +294,8 @@ export function PreJoinLobby({
             </button>
             <button
               onClick={handleJoin}
-              disabled={isJoining}
-              style={{flex: 1, background: '#2563EB', border: 'none', color: 'white', padding: '12px 18px', borderRadius: 10, cursor: isJoining ? 'default' : 'pointer', fontSize: 14, fontWeight: '600', opacity: isJoining ? 0.7 : 1}}
+              disabled={isJoining || !!restrictionBan}
+              style={{flex: 1, background: '#2563EB', border: 'none', color: 'white', padding: '12px 18px', borderRadius: 10, cursor: isJoining || restrictionBan ? 'default' : 'pointer', fontSize: 14, fontWeight: '600', opacity: isJoining || restrictionBan ? 0.7 : 1}}
             >
               {isJoining ? 'Đang tham gia...' : 'Tham gia phòng học'}
             </button>

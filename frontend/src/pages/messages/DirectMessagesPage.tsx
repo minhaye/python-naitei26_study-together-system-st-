@@ -16,6 +16,7 @@ import { SelectedImagePreview } from '../../components/chat/SelectedImagePreview
 import type { Conversation } from '../../lib/conversation.types';
 import type { Message } from '../../lib/message.types';
 import { ConversationItemSkeleton, MessageBubbleSkeleton } from '../../components/ui/Skeleton';
+import { RestrictionBanner } from '../../components/ui/RestrictionBanner';
 
 /** Direct-message inbox: a conversation list (left) + the selected thread (right). Reuses
  * useRoomMessages -- despite the name, it has no Room-specific logic, it's already generic
@@ -24,7 +25,8 @@ import { ConversationItemSkeleton, MessageBubbleSkeleton } from '../../component
 export function DirectMessagesPage() {
   const { conversationId } = useParams<{ conversationId?: string }>();
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
+  const { currentUser, getBan } = useAuth();
+  const messageBan = getBan('message');
   const { getUnread, markAsRead } = useUnreadMessages();
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -89,7 +91,7 @@ export function DirectMessagesPage() {
 
   const handleSend = async () => {
     const trimmed = chatInput.trim();
-    if ((!trimmed && !imageAttachment.hasImage) || !conversationId || isSending || imageAttachment.isUploading) return;
+    if ((!trimmed && !imageAttachment.hasImage) || !conversationId || isSending || imageAttachment.isUploading || messageBan) return;
     try {
       // Upload first, create the message second -- a failed upload must never produce an
       // orphaned/misleading message record (see useMessageImageAttachment.uploadImage).
@@ -298,6 +300,11 @@ export function DirectMessagesPage() {
             </div>
 
             <div style={{ padding: '16px 24px', borderTop: '1px solid #E2E8F0' }}>
+              {messageBan && (
+                <div style={{ marginBottom: 8 }}>
+                  <RestrictionBanner ban={messageBan} actionLabel="nhắn tin" />
+                </div>
+              )}
               {(sendError || imageAttachment.uploadError || imageAttachment.pickError) && (
                 <div style={{ marginBottom: 8, padding: '8px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, color: '#B91C1C', fontSize: 12.5 }}>
                   {sendError?.message || imageAttachment.uploadError?.message || imageAttachment.pickError}
@@ -321,7 +328,7 @@ export function DirectMessagesPage() {
                 <button
                   type="button"
                   onClick={() => chatImageInputRef.current?.click()}
-                  disabled={isSending}
+                  disabled={isSending || !!messageBan}
                   aria-label="Đính kèm ảnh"
                   style={{
                     background: '#F8FAFC',
@@ -330,32 +337,32 @@ export function DirectMessagesPage() {
                     padding: 10,
                     borderRadius: 8,
                     display: 'flex',
-                    cursor: isSending ? 'default' : 'pointer',
-                    opacity: isSending ? 0.6 : 1,
+                    cursor: isSending || messageBan ? 'default' : 'pointer',
+                    opacity: isSending || messageBan ? 0.6 : 1,
                   }}
                 >
                   <ImageIcon size={16} />
                 </button>
                 <input
                   type="text"
-                  placeholder="Nhập tin nhắn..."
+                  placeholder={messageBan ? 'Bạn đang bị hạn chế nhắn tin...' : 'Nhập tin nhắn...'}
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                  disabled={isSending}
+                  disabled={isSending || !!messageBan}
                   style={{ flex: 1, padding: '10px 14px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, outline: 'none', color: '#0F172A', fontSize: 14 }}
                 />
                 <button
                   onClick={handleSend}
-                  disabled={(!chatInput.trim() && !imageAttachment.hasImage) || isSending || imageAttachment.isUploading}
+                  disabled={(!chatInput.trim() && !imageAttachment.hasImage) || isSending || imageAttachment.isUploading || !!messageBan}
                   style={{
                     background: '#00236F',
                     border: 'none',
                     color: 'white',
                     padding: 10,
                     borderRadius: 8,
-                    cursor: (!chatInput.trim() && !imageAttachment.hasImage) || isSending || imageAttachment.isUploading ? 'default' : 'pointer',
-                    opacity: (!chatInput.trim() && !imageAttachment.hasImage) || isSending || imageAttachment.isUploading ? 0.6 : 1,
+                    cursor: (!chatInput.trim() && !imageAttachment.hasImage) || isSending || imageAttachment.isUploading || messageBan ? 'default' : 'pointer',
+                    opacity: (!chatInput.trim() && !imageAttachment.hasImage) || isSending || imageAttachment.isUploading || messageBan ? 0.6 : 1,
                   }}
                 >
                   <Send size={16} />

@@ -33,6 +33,7 @@ export interface ForumPostResponse {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  deleted_by?: string | null;
   category_name?: string;
   author_name?: string;
   author_avatar_url?: string | null;
@@ -57,7 +58,6 @@ export interface CommentResponse {
 // ─── Request Payloads — Gửi lên Backend ──────────────────────────────────────
 
 export interface ForumPostCreate {
-  author_id: string;
   category_id: string;
   title: string;
   content: string;
@@ -73,7 +73,6 @@ export interface ForumPostUpdate {
 
 export interface CommentCreate {
   post_id: string;
-  author_id: string;
   parent_comment_id?: string | null;
   content: string;
 }
@@ -110,6 +109,7 @@ export interface Post {
   commentsCount: number;     // Số lượt bình luận
   tags?: string[];           // Danh sách hashtag
   status?: 'sending' | 'updating' | 'error'; // Optimistic UI: undefined = đã lưu thành công
+  errorMessage?: string;     // Thông báo lỗi cụ thể từ backend khi status = 'error' (VD: lý do bị cấm)
 }
 
 export interface Comment {

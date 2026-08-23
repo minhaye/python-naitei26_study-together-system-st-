@@ -7,6 +7,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.enums import ProfileRole, pg_enum
 
 if TYPE_CHECKING:
     from app.groups.entities.group_entity import Group, GroupMember
@@ -29,6 +30,9 @@ class Profile(Base):
     avatar_url: Mapped[str | None] = mapped_column(Text)
     bio: Mapped[str | None] = mapped_column(Text)
     organization: Mapped[str | None] = mapped_column(Text)
+    role: Mapped[ProfileRole] = mapped_column(
+        pg_enum(ProfileRole, "profile_role"), server_default=text("'user'"), default=ProfileRole.USER
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
 
@@ -37,7 +41,9 @@ class Profile(Base):
     created_channels: Mapped[list["Channel"]] = relationship(back_populates="creator", foreign_keys="Channel.created_by")
     channel_memberships: Mapped[list["ChannelMember"]] = relationship(back_populates="user")
     sent_messages: Mapped[list["Message"]] = relationship(back_populates="sender")
-    forum_posts: Mapped[list["ForumPost"]] = relationship(back_populates="author")
+    forum_posts: Mapped[list["ForumPost"]] = relationship(
+        back_populates="author", foreign_keys="ForumPost.author_id"
+    )
     comments: Mapped[list["Comment"]] = relationship(back_populates="author")
     notifications: Mapped[list["Notification"]] = relationship(
         back_populates="user", foreign_keys="Notification.user_id"

@@ -132,8 +132,7 @@ export const forumApi = {
     categoryId: string | null,
     skip = 0,
     limit = 5,
-    tag?: string | null,
-    userId?: string | null
+    tag?: string | null
   ): Promise<Post[]> => {
     let url = `/forum/posts?skip=${skip}&limit=${limit}`;
     if (categoryId) {
@@ -141,9 +140,6 @@ export const forumApi = {
     }
     if (tag) {
       url += `&tag=${encodeURIComponent(tag)}`;
-    }
-    if (userId) {
-      url += `&user_id=${userId}`;
     }
     const response = await apiClient.get<ForumPostResponse[]>(url);
     return response.map((p) => mapPost(p));
@@ -182,23 +178,18 @@ export const forumApi = {
     });
   },
 
-  deletePost: async (postId: string): Promise<void> => {
-    await apiClient.delete(`/forum/posts/${postId}`);
+  deletePost: async (postId: string, reason?: string): Promise<void> => {
+    const url = reason ? `/forum/posts/${postId}?reason=${encodeURIComponent(reason)}` : `/forum/posts/${postId}`;
+    await apiClient.delete(url);
   },
 
-  setPostReaction: async (postId: string, emoji: string, userId?: string): Promise<ReactionSummary[]> => {
-    // Backend expects user_id as query param (Forum has no auth dependency on any endpoint)
-    const response = await apiClient.put<ReactionSummaryResponse[]>(
-      `/forum/posts/${postId}/reactions?user_id=${userId ?? '00000000-0000-0000-0000-000000000000'}`,
-      { emoji }
-    );
+  setPostReaction: async (postId: string, emoji: string): Promise<ReactionSummary[]> => {
+    const response = await apiClient.put<ReactionSummaryResponse[]>(`/forum/posts/${postId}/reactions`, { emoji });
     return mapReactions(response);
   },
 
-  removePostReaction: async (postId: string, userId?: string): Promise<ReactionSummary[]> => {
-    const response = await apiClient.delete<ReactionSummaryResponse[]>(
-      `/forum/posts/${postId}/reactions?user_id=${userId ?? '00000000-0000-0000-0000-000000000000'}`
-    );
+  removePostReaction: async (postId: string): Promise<ReactionSummary[]> => {
+    const response = await apiClient.delete<ReactionSummaryResponse[]>(`/forum/posts/${postId}/reactions`);
     return mapReactions(response);
   },
 
@@ -211,12 +202,8 @@ export const forumApi = {
     return commentCache.get(postId);
   },
 
-  getComments: async (postId: string, userId?: string | null): Promise<Comment[]> => {
-    let url = `/forum/comments?post_id=${postId}`;
-    if (userId) {
-      url += `&user_id=${userId}`;
-    }
-    const response = await apiClient.get<CommentResponse[]>(url);
+  getComments: async (postId: string): Promise<Comment[]> => {
+    const response = await apiClient.get<CommentResponse[]>(`/forum/comments?post_id=${postId}`);
     const flat = response.map((c) => mapComment(c));
     const nested = nestComments(flat);
     commentCache.set(postId, nested);
@@ -244,28 +231,28 @@ export const forumApi = {
     return mapped;
   },
 
-  deleteComment: async (commentId: string, postId?: string): Promise<void> => {
-    await apiClient.delete(`/forum/comments/${commentId}`);
+  deleteComment: async (commentId: string, postId?: string, reason?: string): Promise<void> => {
+    const url = reason
+      ? `/forum/comments/${commentId}?reason=${encodeURIComponent(reason)}`
+      : `/forum/comments/${commentId}`;
+    await apiClient.delete(url);
     if (postId) {
       commentCache.deleteComment(postId, commentId);
     }
   },
 
-  setCommentReaction: async (commentId: string, emoji: string, userId?: string, postId?: string): Promise<ReactionSummary[]> => {
-    const response = await apiClient.put<ReactionSummaryResponse[]>(
-      `/forum/comments/${commentId}/reactions?user_id=${userId ?? '00000000-0000-0000-0000-000000000000'}`,
-      { emoji }
-    );
+  setCommentReaction: async (commentId: string, emoji: string, postId?: string): Promise<ReactionSummary[]> => {
+    const response = await apiClient.put<ReactionSummaryResponse[]>(`/forum/comments/${commentId}/reactions`, {
+      emoji,
+    });
     if (postId) {
       commentCache.reactComment(postId, commentId, emoji);
     }
     return mapReactions(response);
   },
 
-  removeCommentReaction: async (commentId: string, userId?: string, postId?: string): Promise<ReactionSummary[]> => {
-    const response = await apiClient.delete<ReactionSummaryResponse[]>(
-      `/forum/comments/${commentId}/reactions?user_id=${userId ?? '00000000-0000-0000-0000-000000000000'}`
-    );
+  removeCommentReaction: async (commentId: string, postId?: string): Promise<ReactionSummary[]> => {
+    const response = await apiClient.delete<ReactionSummaryResponse[]>(`/forum/comments/${commentId}/reactions`);
     if (postId) {
       commentCache.reactComment(postId, commentId, null);
     }

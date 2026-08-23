@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuthContext } from '../contexts/auth-context';
 import { getAvatarInitials, getAvatarColor } from '../utils/avatarUtils';
+import type { BanType } from '../lib/moderation.types';
 
 export interface AuthUser {
   id: string;
@@ -25,8 +26,14 @@ const GUEST_USER: AuthUser = {
  */
 export function useAuth() {
   const navigate = useNavigate();
-  const { session, user, profile, loading } = useAuthContext();
+  const { session, user, profile, bans, loading } = useAuthContext();
   const isLoggedIn = !!session;
+  const isModerator = profile?.role === 'moderator' || profile?.role === 'admin';
+  const isAdmin = profile?.role === 'admin';
+
+  /** The caller's own active restriction of a given type, if any -- lets UI show/disable
+   * proactively instead of waiting for a blocked action's 403. */
+  const getBan = (type: BanType) => bans.find((b) => b.ban_type === type);
 
   const displayName =
     profile?.displayName ||
@@ -60,5 +67,5 @@ export function useAuth() {
     return action();
   };
 
-  return { isLoggedIn, loading, currentUser, user, session, requireAuth };
+  return { isLoggedIn, loading, currentUser, user, session, requireAuth, isModerator, isAdmin, profile, bans, getBan };
 }

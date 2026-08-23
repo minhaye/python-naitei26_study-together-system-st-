@@ -2,6 +2,10 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import get_current_user, get_current_user_optional, require_forum_moderator
+from app.auth.dto.auth_dto import CurrentUser
+from app.core.permissions import get_active_ban, is_forum_moderator
+from app.db.enums import BanType, ForumModerationActionType
 from app.db.session import get_db_session
 from app.forum.dto.forum_dto import (
     CommentCreate,
@@ -18,16 +22,32 @@ from app.forum.dto.forum_dto import (
     TagResponse,
 )
 from app.forum.services.forum_service import ForumService
+from app.moderation.services.moderation_service import ModerationService
 
 router = APIRouter(prefix="/forum", tags=["Forum"])
 service = ForumService()
+moderation_service = ModerationService()
+
+
+async def _ensure_not_post_banned(session: AsyncSession, user_id: uuid.UUID) -> None:
+    ban = await get_active_ban(session, user_id, BanType.POST)
+    if ban:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            ModerationService.format_ban_message(ban, "đăng bài và bình luận trong diễn đàn"),
+        )
 
 
 # --- Categories ---
+# Structural data -- only Moderators/Admins may create/edit/delete a category.
 
 
 @router.post("/categories", response_model=ForumCategoryResponse, status_code=status.HTTP_201_CREATED)
-async def create_category(data: ForumCategoryCreate, session: AsyncSession = Depends(get_db_session)):
+async def create_category(
+    data: ForumCategoryCreate,
+    _current_user: CurrentUser = Depends(require_forum_moderator),
+    session: AsyncSession = Depends(get_db_session),
+):
     try:
         category = await service.create_category(session, data)
         await session.commit()
@@ -43,38 +63,6 @@ async def create_category(data: ForumCategoryCreate, session: AsyncSession = Dep
 @router.get("/categories", response_model=list[ForumCategoryResponse])
 async def list_categories(session: AsyncSession = Depends(get_db_session)):
     return await service.list_categories(session)
-
-@router.get("/migrate-categories")
-async def migrate_categories(session: AsyncSession = Depends(get_db_session)):
-    from sqlalchemy import select, update, delete
-    from app.forum.entities.forum_entity import ForumCategory, ForumPost
-    new_names = [
-        'Công nghệ thông tin (IT)', 'Kinh tế & Tài chính', 'Quản trị & Marketing',
-        'Toán học & Toán cao cấp', 'Khoa học Tự nhiên', 'Ngoại ngữ',
-        'Y khoa & Dược học', 'Luật học', 'Khoa học Xã hội & Nhân văn',
-        'Triết học & Chính trị', 'Kiến trúc & Thiết kế', 'Ôn thi THPT Quốc gia-TSA-HSA',
-        'Trung học Cơ sở (THCS)','Trung học Phổ Thông (THPT)', 'Sức khỏe', 'Kỹ năng mềm & Nghề nghiệp', 'Góc thư giãn', 'Hỏi đáp chung'
-    ]
-    res = await session.execute(select(ForumCategory))
-    existing_cats = res.scalars().all()
-    existing_names = {c.name: c for c in existing_cats}
-    
-    created_cats = {}
-    for name in new_names:
-        if name not in existing_names:
-            cat = ForumCategory(name=name, description='')
-            session.add(cat)
-            created_cats[name] = cat
-        else:
-            created_cats[name] = existing_names[name]
-    await session.flush()
-    fallback_cat = created_cats['Hỏi đáp chung']
-    for old_cat in existing_cats:
-        if old_cat.name not in new_names:
-            await session.execute(update(ForumPost).where(ForumPost.category_id == old_cat.id).values(category_id=fallback_cat.id))
-            await session.execute(delete(ForumCategory).where(ForumCategory.id == old_cat.id))
-    await session.commit()
-    return {"message": "migrated"}
 
 
 @router.get("/categories/{category_id}", response_model=ForumCategoryResponse)
@@ -92,6 +80,7 @@ async def get_category(category_id: uuid.UUID, session: AsyncSession = Depends(g
 async def update_category(
     category_id: uuid.UUID,
     data: ForumCategoryUpdate,
+    _current_user: CurrentUser = Depends(require_forum_moderator),
     session: AsyncSession = Depends(get_db_session)
 ):
     category = await service.get_category_by_id(session, category_id)
@@ -113,7 +102,11 @@ async def update_category(
 
 
 @router.delete("/categories/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_category(category_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)):
+async def delete_category(
+    category_id: uuid.UUID,
+    _current_user: CurrentUser = Depends(require_forum_moderator),
+    session: AsyncSession = Depends(get_db_session),
+):
     category = await service.get_category_by_id(session, category_id)
     if not category:
         raise HTTPException(
@@ -135,9 +128,14 @@ async def delete_category(category_id: uuid.UUID, session: AsyncSession = Depend
 
 
 @router.post("/posts", response_model=ForumPostResponse, status_code=status.HTTP_201_CREATED)
-async def create_post(data: ForumPostCreate, session: AsyncSession = Depends(get_db_session)):
+async def create_post(
+    data: ForumPostCreate,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
+    await _ensure_not_post_banned(session, current_user.id)
     try:
-        post = await service.create_post(session, data)
+        post = await service.create_post(session, data, author_id=current_user.id)
         await session.commit()
         return post
     except Exception as e:
@@ -151,10 +149,10 @@ async def create_post(data: ForumPostCreate, session: AsyncSession = Depends(get
 @router.get("/posts/{post_id}", response_model=ForumPostResponse)
 async def get_post(
     post_id: uuid.UUID,
-    user_id: uuid.UUID | None = None,
+    current_user: CurrentUser | None = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_db_session)
 ):
-    post = await service.get_post_by_id(session, post_id, user_id=user_id)
+    post = await service.get_post_by_id(session, post_id, user_id=current_user.id if current_user else None)
     if not post:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -167,12 +165,14 @@ async def get_post(
 async def list_posts(
     category_id: uuid.UUID | None = None,
     tag: str | None = None,
-    user_id: uuid.UUID | None = None,
     skip: int = 0,
     limit: int = 50,
+    current_user: CurrentUser | None = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_db_session)
 ):
-    return await service.list_posts_by_category(session, category_id, tag=tag, user_id=user_id, skip=skip, limit=limit)
+    return await service.list_posts_by_category(
+        session, category_id, tag=tag, user_id=current_user.id if current_user else None, skip=skip, limit=limit
+    )
 
 
 # --- Tags ---
@@ -192,6 +192,7 @@ async def search_tags(q: str = "", limit: int = 10, session: AsyncSession = Depe
 async def update_post(
     post_id: uuid.UUID,
     data: ForumPostUpdate,
+    current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
     post = await service.get_post_by_id(session, post_id)
@@ -200,6 +201,8 @@ async def update_post(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Post not found"
         )
+    if post.author_id != current_user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the author can edit this post")
     try:
         updated = await service.update_post(session, post, data)
         await session.commit()
@@ -213,16 +216,34 @@ async def update_post(
 
 
 @router.delete("/posts/{post_id}", response_model=ForumPostResponse)
-async def delete_post(post_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)):
+async def delete_post(
+    post_id: uuid.UUID,
+    reason: str | None = None,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
     post = await service.get_post_by_id(session, post_id)
     if not post:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Post not found"
         )
+    is_author = post.author_id == current_user.id
+    if not is_author and not await is_forum_moderator(session, current_user.id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have permission to delete this post")
     try:
-        # Soft delete per spec
-        updated = await service.soft_delete_post(session, post)
+        if not is_author:
+            await moderation_service.log_action(
+                session,
+                moderator_id=current_user.id,
+                action=ForumModerationActionType.DELETE_POST,
+                target_user_id=post.author_id,
+                target_id=post.id,
+                reason=reason,
+            )
+        updated = await service.soft_delete_post(
+            session, post, deleted_by=current_user.id if not is_author else None
+        )
         await session.commit()
         return updated
     except Exception as e:
@@ -237,9 +258,14 @@ async def delete_post(post_id: uuid.UUID, session: AsyncSession = Depends(get_db
 
 
 @router.post("/comments", response_model=CommentResponse, status_code=status.HTTP_201_CREATED)
-async def create_comment(data: CommentCreate, session: AsyncSession = Depends(get_db_session)):
+async def create_comment(
+    data: CommentCreate,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
+    await _ensure_not_post_banned(session, current_user.id)
     try:
-        comment = await service.create_comment(session, data)
+        comment = await service.create_comment(session, data, author_id=current_user.id)
         await session.commit()
         return comment
     except Exception as e:
@@ -251,8 +277,12 @@ async def create_comment(data: CommentCreate, session: AsyncSession = Depends(ge
 
 
 @router.get("/comments/{comment_id}", response_model=CommentResponse)
-async def get_comment(comment_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)):
-    comment = await service.get_comment_by_id(session, comment_id)
+async def get_comment(
+    comment_id: uuid.UUID,
+    current_user: CurrentUser | None = Depends(get_current_user_optional),
+    session: AsyncSession = Depends(get_db_session),
+):
+    comment = await service.get_comment_by_id(session, comment_id, user_id=current_user.id if current_user else None)
     if not comment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -264,18 +294,21 @@ async def get_comment(comment_id: uuid.UUID, session: AsyncSession = Depends(get
 @router.get("/comments", response_model=list[CommentResponse])
 async def list_comments(
     post_id: uuid.UUID,
-    user_id: uuid.UUID | None = None,
     skip: int = 0,
     limit: int = 50,
+    current_user: CurrentUser | None = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_db_session)
 ):
-    return await service.list_comments_by_post(session, post_id, user_id=user_id, skip=skip, limit=limit)
+    return await service.list_comments_by_post(
+        session, post_id, user_id=current_user.id if current_user else None, skip=skip, limit=limit
+    )
 
 
 @router.put("/comments/{comment_id}", response_model=CommentResponse)
 async def update_comment(
     comment_id: uuid.UUID,
     data: CommentUpdate,
+    current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
     comment = await service.get_comment_by_id(session, comment_id)
@@ -284,6 +317,8 @@ async def update_comment(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Comment not found"
         )
+    if comment.author_id != current_user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the author can edit this comment")
     try:
         updated = await service.update_comment(session, comment, data)
         await session.commit()
@@ -297,14 +332,31 @@ async def update_comment(
 
 
 @router.delete("/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_comment(comment_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)):
+async def delete_comment(
+    comment_id: uuid.UUID,
+    reason: str | None = None,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
     comment = await service.get_comment_by_id(session, comment_id)
     if not comment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Comment not found"
         )
+    is_author = comment.author_id == current_user.id
+    if not is_author and not await is_forum_moderator(session, current_user.id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have permission to delete this comment")
     try:
+        if not is_author:
+            await moderation_service.log_action(
+                session,
+                moderator_id=current_user.id,
+                action=ForumModerationActionType.DELETE_COMMENT,
+                target_user_id=comment.author_id,
+                target_id=comment.id,
+                reason=reason,
+            )
         await service.delete_comment(session, comment)
         await session.commit()
     except Exception as e:
@@ -332,7 +384,7 @@ async def list_reacted_posts(
 async def set_post_reaction(
     post_id: uuid.UUID,
     data: ReactionSet,
-    user_id: uuid.UUID,
+    current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
     post = await service.get_post_by_id(session, post_id)
@@ -342,7 +394,7 @@ async def set_post_reaction(
             detail="Post not found"
         )
     try:
-        await service.set_post_reaction(session, post_id, user_id, data.emoji)
+        await service.set_post_reaction(session, post_id, current_user.id, data.emoji)
         await session.commit()
     except Exception as e:
         await session.rollback()
@@ -350,17 +402,17 @@ async def set_post_reaction(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Could not set reaction: {str(e)}"
         )
-    return await service.get_post_reactions(session, post_id, user_id)
+    return await service.get_post_reactions(session, post_id, current_user.id)
 
 
 @router.delete("/posts/{post_id}/reactions", response_model=list[ReactionSummary])
 async def remove_post_reaction(
     post_id: uuid.UUID,
-    user_id: uuid.UUID,
+    current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
     try:
-        await service.remove_post_reaction(session, post_id, user_id)
+        await service.remove_post_reaction(session, post_id, current_user.id)
         await session.commit()
     except Exception as e:
         await session.rollback()
@@ -368,23 +420,23 @@ async def remove_post_reaction(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Could not remove reaction: {str(e)}"
         )
-    return await service.get_post_reactions(session, post_id, user_id)
+    return await service.get_post_reactions(session, post_id, current_user.id)
 
 
 @router.get("/posts/{post_id}/reactions", response_model=list[ReactionSummary])
 async def get_post_reactions(
     post_id: uuid.UUID,
-    user_id: uuid.UUID | None = None,
+    current_user: CurrentUser | None = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_db_session)
 ):
-    return await service.get_post_reactions(session, post_id, user_id)
+    return await service.get_post_reactions(session, post_id, current_user.id if current_user else None)
 
 
 @router.put("/comments/{comment_id}/reactions", response_model=list[ReactionSummary])
 async def set_comment_reaction(
     comment_id: uuid.UUID,
     data: ReactionSet,
-    user_id: uuid.UUID,
+    current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
     comment = await service.get_comment_by_id(session, comment_id)
@@ -394,7 +446,7 @@ async def set_comment_reaction(
             detail="Comment not found"
         )
     try:
-        await service.set_comment_reaction(session, comment_id, user_id, data.emoji)
+        await service.set_comment_reaction(session, comment_id, current_user.id, data.emoji)
         await session.commit()
     except Exception as e:
         await session.rollback()
@@ -402,17 +454,17 @@ async def set_comment_reaction(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Could not set reaction: {str(e)}"
         )
-    return await service.get_comment_reactions(session, comment_id, user_id)
+    return await service.get_comment_reactions(session, comment_id, current_user.id)
 
 
 @router.delete("/comments/{comment_id}/reactions", response_model=list[ReactionSummary])
 async def remove_comment_reaction(
     comment_id: uuid.UUID,
-    user_id: uuid.UUID,
+    current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
     try:
-        await service.remove_comment_reaction(session, comment_id, user_id)
+        await service.remove_comment_reaction(session, comment_id, current_user.id)
         await session.commit()
     except Exception as e:
         await session.rollback()
@@ -420,13 +472,13 @@ async def remove_comment_reaction(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Could not remove reaction: {str(e)}"
         )
-    return await service.get_comment_reactions(session, comment_id, user_id)
+    return await service.get_comment_reactions(session, comment_id, current_user.id)
 
 
 @router.get("/comments/{comment_id}/reactions", response_model=list[ReactionSummary])
 async def get_comment_reactions(
     comment_id: uuid.UUID,
-    user_id: uuid.UUID | None = None,
+    current_user: CurrentUser | None = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_db_session)
 ):
-    return await service.get_comment_reactions(session, comment_id, user_id)
+    return await service.get_comment_reactions(session, comment_id, current_user.id if current_user else None)

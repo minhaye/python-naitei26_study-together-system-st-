@@ -8,6 +8,7 @@ from app.auth.dependencies import get_current_user
 from app.auth.dto.auth_dto import CurrentUser
 from app.db.session import get_db_session
 from app.main import app
+from app.db.enums import ProfileRole
 from app.profiles.entities.profile_entity import Profile
 from app.profiles.routers import profile_router
 
@@ -41,6 +42,7 @@ def _profile(user_id: uuid.UUID) -> Profile:
         display_name="Study User",
         avatar_url=None,
         bio=None,
+        role=ProfileRole.USER,
         created_at=now,
         updated_at=now,
     )

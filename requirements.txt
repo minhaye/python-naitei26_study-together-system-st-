@@ -5,6 +5,7 @@ psycopg[binary]
 pydantic-settings
 pyjwt[crypto]
 httpx
+python-dateutil
 anthropic
 google-genai
 pytest

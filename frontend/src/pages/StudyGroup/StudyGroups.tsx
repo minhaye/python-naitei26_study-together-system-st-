@@ -8,6 +8,7 @@ import { JoinByCodeModal } from '../../components/invitations/JoinByCodeModal';
 import type { Group, GroupMember, GroupMemberRole } from '../../lib/group.types';
 import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
 import { StudyGroupCardSkeleton } from '../../components/ui/Skeleton';
+import { RestrictionBanner } from '../../components/ui/RestrictionBanner';
 
 interface GroupWithMembership {
     group: Group;
@@ -43,7 +44,9 @@ function GroupCover({ group }: { group: Group }) {
 
 export function StudyRooms() {
     const navigate = useNavigate();
-    const { user } = useAuth();
+    const { user, getBan } = useAuth();
+    const createGroupBan = getBan('create_group');
+    const joinGroupBan = getBan('join_group');
     const currentUserId = user?.id ?? null;
 
     // State ẩn/hiện danh mục (nút mũi tên gập/mở)
@@ -240,28 +243,42 @@ export function StudyRooms() {
                                 <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 8, width: 220, background: 'white', borderRadius: 8, boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.1)', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', zIndex: 50, overflow: 'hidden' }}>
                                     <div
                                         onClick={() => {
+                                            if (createGroupBan) return;
                                             setIsMenuOpen(false);
                                             setCreateError(null);
                                             setIsCreateModalOpen(true);
                                         }}
-                                        style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', borderBottom: '1px solid #F1F5F9' }}
-                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F8FAFC'}
+                                        title={createGroupBan ? 'Bạn đang bị hạn chế tạo nhóm học tập' : undefined}
+                                        style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 2, cursor: createGroupBan ? 'not-allowed' : 'pointer', opacity: createGroupBan ? 0.5 : 1, borderBottom: '1px solid #F1F5F9' }}
+                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = createGroupBan ? 'white' : '#F8FAFC'}
                                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
                                     >
-                                        <UserPlus size={18} color="#475569" />
-                                        <span style={{ fontSize: 14, color: '#0F172A', fontWeight: 500, fontFamily: 'Inter' }}>Tạo nhóm</span>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                            <UserPlus size={18} color="#475569" />
+                                            <span style={{ fontSize: 14, color: '#0F172A', fontWeight: 500, fontFamily: 'Inter' }}>Tạo nhóm</span>
+                                        </div>
+                                        {createGroupBan && (
+                                            <span style={{ fontSize: 11, color: '#B45309', paddingLeft: 30 }}>Đang bị hạn chế</span>
+                                        )}
                                     </div>
                                     <div
                                         onClick={() => {
+                                            if (joinGroupBan) return;
                                             setIsMenuOpen(false);
                                             setIsJoinModalOpen(true);
                                         }}
-                                        style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}
-                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F8FAFC'}
+                                        title={joinGroupBan ? 'Bạn đang bị hạn chế tham gia nhóm học tập' : undefined}
+                                        style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 2, cursor: joinGroupBan ? 'not-allowed' : 'pointer', opacity: joinGroupBan ? 0.5 : 1 }}
+                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = joinGroupBan ? 'white' : '#F8FAFC'}
                                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
                                     >
-                                        <UserPlus size={18} color="#475569" />
-                                        <span style={{ fontSize: 14, color: '#0F172A', fontWeight: 500, fontFamily: 'Inter' }}>Tham gia nhóm</span>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                            <UserPlus size={18} color="#475569" />
+                                            <span style={{ fontSize: 14, color: '#0F172A', fontWeight: 500, fontFamily: 'Inter' }}>Tham gia nhóm</span>
+                                        </div>
+                                        {joinGroupBan && (
+                                            <span style={{ fontSize: 11, color: '#B45309', paddingLeft: 30 }}>Đang bị hạn chế</span>
+                                        )}
                                     </div>
                                 </div>
                             )}
@@ -400,8 +417,9 @@ export function StudyRooms() {
                                                 </div>
                                             </div>
                                             <div
-                                                onClick={() => { setJoinActionError(null); setGroupToJoin(group); }}
-                                                style={{ color: '#00236F', fontSize: 14, fontFamily: 'Inter', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, borderBottom: '1.5px solid #00236F', paddingBottom: 2 }}
+                                                onClick={() => { if (joinGroupBan) return; setJoinActionError(null); setGroupToJoin(group); }}
+                                                title={joinGroupBan ? 'Bạn đang bị hạn chế tham gia nhóm học tập' : undefined}
+                                                style={{ color: joinGroupBan ? '#94A3B8' : '#00236F', fontSize: 14, fontFamily: 'Inter', fontWeight: '600', cursor: joinGroupBan ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, borderBottom: joinGroupBan ? '1.5px solid #94A3B8' : '1.5px solid #00236F', paddingBottom: 2 }}
                                             >
                                                 <Users size={16} /> Tham gia
                                             </div>
@@ -443,6 +461,12 @@ export function StudyRooms() {
                             Bạn muốn tham gia nhóm học <strong>{groupToJoin.name}</strong>.
                         </p>
 
+                        {joinGroupBan && (
+                            <div style={{ marginBottom: 16 }}>
+                                <RestrictionBanner ban={joinGroupBan} actionLabel="tham gia nhóm học tập" />
+                            </div>
+                        )}
+
                         {joinActionError && (
                             <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: 12, color: '#B91C1C', fontSize: 13, marginBottom: 16 }}>
                                 {joinActionError}
@@ -461,8 +485,8 @@ export function StudyRooms() {
                             </button>
                             <button
                                 onClick={handleConfirmJoin}
-                                disabled={isJoining}
-                                style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: isJoining ? '#93A4C7' : '#00236F', color: 'white', border: 'none', fontSize: 14, fontWeight: 600, cursor: isJoining ? 'not-allowed' : 'pointer', fontFamily: 'Inter' }}
+                                disabled={isJoining || !!joinGroupBan}
+                                style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: isJoining || joinGroupBan ? '#93A4C7' : '#00236F', color: 'white', border: 'none', fontSize: 14, fontWeight: 600, cursor: isJoining || joinGroupBan ? 'not-allowed' : 'pointer', fontFamily: 'Inter' }}
                             >
                                 {isJoining ? 'Đang tham gia...' : 'Tham gia'}
                             </button>
@@ -523,6 +547,12 @@ export function StudyRooms() {
                             </label>
                         </div>
 
+                        {createGroupBan && (
+                            <div style={{ marginBottom: 16 }}>
+                                <RestrictionBanner ban={createGroupBan} actionLabel="tạo nhóm học tập" />
+                            </div>
+                        )}
+
                         {createError && (
                             <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: 12, color: '#B91C1C', fontSize: 13, marginBottom: 16 }}>
                                 {createError}
@@ -539,8 +569,8 @@ export function StudyRooms() {
                             </button>
                             <button
                                 onClick={handleCreateGroup}
-                                disabled={isCreating || !createName.trim()}
-                                style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: (isCreating || !createName.trim()) ? '#93A4C7' : '#00236F', color: 'white', border: 'none', fontSize: 14, fontWeight: 600, cursor: (isCreating || !createName.trim()) ? 'not-allowed' : 'pointer', fontFamily: 'Inter' }}
+                                disabled={isCreating || !createName.trim() || !!createGroupBan}
+                                style={{ padding: '10px 16px', borderRadius: 6, backgroundColor: (isCreating || !createName.trim() || createGroupBan) ? '#93A4C7' : '#00236F', color: 'white', border: 'none', fontSize: 14, fontWeight: 600, cursor: (isCreating || !createName.trim() || createGroupBan) ? 'not-allowed' : 'pointer', fontFamily: 'Inter' }}
                             >
                                 {isCreating ? 'Đang tạo...' : 'Tạo nhóm'}
                             </button>

@@ -15,6 +15,7 @@ import { CommentItem } from './CommentItem';
 import { useComments } from '../hooks/useComments';
 import { FORUM_COLORS } from '../constants/colors';
 import { CommentSkeleton } from '../../../components/ui/Skeleton';
+import { RestrictionBanner } from '../../../components/ui/RestrictionBanner';
 import { useAuth } from '../../../hooks/useAuth';
 
 interface CommentSectionProps {
@@ -35,15 +36,18 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
   initialLimit = 3,
   onCommentAdded,
 }) => {
-  const { currentUser, isLoggedIn, requireAuth } = useAuth();
+  const { currentUser, isLoggedIn, requireAuth, getBan } = useAuth();
+  const postBan = getBan('post');
   const { comments, isLoading, handleAddComment, handleReply, handleUpdateComment, handleDeleteComment, handleReactComment, handleRemoveCommentReaction } =
     useComments(postId, onCommentAdded);
   const [newComment, setNewComment] = useState('');
   const [showRichEditor, setShowRichEditor] = useState(false);
   const [expandedAll, setExpandedAll] = useState(false);
+  const canCompose = isLoggedIn && !postBan;
 
   const handleSubmit = () => {
     requireAuth(() => {
+      if (postBan) return;
       if (!newComment.trim()) return;
       const hasImage = /<img[^>]*>/i.test(newComment);
       const textOnly = newComment.replace(/<[^>]*>/g, '').trim();
@@ -56,7 +60,10 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
   };
 
   const handleFocusInput = () => {
-    requireAuth(() => setShowRichEditor(true));
+    requireAuth(() => {
+      if (postBan) return;
+      setShowRichEditor(true);
+    });
   };
 
   const displayedComments = isDetailPage || expandedAll
@@ -75,6 +82,9 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
         gap: 14,
       }}
     >
+      {/* Restriction Banner -- pinned up front, not just after a failed comment attempt */}
+      {isLoggedIn && postBan && <RestrictionBanner ban={postBan} actionLabel="đăng bài và bình luận trong diễn đàn" />}
+
       {/* Input gửi comment mới */}
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
         <Avatar name={currentUser.name} src={currentUser.avatarUrl} size="sm" style={{ marginTop: 4 }} />
@@ -83,11 +93,13 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', width: '100%' }}>
               <input
                 value={getPlainText(newComment)}
-                readOnly={!isLoggedIn}
+                readOnly={!canCompose}
                 onFocus={handleFocusInput}
                 onChange={(e) => setNewComment(e.target.value)}
                 placeholder={
-                  isLoggedIn
+                  postBan
+                    ? 'Bạn đang bị hạn chế bình luận...'
+                    : isLoggedIn
                     ? 'Viết bình luận (bấm để mở công cụ soạn thảo, chèn toán, ảnh)...'
                     : 'Đăng nhập để bình luận...'
                 }
@@ -100,23 +112,24 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
                   outline: 'none',
                   fontSize: 14,
                   color: FORUM_COLORS.textPrimary,
-                  cursor: isLoggedIn ? 'text' : 'pointer',
+                  cursor: canCompose ? 'text' : 'not-allowed',
                 }}
               />
               <button
                 onClick={handleSubmit}
+                disabled={!canCompose}
                 style={{
                   background: FORUM_COLORS.primary,
                   border: 'none',
                   borderRadius: '50%',
                   width: 36,
                   height: 36,
-                  cursor: 'pointer',
+                  cursor: canCompose ? 'pointer' : 'not-allowed',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   flexShrink: 0,
-                  opacity: isLoggedIn ? 1 : 0.5,
+                  opacity: canCompose ? 1 : 0.5,
                 }}
               >
                 <Send size={15} color="white" />

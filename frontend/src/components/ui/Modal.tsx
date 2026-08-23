@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 export interface ModalProps {
@@ -14,7 +15,10 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }
 
   if (!isOpen) return null;
 
-  return (
+  // Render qua portal vào document.body: nếu không, position:fixed sẽ bị "nhốt" trong bất kỳ
+  // ancestor nào có content-visibility/contain/transform (VD: PostCard dùng content-visibility:auto
+  // để tối ưu hiệu năng scroll) khiến modal bị cắt cụt thay vì phủ toàn màn hình.
+  return createPortal(
     <div
       style={{
         position: 'fixed',
@@ -72,6 +76,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
