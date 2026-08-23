@@ -2,11 +2,18 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.attachments.dto.attachment_dto import DownloadUrlResponse, UploadUrlRequest, UploadUrlResponse
+from app.attachments.services.attachment_service import (
+    AttachmentServiceNotConfigured,
+    AttachmentStorageError,
+    AttachmentsService,
+)
 from app.auth.dependencies import get_current_user
 from app.auth.dto.auth_dto import CurrentUser
 from app.core.config import settings
 from app.core.permissions import (
     can_access_room,
+    can_edit_whiteboard,
     can_join_room,
     can_join_room_meeting,
     can_manage_room,
@@ -38,8 +45,10 @@ groups_service = GroupsService()
 profiles_service = ProfilesService()
 livekit_service = LiveKitService()
 moderation_service = ModerationService()
+attachments_service = AttachmentsService()
 
 _SELF_SERVICE_MODERATION_ACTIONS = {ModerationAction.RAISE_HAND, ModerationAction.LOWER_HAND}
+WHITEBOARD_ASSET_URL_EXPIRES_IN = 3600
 
 
 async def _get_active_room_or_404(session: AsyncSession, room_id: uuid.UUID) -> StudyRoom:
@@ -128,9 +137,14 @@ async def update_whiteboard_state(
     session: AsyncSession = Depends(get_db_session)
 ):
     room = await _get_active_room_or_404(session, room_id)
-    # Anyone who can access the room (active participant) can sync the whiteboard state.
-    if not await can_access_room(session, room, current_user.id):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have access to this study room")
+    # Only the host or a moderator may write the persisted board -- mirrors the
+    # can_publish_data LiveKit grant (see can_edit_whiteboard's docstring); a plain
+    # PARTICIPANT still reads the board live via LiveKit DataReceived/GET, just can't push
+    # state here.
+    if not await can_edit_whiteboard(session, room, current_user.id):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Only the host or a moderator can edit this study room's whiteboard"
+        )
     try:
         room.whiteboard_state = state
         await session.commit()
@@ -143,6 +157,100 @@ async def update_whiteboard_state(
             detail=f"Could not update whiteboard state: {str(e)}"
         )
 
+
+@router.post("/{room_id}/whiteboard/assets/upload-url", response_model=UploadUrlResponse)
+async def create_whiteboard_asset_upload_url(
+    room_id: uuid.UUID,
+    data: UploadUrlRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Step 1 of sharing an image/document on the board, OR uploading a presentation deck (see
+    `update_presentation_state` below -- both reuse this single room-scoped upload endpoint
+    rather than duplicating it, since a deck is just another asset in the same storage
+    namespace): a signed upload URL into the same `message-attachments` bucket/namespace chat
+    attachments already use (`study-rooms/{room_id}/...`, see
+    AttachmentsService.build_room_object_path) -- no new bucket needed. Gated the same as the
+    whiteboard PUT above (host/moderator only), since adding an asset is a board edit."""
+    room = await _get_active_room_or_404(session, room_id)
+    if not await can_edit_whiteboard(session, room, current_user.id):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Only the host or a moderator can add files to this study room's whiteboard"
+        )
+    path = attachments_service.build_room_object_path(room.id, current_user.id, data.file_name)
+    try:
+        result = await attachments_service.create_signed_upload_url(path)
+    except AttachmentServiceNotConfigured as exc:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Attachment storage is not configured") from exc
+    except AttachmentStorageError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+    return UploadUrlResponse(**result)
+
+
+@router.get("/{room_id}/whiteboard/assets/download-url", response_model=DownloadUrlResponse)
+async def get_whiteboard_asset_download_url(
+    room_id: uuid.UUID,
+    path: str,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Step 2 (and every subsequent view, including by new/reconnecting participants) for
+    either a whiteboard image/document or a presentation deck's PDF bytes: any active room
+    participant may resolve a short-lived signed URL for a board asset -- viewing is not
+    restricted to editors, only adding new assets is (see the upload-url endpoint above).
+    `path` is validated as a well-formed object under this room's own namespace
+    (`AttachmentsService.path_belongs_to_room`) before ever being sent to Storage, so a caller
+    can't probe an arbitrary path across rooms."""
+    room = await _get_active_room_or_404(session, room_id)
+    if not await can_access_room(session, room, current_user.id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have access to this study room")
+    if not attachments_service.path_belongs_to_room(path, room.id):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid whiteboard asset path")
+    try:
+        # Longer-lived than the chat-attachment default (attachment_download_url_expires_in,
+        # 300s): a board image is meant to stay visible for the whole session, not just a
+        # single message view. The frontend re-resolves on zoom/pan anyway (tldraw's
+        # useImageOrVideoAsset), so this is a ceiling on worst-case idle staleness, not the
+        # only refresh path.
+        result = await attachments_service.create_signed_download_url(path, expires_in=WHITEBOARD_ASSET_URL_EXPIRES_IN)
+    except AttachmentServiceNotConfigured as exc:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Attachment storage is not configured") from exc
+    except AttachmentStorageError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+    return DownloadUrlResponse(**result)
+
+
+@router.put("/{room_id}/presentation", response_model=StudyRoomResponse)
+async def update_presentation_state(
+    room_id: uuid.UUID,
+    state: dict | None = None,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session)
+):
+    """Persists the shared "Slide Bài giảng" deck's current state --
+    `{asset_path, file_name, page, page_count}` (the uploaded PDF's storage path from the
+    upload-url endpoint above, plus which page everyone should be looking at) or `None` to
+    clear the deck. Same authorization and persistence role as the whiteboard PUT: the live,
+    near-instant page-turn sync happens over the LiveKit data channel
+    (usePresentationSync.ts), this is the durable fallback new/reconnecting participants load
+    from. Reuses `can_edit_whiteboard` -- host/moderator authority over the board is the same
+    whether the content is freehand drawing or a presentation deck, not two separate roles."""
+    room = await _get_active_room_or_404(session, room_id)
+    if not await can_edit_whiteboard(session, room, current_user.id):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Only the host or a moderator can control this study room's presentation"
+        )
+    try:
+        room.presentation_state = state
+        await session.commit()
+        await session.refresh(room)
+        return room
+    except Exception as e:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Could not update presentation state: {str(e)}"
+        )
 
 
 @router.post("/{room_id}/start", response_model=StudyRoomResponse)
@@ -425,7 +533,13 @@ async def create_meeting_token(
     profile = await profiles_service.get_by_id(session, current_user.id)
     participant_name = (profile.display_name or profile.username) if profile else None
 
+    # Whiteboard live-sync (useWhiteboardSync.ts) broadcasts over this same LiveKit
+    # connection's data channel -- can_publish_data must match can_edit_whiteboard's
+    # host/moderator gate, or a PARTICIPANT could bypass the read-only board by publishing
+    # data directly, even though the REST /whiteboard PUT above is separately gated too.
+    can_publish_data = await can_edit_whiteboard(session, room, current_user.id)
+
     token = livekit_service.create_participant_token(
-        room_id=room.id, identity=current_user.id, name=participant_name
+        room_id=room.id, identity=current_user.id, name=participant_name, can_publish_data=can_publish_data
     )
     return MeetingTokenResponse(server_url=settings.livekit_url, participant_token=token)

@@ -1,6 +1,7 @@
 import { apiClient } from './apiClient';
 import type {
   ModerationAction,
+  PresentationState,
   RoomModerationAction,
   StudyRoom,
   StudyRoomCreate,
@@ -47,6 +48,12 @@ export function endStudyRoom(roomId: string): Promise<StudyRoom> {
 
 export function updateWhiteboardState(roomId: string, state: Record<string, any>): Promise<StudyRoom> {
   return apiClient.put<StudyRoom>(`/study-rooms/${roomId}/whiteboard`, state);
+}
+
+/** `state: null` clears the shared deck. Host/moderator only -- enforced server-side
+ * (can_edit_whiteboard), same authority as the whiteboard. */
+export function updatePresentationState(roomId: string, state: PresentationState | null): Promise<StudyRoom> {
+  return apiClient.put<StudyRoom>(`/study-rooms/${roomId}/presentation`, state);
 }
 
 export function listStudyRoomMembers(roomId: string, activeOnly: boolean): Promise<StudyRoomMember[]> {

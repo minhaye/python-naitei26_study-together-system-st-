@@ -75,6 +75,27 @@ class AttachmentsService:
     def validate_room_ownership(self, attachment_path: str, room_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         return self._validate_prefixed_path(attachment_path, f"study-rooms/{room_id}/{user_id}/")
 
+    def path_belongs_to_room(self, attachment_path: str, room_id: uuid.UUID) -> bool:
+        """Looser than `validate_room_ownership`: confirms the path is a well-formed
+        `study-rooms/{room_id}/{uploader}/{object_id}/{file_name}` object WITHOUT pinning the
+        uploader. Used for whiteboard image/document sharing -- any editor (host/moderator)
+        may have uploaded the asset, but every room participant needs to resolve a signed
+        view URL for it, not just the uploader (see `study_room_router`'s whiteboard asset
+        download-url endpoint)."""
+        prefix = f"study-rooms/{room_id}/"
+        if not attachment_path.startswith(prefix):
+            return False
+        parts = attachment_path[len(prefix):].split("/")
+        if len(parts) != 3:
+            return False
+        user_id, object_id, file_name = parts
+        try:
+            uuid.UUID(user_id)
+            uuid.UUID(object_id)
+        except ValueError:
+            return False
+        return bool(file_name) and file_name == sanitize_filename(file_name)
+
     def validate_direct_ownership(self, attachment_path: str, conversation_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         return self._validate_prefixed_path(attachment_path, f"direct/{conversation_id}/{user_id}/")
 

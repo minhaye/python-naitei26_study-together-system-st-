@@ -18,10 +18,18 @@ class StudyRoomCreate(BaseModel):
 
 
 class StudyRoomUpdate(BaseModel):
+    """No `whiteboard_state`/`presentation_state` fields here, deliberately: this DTO backs
+    `PUT /study-rooms/{room_id}`, gated by `is_group_manager` (active group owner/moderator) --
+    a weaker, group-scoped check than `can_edit_whiteboard`'s room-scoped host/moderator gate.
+    `StudyRoomsService.update()` applies every set field via `model_dump(exclude_unset=True)`
+    with no per-field authorization, so a board-content field here would let any group manager
+    overwrite the board through this endpoint, bypassing the dedicated
+    `/whiteboard` and `/presentation` PUT endpoints' authorization entirely. Board content is
+    only ever written through those two endpoints."""
+
     name: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = None
     max_participants: int | None = Field(default=None, ge=2, le=500)
-    whiteboard_state: dict | None = None
 
 
 class StudyRoomResponse(BaseModel):
@@ -41,6 +49,7 @@ class StudyRoomResponse(BaseModel):
     deleted_by: uuid.UUID | None
     conversation_id: uuid.UUID | None
     whiteboard_state: dict | None = None
+    presentation_state: dict | None = None
 
 
 class StudyRoomMemberCreate(BaseModel):

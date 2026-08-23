@@ -9,7 +9,7 @@ from app.auth.dependencies import get_current_user
 from app.auth.dto.auth_dto import CurrentUser
 from app.core import permissions
 from app.core.config import settings
-from app.db.enums import GroupMemberRole, MemberStatus, ProfileRole, StudyRoomStatus
+from app.db.enums import GroupMemberRole, MemberStatus, ProfileRole, StudyRoomMemberRole, StudyRoomStatus
 from app.db.session import get_db_session
 from app.groups.entities.group_entity import GroupMember
 from app.main import app
@@ -55,8 +55,10 @@ def _make_room(status: StudyRoomStatus = StudyRoomStatus.ACTIVE, host_id: uuid.U
     )
 
 
-def _room_member(room_id: uuid.UUID, user_id: uuid.UUID) -> StudyRoomMember:
-    return StudyRoomMember(room_id=room_id, user_id=user_id)
+def _room_member(
+    room_id: uuid.UUID, user_id: uuid.UUID, role: StudyRoomMemberRole = StudyRoomMemberRole.PARTICIPANT
+) -> StudyRoomMember:
+    return StudyRoomMember(room_id=room_id, user_id=user_id, role=role)
 
 
 def _mock_active_group_membership(monkeypatch):
@@ -339,14 +341,18 @@ async def test_meeting_token_room_restricted_to_study_room(async_client, monkeyp
     assert claims.video.room == f"study-room-{room.id}"
 
 
-async def test_meeting_token_grants_are_minimal(async_client, monkeypatch, as_fake_user):
-    room = _make_room(host_id=as_fake_user.id)
+async def test_meeting_token_grants_are_minimal_for_participant(async_client, monkeypatch, as_fake_user):
+    """A plain PARTICIPANT gets a minimal grant set -- in particular can_publish_data stays
+    False, since the whiteboard's live-sync broadcast is host/moderator-only (see
+    can_edit_whiteboard). Room-level room admin/create/list/record grants are never issued to
+    anyone via this endpoint, regardless of role."""
+    room = _make_room(host_id=uuid.uuid4())
     monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
     _mock_active_group_membership(monkeypatch)
     monkeypatch.setattr(
         permissions.study_rooms_service,
         "get_member",
-        AsyncMock(return_value=StudyRoomMember(room_id=room.id, user_id=as_fake_user.id)),
+        AsyncMock(return_value=_room_member(room.id, as_fake_user.id, role=StudyRoomMemberRole.PARTICIPANT)),
     )
     monkeypatch.setattr(study_room_router.profiles_service, "get_by_id", AsyncMock(return_value=None))
 
@@ -363,6 +369,58 @@ async def test_meeting_token_grants_are_minimal(async_client, monkeypatch, as_fa
     assert not grants.room_record
     assert not grants.ingress_admin
     assert not grants.recorder
+
+
+@pytest.mark.parametrize("role", [StudyRoomMemberRole.HOST, StudyRoomMemberRole.MODERATOR])
+async def test_meeting_token_grants_publish_data_for_editors(async_client, monkeypatch, as_fake_user, role):
+    """HOST/MODERATOR are the whiteboard's editors -- they need can_publish_data so their
+    LiveKit connection can actually broadcast whiteboard_update packets (useWhiteboardSync.ts).
+    can_publish stays the same for everyone (audio/video track publishing), unaffected by
+    whiteboard role."""
+    room = _make_room(host_id=uuid.uuid4())
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    _mock_active_group_membership(monkeypatch)
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, as_fake_user.id, role=role)),
+    )
+    monkeypatch.setattr(study_room_router.profiles_service, "get_by_id", AsyncMock(return_value=None))
+
+    response = await async_client.post(f"/study-rooms/{room.id}/meeting/token", headers=AUTH_HEADERS)
+    grants = _verify(response.json()["participant_token"]).video
+
+    assert grants.can_publish_data is True
+
+
+@pytest.mark.parametrize("group_role", [GroupMemberRole.OWNER, GroupMemberRole.MODERATOR])
+async def test_meeting_token_grants_publish_data_for_group_manager_with_default_participant_room_role(
+    async_client, monkeypatch, as_fake_user, group_role
+):
+    """Regression test: an active Group owner/moderator's study_room_members.role defaults to
+    PARTICIPANT on join (join_room never assigns HOST/MODERATOR) -- can_edit_whiteboard's
+    is_group_manager branch must still grant them can_publish_data, matching the frontend's
+    own `isGroupManager || ...` editor gate (StudyRoom.tsx). Caught live: a real Group
+    moderator test account's LiveKit token had can_publish_data=false despite the whiteboard
+    UI showing them full drawing tools, so nothing they drew ever reached other participants."""
+    room = _make_room(host_id=uuid.uuid4())
+    monkeypatch.setattr(study_room_router.service, "get_by_id", AsyncMock(return_value=room))
+    monkeypatch.setattr(
+        permissions.groups_service,
+        "get_member",
+        AsyncMock(return_value=GroupMember(role=group_role, status=MemberStatus.ACTIVE)),
+    )
+    monkeypatch.setattr(
+        permissions.study_rooms_service,
+        "get_member",
+        AsyncMock(return_value=_room_member(room.id, as_fake_user.id, role=StudyRoomMemberRole.PARTICIPANT)),
+    )
+    monkeypatch.setattr(study_room_router.profiles_service, "get_by_id", AsyncMock(return_value=None))
+
+    response = await async_client.post(f"/study-rooms/{room.id}/meeting/token", headers=AUTH_HEADERS)
+    grants = _verify(response.json()["participant_token"]).video
+
+    assert grants.can_publish_data is True
 
 
 async def test_meeting_token_uses_display_name_when_available(async_client, monkeypatch, as_fake_user):
