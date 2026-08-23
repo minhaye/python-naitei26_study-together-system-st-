@@ -2,7 +2,7 @@
 each carry a real, correct UserSummary -- the backend fix for the frontend's previous
 "Người dùng #XXXX" placeholder (there was nothing else to render; see docs/invitations.md-
 adjacent identity audit). Also confirms UserSummary never leaks profile fields beyond
-id/username/display_name/avatar_url (no bio, no timestamps)."""
+id/username/display_name/avatar_url/role (no bio, no timestamps)."""
 
 import uuid
 from datetime import datetime, timezone
@@ -16,7 +16,14 @@ from app.channels.entities.channel_entity import Channel, ChannelMember
 from app.channels.routers import channel_router
 from app.conversations.entities.conversation_entity import Conversation
 from app.core import permissions
-from app.db.enums import ConversationType, GroupMemberRole, MemberStatus, StudyRoomMemberRole, StudyRoomStatus
+from app.db.enums import (
+    ConversationType,
+    GroupMemberRole,
+    MemberStatus,
+    ProfileRole,
+    StudyRoomMemberRole,
+    StudyRoomStatus,
+)
 from app.db.session import get_db_session
 from app.groups.entities.group_entity import Group, GroupMember
 from app.groups.routers import group_router
@@ -63,10 +70,13 @@ def as_fake_user(fake_user):
 
 
 def _profile(user_id, *, username=None, display_name=None, avatar_url=None) -> Profile:
-    return Profile(id=user_id, username=username, display_name=display_name, avatar_url=avatar_url, bio="secret bio")
+    return Profile(
+        id=user_id, username=username, display_name=display_name, avatar_url=avatar_url, bio="secret bio",
+        role=ProfileRole.USER,
+    )
 
 
-EXPECTED_USER_SUMMARY_KEYS = {"id", "username", "display_name", "avatar_url"}
+EXPECTED_USER_SUMMARY_KEYS = {"id", "username", "display_name", "avatar_url", "role"}
 
 
 # --- Group members ---

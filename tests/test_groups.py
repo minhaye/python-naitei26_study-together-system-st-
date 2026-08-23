@@ -7,7 +7,7 @@ import pytest
 from app.auth.dependencies import get_current_user, get_current_user_optional
 from app.auth.dto.auth_dto import CurrentUser
 from app.core import permissions
-from app.db.enums import GroupMemberRole, MemberStatus
+from app.db.enums import GroupMemberRole, MemberStatus, ProfileRole
 from app.db.session import get_db_session
 from app.groups.dto.group_dto import GroupCreate
 from app.groups.entities.group_entity import Group, GroupMember
@@ -64,7 +64,7 @@ def _make_group(is_public: bool = True, owner_id: uuid.UUID | None = None) -> Gr
 
 
 def _profile(user_id, display_name: str | None = "Test User") -> Profile:
-    return Profile(id=user_id, username=None, display_name=display_name, avatar_url=None)
+    return Profile(id=user_id, username=None, display_name=display_name, avatar_url=None, role=ProfileRole.USER)
 
 
 def _group_member(

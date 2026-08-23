@@ -31,7 +31,7 @@ const mockedCreateFile = vi.mocked(createResourceFile);
 const mockedDelete = vi.mocked(deleteResourceFile);
 const mockedDownloadUrl = vi.mocked(getResourceDownloadUrl);
 
-const uploader = { id: 'user-1', username: 'alice', display_name: 'Alice', avatar_url: null };
+const uploader = { id: 'user-1', username: 'alice', display_name: 'Alice', avatar_url: null, role: 'user' as const };
 
 function makeResource(overrides: Partial<Resource> = {}): Resource {
   return {

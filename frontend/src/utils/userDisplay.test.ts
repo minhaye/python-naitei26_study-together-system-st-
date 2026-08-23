@@ -3,7 +3,7 @@ import { getDisplayName, getDisplayNameWithSelfSuffix, GENERIC_USER_LABEL } from
 import type { UserSummary } from '../lib/profile.types';
 
 function user(overrides: Partial<UserSummary> = {}): UserSummary {
-  return { id: 'user-1000', username: null, display_name: null, avatar_url: null, ...overrides };
+  return { id: 'user-1000', username: null, display_name: null, avatar_url: null, role: 'user', ...overrides };
 }
 
 describe('getDisplayName', () => {

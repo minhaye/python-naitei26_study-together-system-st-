@@ -7,6 +7,7 @@ import { SearchInput } from '../../../../components/ui/SearchInput';
 import { ApiError } from '../../../../lib/apiClient';
 import type { Profile } from '../../../../lib/profile.types';
 import { useAuth } from '../../../../hooks/useAuth';
+import { MessageUserTrigger } from '../../../../components/messages/MessageUserTrigger';
 
 export const ModeratorsPanel: React.FC = () => {
   const { profile: currentProfile } = useAuth();
@@ -115,7 +116,7 @@ export const ModeratorsPanel: React.FC = () => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {moderators.map((m) => (
             <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'white', border: '1px solid #E2E8F0', borderRadius: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <MessageUserTrigger userId={m.id} isSelf={m.id === currentProfile?.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <Avatar name={m.display_name ?? m.username ?? '?'} src={m.avatar_url} size="sm" />
                 <div>
                   <div style={{ fontSize: 13.5, fontWeight: 600, color: '#0F172A' }}>{m.display_name ?? m.username}</div>
@@ -123,7 +124,7 @@ export const ModeratorsPanel: React.FC = () => {
                     <ShieldCheck size={12} /> {m.role === 'admin' ? 'Admin' : 'Kiểm duyệt viên'}
                   </div>
                 </div>
-              </div>
+              </MessageUserTrigger>
               {m.role === 'moderator' && (
                 <button
                   onClick={() => handleRevoke(m)}

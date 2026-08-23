@@ -10,7 +10,14 @@ from app.auth.dto.auth_dto import CurrentUser
 from app.channels.entities.channel_entity import Channel
 from app.conversations.entities.conversation_entity import Conversation
 from app.core import permissions
-from app.db.enums import ConversationType, GroupMemberRole, MemberStatus, StudyRoomMemberRole, StudyRoomStatus
+from app.db.enums import (
+    ConversationType,
+    GroupMemberRole,
+    MemberStatus,
+    ProfileRole,
+    StudyRoomMemberRole,
+    StudyRoomStatus,
+)
 from app.db.session import get_db_session
 from app.groups.entities.group_entity import GroupMember
 from app.main import app
@@ -85,7 +92,7 @@ def _make_message(sender_id, conversation_id, content="Hello", attachment_path=N
     )
     # MessageResponse.sender is required (see app/messages/dto/message_dto.py) -- mirrors
     # how MessagesService.create/get_by_id/list_by_conversation eager-loads/assigns it.
-    message.sender = Profile(id=sender_id, username=None, display_name="Test User", avatar_url=None)
+    message.sender = Profile(id=sender_id, username=None, display_name="Test User", avatar_url=None, role=ProfileRole.USER)
     # MessageResponse.reactions is also required -- mirrors MessagesService's transient
     # `.reactions` assignment (create()/_attach_reactions()). Tests that care about actual
     # reaction data set `message.reactions = [...]` on the returned object directly.

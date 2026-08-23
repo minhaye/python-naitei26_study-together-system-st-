@@ -7,7 +7,7 @@ import pytest
 from app.auth.dependencies import get_current_user
 from app.auth.dto.auth_dto import CurrentUser
 from app.core import permissions
-from app.db.enums import GroupMemberRole, MemberStatus
+from app.db.enums import GroupMemberRole, MemberStatus, ProfileRole
 from app.db.session import get_db_session
 from app.groups.entities.group_entity import GroupMember
 from app.main import app
@@ -56,7 +56,7 @@ def _make_note(group_id, author_id, content="Hello", title=None) -> Note:
         created_at=now,
         updated_at=now,
     )
-    note.author = Profile(id=author_id, username=None, display_name="Author", avatar_url=None)
+    note.author = Profile(id=author_id, username=None, display_name="Author", avatar_url=None, role=ProfileRole.USER)
     return note
 
 

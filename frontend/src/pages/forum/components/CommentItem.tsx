@@ -10,6 +10,7 @@ import { ReactionPicker } from './ReactionPicker';
 import { DEFAULT_REACTION_EMOJI, REACTION_META_BY_EMOJI, myReactionEmoji, topReactionEmojis, totalReactionCount } from '../constants/reactions';
 import { useAuth } from '../../../hooks/useAuth';
 import { ReasonPromptModal } from '../../../components/ui/ReasonPromptModal';
+import { MessageUserTrigger } from '../../../components/messages/MessageUserTrigger';
 
 interface CommentItemProps {
   comment: Comment;
@@ -221,7 +222,9 @@ export const CommentItem: React.FC<CommentItemProps> = React.memo(({
 
       {/* Avatar dùng name prop đồng bộ */}
       <div style={{ position: 'relative', zIndex: 1, flexShrink: 0 }}>
-        <Avatar name={comment.authorName} src={comment.authorAvatarUrl} size={isRoot ? 'sm' : 'xs'} />
+        <MessageUserTrigger userId={comment.authorId} isSelf={isAuthor}>
+          <Avatar name={comment.authorName} src={comment.authorAvatarUrl} size={isRoot ? 'sm' : 'xs'} />
+        </MessageUserTrigger>
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -256,9 +259,11 @@ export const CommentItem: React.FC<CommentItemProps> = React.memo(({
                 maxWidth: '100%',
               }}
             >
-              <span style={{ fontWeight: '600', fontSize: 13, color: FORUM_COLORS.textPrimary }}>
-                {comment.authorName}
-              </span>
+              <MessageUserTrigger userId={comment.authorId} isSelf={isAuthor}>
+                <span style={{ fontWeight: '600', fontSize: 13, color: FORUM_COLORS.textPrimary }}>
+                  {comment.authorName}
+                </span>
+              </MessageUserTrigger>
               <div style={{ marginTop: 4 }}>
                 {renderFormattedContent(comment.content)}
               </div>

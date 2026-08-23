@@ -14,6 +14,7 @@ from app.db.enums import (
     GroupMemberRole,
     MemberStatus,
     ModerationAction,
+    ProfileRole,
     StudyRoomMemberRole,
     StudyRoomStatus,
 )
@@ -89,7 +90,7 @@ def _room_member(room_id, user_id, role=StudyRoomMemberRole.PARTICIPANT, left_at
     )
     # StudyRoomMemberResponse.user is required (see app/study_rooms/dto/study_room_dto.py) --
     # mirrors how StudyRoomsService.get_member/join eager-loads/assigns it for real.
-    member.user = Profile(id=user_id, username=None, display_name="Test User", avatar_url=None)
+    member.user = Profile(id=user_id, username=None, display_name="Test User", avatar_url=None, role=ProfileRole.USER)
     return member
 
 

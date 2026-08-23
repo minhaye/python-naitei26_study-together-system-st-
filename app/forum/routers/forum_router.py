@@ -164,6 +164,7 @@ async def get_post(
 @router.get("/posts", response_model=list[ForumPostResponse])
 async def list_posts(
     category_id: uuid.UUID | None = None,
+    author_id: uuid.UUID | None = None,
     tag: str | None = None,
     skip: int = 0,
     limit: int = 50,
@@ -171,7 +172,7 @@ async def list_posts(
     session: AsyncSession = Depends(get_db_session)
 ):
     return await service.list_posts_by_category(
-        session, category_id, tag=tag, user_id=current_user.id if current_user else None, skip=skip, limit=limit
+        session, category_id, tag=tag, author_id=author_id, user_id=current_user.id if current_user else None, skip=skip, limit=limit
     )
 
 

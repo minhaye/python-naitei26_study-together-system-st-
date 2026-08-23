@@ -198,6 +198,7 @@ class ForumService:
         session: AsyncSession,
         category_id: uuid.UUID | None,
         tag: str | None = None,
+        author_id: uuid.UUID | None = None,
         user_id: uuid.UUID | None = None,
         skip: int = 0,
         limit: int = 50,
@@ -221,6 +222,9 @@ class ForumService:
 
         if category_id:
             stmt = stmt.where(ForumPost.category_id == category_id)
+
+        if author_id:
+            stmt = stmt.where(ForumPost.author_id == author_id)
 
         if tag:
             clean_tag = tag.lstrip("#").lower().strip()

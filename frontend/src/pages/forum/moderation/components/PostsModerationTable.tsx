@@ -4,6 +4,7 @@ import { forumApi } from '../../../forum/lib/forum.api';
 import type { Post } from '../../../forum/types/forum.types';
 import { ReasonPromptModal } from '../../../../components/ui/ReasonPromptModal';
 import { ApiError } from '../../../../lib/apiClient';
+import { MessageUserTrigger } from '../../../../components/messages/MessageUserTrigger';
 
 export const PostsModerationTable: React.FC = () => {
   const [posts, setPosts] = useState<Post[]>([]);
@@ -45,24 +46,29 @@ export const PostsModerationTable: React.FC = () => {
               key={post.id}
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', background: 'white', border: '1px solid #E2E8F0', borderRadius: 10 }}
             >
-              <a
-                href={`/forum/post/${post.id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                title="Mở bài viết ở tab mới để xem thêm thông tin"
-                style={{ minWidth: 0, textDecoration: 'none', color: 'inherit', cursor: 'pointer' }}
-              >
-                <div
-                  style={{ fontSize: 14, fontWeight: 600, color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                  onMouseOver={(e) => (e.currentTarget.style.textDecoration = 'underline')}
-                  onMouseOut={(e) => (e.currentTarget.style.textDecoration = 'none')}
+              <div style={{ minWidth: 0 }}>
+                <a
+                  href={`/forum/post/${post.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Mở bài viết ở tab mới để xem thêm thông tin"
+                  style={{ textDecoration: 'none', color: 'inherit', cursor: 'pointer' }}
                 >
-                  {post.title}
-                </div>
+                  <div
+                    style={{ fontSize: 14, fontWeight: 600, color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    onMouseOver={(e) => (e.currentTarget.style.textDecoration = 'underline')}
+                    onMouseOut={(e) => (e.currentTarget.style.textDecoration = 'none')}
+                  >
+                    {post.title}
+                  </div>
+                </a>
                 <div style={{ fontSize: 12.5, color: '#64748B', marginTop: 2 }}>
-                  {post.authorName} • {post.categoryName} • {post.timeAgo}
+                  <MessageUserTrigger userId={post.authorId} style={{ display: 'inline' }}>
+                    {post.authorName}
+                  </MessageUserTrigger>{' '}
+                  • {post.categoryName} • {post.timeAgo}
                 </div>
-              </a>
+              </div>
               <button
                 onClick={() => setDeleteTarget(post)}
                 title="Xóa bài viết"

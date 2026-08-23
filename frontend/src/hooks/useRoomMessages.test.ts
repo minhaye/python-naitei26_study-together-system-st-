@@ -23,7 +23,7 @@ const mockedSend = vi.mocked(sendConversationMessage);
 const mockedRealtime = vi.mocked(useChannelMessagesRealtime);
 const mockedReactionsRealtime = vi.mocked(useMessageReactionsRealtime);
 
-const sender = { id: 'user-1', username: 'alice', display_name: 'Alice', avatar_url: null };
+const sender = { id: 'user-1', username: 'alice', display_name: 'Alice', avatar_url: null, role: 'user' as const };
 
 function makeMessage(overrides: Partial<Message> = {}): Message {
   return {
@@ -234,7 +234,7 @@ describe('useRoomMessages', () => {
     const hydratedRemoteMessage = makeMessage({
       id: 'msg-from-other',
       sender_id: 'user-2',
-      sender: { id: 'user-2', username: 'bob', display_name: 'Bob Nguyen', avatar_url: 'https://example.com/bob.png' },
+      sender: { id: 'user-2', username: 'bob', display_name: 'Bob Nguyen', avatar_url: 'https://example.com/bob.png', role: 'user' },
     });
 
     act(() => {
@@ -247,6 +247,7 @@ describe('useRoomMessages', () => {
       username: 'bob',
       display_name: 'Bob Nguyen',
       avatar_url: 'https://example.com/bob.png',
+      role: 'user',
     });
   });
 

@@ -54,3 +54,4 @@ class UserSummary(BaseModel):
     username: str | None
     display_name: str | None
     avatar_url: str | None
+    role: ProfileRole
