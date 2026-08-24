@@ -134,3 +134,31 @@ class RoadmapSuggestion(BaseModel):
     title: str = Field(max_length=200)
     goal: str = Field(max_length=500)
     phases: list[RoadmapPhaseSuggestion] = Field(max_length=20)
+
+
+# ── Task suggestion ───────────────────────────────────────────────────────────
+
+class TaskSuggestRequest(BaseModel):
+    goal: str = Field(min_length=1, max_length=500)
+    phases: list[str] = Field(default_factory=list, max_length=20)
+    due_date: str | None = Field(default=None, description='ISO date string (YYYY-MM-DD) deadline for the roadmap')
+    today: str = Field(description='ISO date string (YYYY-MM-DD) for today, used to anchor relative dates')
+
+    @field_validator('goal')
+    @classmethod
+    def strip_goal(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError('Goal must not be blank')
+        return value
+
+
+class SuggestedTask(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    due_date: str = Field(description='ISO date string YYYY-MM-DD')
+    priority: int = Field(ge=1, le=3, description='1=low, 2=medium, 3=high')
+
+
+class TaskSuggestionResponse(BaseModel):
+    tasks: list[SuggestedTask] = Field(max_length=100)
+

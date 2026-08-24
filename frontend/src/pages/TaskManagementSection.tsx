@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarDays, Check, LoaderCircle, Plus, Trash2, Zap } from 'lucide-react';
+import type { FormEvent } from 'react';
+import { CalendarDays, Check, LoaderCircle, Plus, Sparkles, Trash2, Zap } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { ApiError } from '../lib/apiClient';
 import { createTasks, deleteTask, listTasks, toggleTaskComplete, updateTask, type StudyTask, type TaskPriority } from '../lib/task.api';
+import { listRoadmaps, suggestTasks, type Roadmap } from '../lib/roadmap.api';
 
 const priorities: Array<{ value: TaskPriority; label: string; color: string }> = [
   { value: 1, label: 'Thấp', color: '#94A3B8' },
@@ -78,7 +80,7 @@ function parseQuickTasks(
     .split(/\r?\n/)
     .map(line => line.trim())
     .filter(Boolean)
-    .slice(0, 50)
+    .slice(0, 100)
     .map(line => {
       const parts = line.split(delimiter).map(p => p.trim());
       const title = parts[0] ?? '';
@@ -122,6 +124,13 @@ export function TaskManagementSection() {
   const [editPriority, setEditPriority] = useState<TaskPriority>(2);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // AI suggestion state
+  const [roadmaps, setRoadmaps] = useState<Roadmap[]>([]);
+  const [selectedRoadmapId, setSelectedRoadmapId] = useState<string>('');
+  const [aiGoal, setAiGoal] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
   const loadTasks = async () => {
     setLoading(true);
     setLoadError(null);
@@ -135,6 +144,11 @@ export function TaskManagementSection() {
     }
   };
   useEffect(() => { void loadTasks(); }, [month]);
+
+  // Load roadmaps for AI dropdown
+  useEffect(() => {
+    listRoadmaps().then(setRoadmaps).catch(() => {/* silently ignore */});
+  }, []);
 
   const tasksByDate = useMemo(() => tasks.reduce<Record<string, StudyTask[]>>((result, task) => {
     (result[task.due_date] ??= []).push(task); return result;
@@ -153,7 +167,30 @@ export function TaskManagementSection() {
     );
   }, [month]);
 
-  const submit = async (event: React.FormEvent) => {
+  const handleAiSuggest = async () => {
+    const selectedRoadmap = roadmaps.find(r => r.id === selectedRoadmapId);
+    const goal = selectedRoadmap ? selectedRoadmap.goal : aiGoal.trim();
+    if (!goal) { setAiError('Vui lòng chọn lộ trình hoặc nhập mục tiêu.'); return; }
+    const phases = selectedRoadmap ? selectedRoadmap.phases.map(p => p.name) : [];
+    const due_date = selectedRoadmap?.due_date ?? null;
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const result = await suggestTasks(goal, phases, todayKey, due_date);
+      // Convert to quick-task format: "title | YYYY-MM-DD | priority_label"
+      const priorityLabel: Record<number, string> = { 1: 'low', 2: 'mid', 3: 'high' };
+      const formatted = result.tasks
+        .map(t => `${t.title} | ${t.due_date} | ${priorityLabel[t.priority] ?? 'mid'}`)
+        .join('\n');
+      setLines(formatted);
+    } catch (cause) {
+      setAiError(friendlyError(cause));
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!parsedTasks.length) { setActionError('Nhập ít nhất một công việc, mỗi dòng một việc.'); return; }
     setSubmitting(true);
@@ -391,6 +428,56 @@ export function TaskManagementSection() {
       <Modal isOpen={isComposerOpen} onClose={() => !submitting && setComposerOpen(false)} title="Thêm công việc nhanh">
         <form onSubmit={submit} style={{ display: 'grid', gap: 16 }}>
 
+          {/* AI Section */}
+          <div style={{ background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 10, padding: 14, display: 'grid', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13, color: '#5B21B6' }}>
+              <Sparkles size={14} />
+              Gợi ý công việc bằng AI
+            </div>
+            <p style={{ margin: 0, fontSize: 12, color: '#6D28D9', lineHeight: 1.5 }}>
+              AI sẽ tạo danh sách công việc chi tiết dựa trên lộ trình của bạn, căn cứ từ roadmap.sh, Coursera, cộng đồng Reddit và kinh nghiệm thực tế.
+            </p>
+            {roadmaps.length > 0 && (
+              <div style={{ display: 'grid', gap: 6 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#4C1D95' }}>Chọn từ lộ trình của tôi:</label>
+                <select
+                  value={selectedRoadmapId}
+                  onChange={e => { setSelectedRoadmapId(e.target.value); if (e.target.value) setAiGoal(''); }}
+                  style={{ padding: '7px 10px', borderRadius: 7, border: '1px solid #C4B5FD', fontSize: 13, background: 'white', color: '#1E293B' }}
+                >
+                  <option value=''>-- Chọn lộ trình --</option>
+                  {roadmaps.map(r => (
+                    <option key={r.id} value={r.id}>{r.title}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {!selectedRoadmapId && (
+              <div style={{ display: 'grid', gap: 6 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#4C1D95' }}>{roadmaps.length > 0 ? 'Hoặc nhập mục tiêu tùy chỉnh:' : 'Nhập mục tiêu học tập:'}</label>
+                <input
+                  value={aiGoal}
+                  onChange={e => setAiGoal(e.target.value)}
+                  placeholder='VD: Học React để đi thực tập trong 2 tháng'
+                  maxLength={300}
+                  style={{ padding: '7px 10px', borderRadius: 7, border: '1px solid #C4B5FD', fontSize: 13 }}
+                  disabled={aiLoading}
+                />
+              </div>
+            )}
+            {aiError && <p role='alert' style={{ margin: 0, color: '#B91C1C', fontSize: 12 }}>{aiError}</p>}
+            <button
+              type='button'
+              onClick={() => void handleAiSuggest()}
+              disabled={aiLoading || (!selectedRoadmapId && !aiGoal.trim())}
+              style={{ ...primaryButton, background: '#7C3AED', border: 0, alignSelf: 'flex-start', padding: '8px 14px', fontSize: 12 }}
+            >
+              {aiLoading
+                ? <><LoaderCircle size={14} className='spin' /> Đang tạo...</>
+                : <><Sparkles size={14} /> Tạo gợi ý ({selectedRoadmapId ? roadmaps.find(r => r.id === selectedRoadmapId)?.phases.length ?? 0 : 0} chặng)</>}
+            </button>
+          </div>
+
           {/* Hướng dẫn cú pháp */}
           <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, color: '#1E40AF', lineHeight: 1.7 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, marginBottom: 4 }}>
@@ -425,8 +512,8 @@ export function TaskManagementSection() {
                 style={{ resize: 'vertical', padding: 12, border: '1px solid #CBD5E1', borderRadius: 8, font: 'inherit', fontSize: 13, lineHeight: 1.6 }}
               />
             </label>
-            <small style={{ color: parsedTasks.length > 50 ? '#B91C1C' : '#64748B' }}>
-              {parsedTasks.length}/50 công việc sẽ được tạo
+            <small style={{ color: parsedTasks.length > 100 ? '#B91C1C' : '#64748B' }}>
+              {parsedTasks.length}/100 công việc sẽ được tạo
             </small>
           </div>
 

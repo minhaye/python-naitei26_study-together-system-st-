@@ -20,6 +20,8 @@ from app.roadmaps.dto.roadmap_dto import (
     RoadmapSuggestRequest,
     RoadmapSuggestion,
     RoadmapUpdate,
+    TaskSuggestRequest,
+    TaskSuggestionResponse,
 )
 from app.roadmaps.entities.roadmap_entity import Roadmap, RoadmapPhase
 from app.roadmaps.services.roadmap_ai_service import RoadmapAiError, RoadmapAiService, RoadmapAiServiceNotConfigured
@@ -70,6 +72,26 @@ async def suggest_roadmap(data: RoadmapSuggestRequest, current_user: CurrentUser
         # debugging but never forward it to the client as the HTTP detail.
         logger.warning("Roadmap AI suggestion failed: %s", exc)
         raise HTTPException(502, 'Không thể tạo gợi ý lúc này, vui lòng thử lại sau.') from exc
+
+
+@router.post('/suggest/tasks', response_model=TaskSuggestionResponse)
+async def suggest_tasks(data: TaskSuggestRequest, current_user: CurrentUser = Depends(get_current_user)):
+    try:
+        response = await roadmap_ai_service.suggest_tasks(
+            goal=data.goal,
+            phases=data.phases,
+            today=data.today,
+            due_date=data.due_date,
+        )
+        if not response.tasks:
+            raise HTTPException(400, 'Mục tiêu không rõ ràng để tạo công việc. Vui lòng mô tả chi tiết hơn.')
+        return response
+    except RoadmapAiServiceNotConfigured as exc:
+        logger.error("Task AI suggestion requested but not configured: %s", exc)
+        raise HTTPException(503, 'Tính năng gợi ý bằng AI hiện chưa khả dụng.') from exc
+    except RoadmapAiError as exc:
+        logger.warning("Task AI suggestion failed: %s", exc)
+        raise HTTPException(502, 'Không thể tạo gợi ý công việc lúc này, vui lòng thử lại sau.') from exc
 
 
 @router.post('', response_model=RoadmapResponse, status_code=201)
