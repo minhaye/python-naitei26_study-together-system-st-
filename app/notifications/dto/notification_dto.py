@@ -9,7 +9,9 @@ from app.db.enums import NotificationType
 
 
 class NotificationCategory(str, enum.Enum):
-    """Maps notification types to the 4 UI tabs."""
+    """Maps notification types to UI tabs."""
+    ALL = "all"
+    UNREAD = "unread"
     FORUM = "forum"
     GROUP = "group"
     GOAL = "goal"

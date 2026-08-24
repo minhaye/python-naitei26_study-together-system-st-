@@ -13,6 +13,11 @@ interface NotificationTabContentProps {
 
 function getEmptyStateInfo(category: NotificationCategory) {
   switch (category) {
+    case 'unread':
+      return {
+        icon: <BellOff size={36} color="#94A3B8" />,
+        text: 'Bạn không có thông báo chưa đọc nào',
+      };
     case 'forum':
       return {
         icon: <MessageSquare size={36} color="#94A3B8" />,
@@ -33,6 +38,7 @@ function getEmptyStateInfo(category: NotificationCategory) {
         icon: <Mail size={36} color="#94A3B8" />,
         text: 'Chưa có thông báo tin nhắn nào',
       };
+    case 'all':
     default:
       return {
         icon: <BellOff size={36} color="#94A3B8" />,
@@ -50,6 +56,8 @@ export const NotificationTabContent: React.FC<NotificationTabContentProps> = ({
 }) => {
   // Filter notifications by active tab category
   const filteredNotifications = useMemo(() => {
+    if (activeCategory === 'all') return notifications;
+    if (activeCategory === 'unread') return notifications.filter((item) => !item.is_read);
     return notifications.filter((item) => item.category === activeCategory);
   }, [notifications, activeCategory]);
 

@@ -1,4 +1,4 @@
-export type NotificationCategory = 'forum' | 'group' | 'goal' | 'message';
+export type NotificationCategory = 'all' | 'unread' | 'forum' | 'group' | 'goal' | 'message';
 
 export type NotificationType =
   | 'post_like'

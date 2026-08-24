@@ -12,6 +12,8 @@ interface NotificationDropdownModalProps {
 }
 
 const TABS: { key: NotificationCategory; label: string }[] = [
+  { key: 'all', label: 'Tất cả' },
+  { key: 'unread', label: 'Chưa đọc' },
   { key: 'forum', label: 'Diễn đàn' },
   { key: 'group', label: 'Nhóm học' },
   { key: 'goal', label: 'Mục tiêu' },
@@ -27,7 +29,7 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
   const tabBarRef = useRef<HTMLDivElement>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
 
-  const [visibleCount, setVisibleCount] = useState<number>(4);
+  const [visibleCount, setVisibleCount] = useState<number>(3);
   const [isMoreOpen, setIsMoreOpen] = useState<boolean>(false);
   const [hoveredElement, setHoveredElement] = useState<string | null>(null);
 
@@ -48,9 +50,9 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         if (entry.contentRect.width < 390) {
-          setVisibleCount(2);
+          setVisibleCount(3);
         } else {
-          setVisibleCount(4);
+          setVisibleCount(6);
         }
       }
     });
@@ -204,7 +206,7 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
       >
         {visibleTabs.map((tab) => {
           const isActive = activeCategory === tab.key;
-          const count = unreadCounts[tab.key] || 0;
+          const count = (tab.key === 'all' || tab.key === 'unread') ? unreadCounts.total : (unreadCounts[tab.key] || 0);
           const isHovered = hoveredElement === tab.key;
 
           return (
@@ -291,7 +293,7 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
               >
                 {overflowTabs.map((tab) => {
                   const isActive = activeCategory === tab.key;
-                  const count = unreadCounts[tab.key] || 0;
+                  const count = (tab.key === 'all' || tab.key === 'unread') ? unreadCounts.total : (unreadCounts[tab.key] || 0);
                   const isPopHovered = hoveredElement === 'popover_' + tab.key;
 
                   return (

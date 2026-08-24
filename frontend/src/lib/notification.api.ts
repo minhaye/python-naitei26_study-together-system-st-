@@ -33,7 +33,8 @@ export function markAsRead(notificationId: string): Promise<NotificationItem> {
 }
 
 export function markAllAsRead(category?: NotificationCategory): Promise<{ updated: number }> {
-  const url = category ? `/notifications/read-all?category=${category}` : '/notifications/read-all';
+  const isGlobalCategory = !category || category === 'all' || category === 'unread';
+  const url = isGlobalCategory ? '/notifications/read-all' : `/notifications/read-all?category=${category}`;
   return apiClient.put<{ updated: number }>(url);
 }
 

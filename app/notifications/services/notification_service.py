@@ -73,10 +73,9 @@ class NotificationsService:
 
         query = select(Notification).options(selectinload(Notification.actor)).where(Notification.user_id == user_id)
 
-        if unread_only:
+        if category == NotificationCategory.UNREAD or unread_only:
             query = query.where(Notification.is_read.is_(False))
-
-        if category is not None:
+        elif category != NotificationCategory.ALL and category is not None:
             types_for_tab = _CATEGORY_TYPES.get(category, [])
             if types_for_tab:
                 query = query.where(Notification.type.in_(types_for_tab))
