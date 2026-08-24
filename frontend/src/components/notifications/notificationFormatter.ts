@@ -2,10 +2,12 @@ import type { NotificationItem } from '../../types/notification';
 
 export interface FormattedNotification {
   actorName: string;
+  actorAvatarUrl?: string | null;
   previewText: string;
   targetLink: string;
   timeAgo: string;
   iconName: 'heart' | 'comment' | 'reply' | 'file' | 'flame' | 'users' | 'sun' | 'clock' | 'alert' | 'message' | 'invite';
+  emoji?: string;
 }
 
 /**
@@ -28,34 +30,57 @@ export function formatTimeAgo(dateString: string): string {
 }
 
 /**
+ * Strips HTML tags (e.g. TipTap <p>, <span style="...">, <img>) from a preview text string so notifications
+ * render clean plain text in cards without raw HTML tags or truncated code snippets.
+ */
+export function stripHtmlTags(rawText: string): string {
+  if (!rawText) return '';
+  return rawText
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<\/p>/gi, ' ')
+    .replace(/<[^>]*>/g, '') // Complete HTML tags
+    .replace(/<[a-z][^>]*$/gi, '') // Truncated HTML tag at end of string
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
  * Format a NotificationItem into structured presentation props for the UI card.
  */
 export function formatNotification(item: NotificationItem): FormattedNotification {
   const data = item.data || {};
-  const actorName = data.actor_name || 'Người dùng';
+  const actorName = typeof data.actor_name === 'string' ? data.actor_name : 'Người dùng';
+  const actorAvatarUrl = typeof data.actor_avatar_url === 'string' ? data.actor_avatar_url : null;
   const timeAgo = formatTimeAgo(item.created_at);
 
   switch (item.type) {
     // ── Forum Tab ──────────────────────────────────────────────────────────
     case 'post_like': {
       const otherCount = Number(data.other_count || 0);
-      const postTitle = data.post_title ? `"${data.post_title}"` : 'bài viết của bạn';
+      const titleStr = typeof data.post_title === 'string' ? data.post_title : '';
+      const postTitle = titleStr ? `"${stripHtmlTags(titleStr)}"` : 'bài viết của bạn';
       const text = otherCount > 0
-        ? `và ${otherCount} người khác đã thích bài viết: ${postTitle}`
-        : `đã thích bài viết: ${postTitle}`;
+        ? `và ${otherCount} người khác đã bày tỏ cảm xúc với bài viết: ${postTitle}`
+        : `đã bày tỏ cảm xúc với bài viết của bạn: ${postTitle}`;
+      const emojiStr = typeof data.emoji === 'string' ? data.emoji : '❤️';
       return {
         actorName,
+        actorAvatarUrl,
         previewText: text,
         targetLink: item.post_id ? `/?post=${item.post_id}` : '/',
         timeAgo,
         iconName: 'heart',
+        emoji: emojiStr,
       };
     }
 
     case 'post_comment': {
-      const commentPreview = data.comment_preview ? `"${data.comment_preview}"` : 'bài viết của bạn';
+      const cmtStr = typeof data.comment_preview === 'string' ? data.comment_preview : '';
+      const commentPreview = cmtStr ? `"${stripHtmlTags(cmtStr)}"` : 'bài viết của bạn';
       return {
         actorName,
+        actorAvatarUrl,
         previewText: `đã bình luận về bài viết của bạn: ${commentPreview}`,
         targetLink: item.post_id ? `/?post=${item.post_id}` : '/',
         timeAgo,
@@ -64,9 +89,19 @@ export function formatNotification(item: NotificationItem): FormattedNotificatio
     }
 
     case 'comment_reply': {
-      const replyPreview = data.reply_preview ? `"${data.reply_preview}"` : 'bình luận của bạn';
+      const rplyStr = typeof data.reply_preview === 'string' ? data.reply_preview : '';
+      let rawReply = stripHtmlTags(rplyStr);
+      // Strip leading @mention tag (e.g. "@Nguyễn Văn A " or "@User ")
+      if (rawReply.startsWith('@')) {
+        rawReply = rawReply.replace(/^@[^\n\r]+?\s{1,2}(?=[A-Za-z0-9\u00C0-\u024F\u1EA0-\u1EF9a-z])/i, '').trim();
+        if (rawReply.startsWith('@')) {
+          rawReply = rawReply.replace(/^@[^\s]+\s*/, '').trim();
+        }
+      }
+      const replyPreview = rawReply ? `"${rawReply}"` : 'bình luận của bạn';
       return {
         actorName,
+        actorAvatarUrl,
         previewText: `đã trả lời bình luận của bạn: ${replyPreview}`,
         targetLink: item.post_id ? `/?post=${item.post_id}` : '/',
         timeAgo,

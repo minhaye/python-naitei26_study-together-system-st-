@@ -87,11 +87,10 @@ export const NotificationTabContent: React.FC<NotificationTabContentProps> = ({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: 2,
+        gap: 4,
         maxHeight: 380,
         overflowY: 'auto',
         padding: '4px 8px',
-        contain: 'content',
         willChange: 'transform',
       }}
     >

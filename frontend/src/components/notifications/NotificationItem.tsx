@@ -27,7 +27,10 @@ interface NotificationItemProps {
   onCloseModal?: () => void;
 }
 
-function renderIcon(iconName: string) {
+function renderIcon(iconName: string, emoji?: string) {
+  if (emoji) {
+    return <span style={{ fontSize: 13, lineHeight: 1 }}>{emoji}</span>;
+  }
   switch (iconName) {
     case 'heart':
       return <Heart size={14} fill="#EF4444" color="#EF4444" />;
@@ -116,24 +119,26 @@ export const NotificationItem: React.FC<NotificationItemProps> = memo(({ item, o
         alignItems: 'flex-start',
         gap: 12,
         padding: '12px 16px',
-        minHeight: 68,
+        minHeight: 60,
         borderRadius: 8,
         cursor: 'pointer',
         backgroundColor: 'transparent',
         transition: 'background-color 0.15s ease',
         position: 'relative',
-        contain: 'content',
+        flexShrink: 0,
+        boxSizing: 'border-box',
+        width: '100%',
       }}
       className="hover:bg-slate-100 transition-colors"
     >
       {/* Avatar with type badge overlay */}
       <div style={{ position: 'relative', flexShrink: 0 }}>
-        <Avatar name={formatted.actorName} size="md" />
+        <Avatar name={formatted.actorName} src={formatted.actorAvatarUrl} size="md" />
         <div
           style={{
             position: 'absolute',
-            bottom: -2,
-            right: -2,
+            bottom: -8,
+            right: -4,
             width: 22,
             height: 22,
             borderRadius: '50%',
@@ -146,7 +151,7 @@ export const NotificationItem: React.FC<NotificationItemProps> = memo(({ item, o
             lineHeight: 0,
           }}
         >
-          {renderIcon(formatted.iconName)}
+          {renderIcon(formatted.iconName, formatted.emoji)}
         </div>
       </div>
 

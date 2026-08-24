@@ -21,6 +21,8 @@ export type NotificationType =
 
 export interface NotificationData {
   actor_name?: string;
+  actor_avatar_url?: string | null;
+  emoji?: string;
   post_title?: string;
   comment_preview?: string;
   reply_preview?: string;

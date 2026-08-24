@@ -20,6 +20,32 @@ for _ntype, _cat in NOTIFICATION_TYPE_TO_CATEGORY.items():
     _CATEGORY_TYPES.setdefault(_cat, []).append(_ntype)
 
 
+import re
+
+
+def _clean_text_preview(text: str, max_len: int = 100) -> str:
+    if not text:
+        return ""
+    # 1. Strip HTML tags first (<p>, <span>, <img>, etc.)
+    cleaned = re.sub(r"<[^>]*>", "", text)
+    # 2. Strip truncated opening tag if string ended mid-tag
+    cleaned = re.sub(r"<[a-zA-Z][^>]*$", "", cleaned)
+    # 3. Strip leading @mention tag if present
+    cleaned = cleaned.strip()
+    if cleaned.startswith("@"):
+        cleaned = re.sub(
+            r"^@[^\n\r]+?\s{1,2}(?=[A-Za-z0-9\u00C0-\u024F\u1EA0-\u1EF9a-z])",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        ).strip()
+        if cleaned.startswith("@"):
+            cleaned = re.sub(r"^@[^\s]+\s*", "", cleaned).strip()
+    # 4. Normalize spaces and slice
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned[:max_len]
+
+
 class NotificationsService:
 
     # ── CRUD ───────────────────────────────────────────────────────────────
@@ -43,7 +69,9 @@ class NotificationsService:
         skip: int = 0,
         limit: int = 50,
     ) -> list[Notification]:
-        query = select(Notification).where(Notification.user_id == user_id)
+        from sqlalchemy.orm import selectinload
+
+        query = select(Notification).options(selectinload(Notification.actor)).where(Notification.user_id == user_id)
 
         if unread_only:
             query = query.where(Notification.is_read.is_(False))
@@ -57,7 +85,16 @@ class NotificationsService:
 
         query = query.order_by(Notification.created_at.desc()).offset(skip).limit(limit)
         result = await session.execute(query)
-        return list(result.scalars().all())
+        notifications = list(result.scalars().all())
+
+        for noti in notifications:
+            if noti.actor and noti.data is not None:
+                noti.data = {
+                    **noti.data,
+                    "actor_avatar_url": noti.actor.avatar_url,
+                }
+
+        return notifications
 
     # ── Mark read ──────────────────────────────────────────────────────────
 
@@ -117,6 +154,7 @@ class NotificationsService:
         post_title: str,
         actor_id: uuid.UUID,
         actor_name: str,
+        emoji: Optional[str] = None,
     ) -> Notification | None:
         """Triggered when actor likes post. Aggregates multiple likes if unread exists."""
         if actor_id == post_author_id:
@@ -142,6 +180,7 @@ class NotificationsService:
             "actor_name": actor_name,
             "post_title": post_title[:50],
             "other_count": other_count,
+            "emoji": emoji or "❤️",
         }
 
         if existing:
@@ -178,6 +217,9 @@ class NotificationsService:
         if actor_id == post_author_id:
             return None
 
+        clean_comment = _clean_text_preview(comment_content, 80)
+        clean_title = _clean_text_preview(post_title, 80)
+
         return await self.create(
             session,
             NotificationCreate(
@@ -188,8 +230,8 @@ class NotificationsService:
                 comment_id=comment_id,
                 data={
                     "actor_name": actor_name,
-                    "comment_preview": comment_content[:50],
-                    "post_title": post_title[:50],
+                    "comment_preview": clean_comment,
+                    "post_title": clean_title or "bài viết",
                 },
             ),
         )
@@ -210,6 +252,9 @@ class NotificationsService:
         if actor_id == parent_author_id:
             return None
 
+        clean_reply = _clean_text_preview(reply_content, 80)
+        clean_title = _clean_text_preview(post_title, 80)
+
         return await self.create(
             session,
             NotificationCreate(
@@ -220,8 +265,8 @@ class NotificationsService:
                 comment_id=comment_id,
                 data={
                     "actor_name": actor_name,
-                    "reply_preview": reply_content[:50],
-                    "post_title": post_title[:50],
+                    "reply_preview": clean_reply,
+                    "post_title": clean_title or "bài viết",
                 },
             ),
         )

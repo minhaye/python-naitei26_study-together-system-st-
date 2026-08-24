@@ -460,6 +460,7 @@ class ForumService:
                     post_title=post.title or "Bài viết",
                     actor_id=user_id,
                     actor_name=actor_name,
+                    emoji=emoji,
                 )
         except Exception:
             pass

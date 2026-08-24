@@ -31,8 +31,8 @@ from app.db.enums import NotificationType
 NOTIFICATION_TEMPLATES: Dict[NotificationType, Dict[str, str]] = {
     # ── Forum tab ──────────────────────────────────────────────────────────
     NotificationType.POST_LIKE: {
-        "single": "{actor_name} đã thích bài viết của bạn: \"{post_title}\"",
-        "grouped": "{actor_name} và {other_count} người khác đã thích bài viết của bạn: \"{post_title}\"",
+        "single": "{actor_name} đã bày tỏ cảm xúc với bài viết của bạn: \"{post_title}\"",
+        "grouped": "{actor_name} và {other_count} người khác đã bày tỏ cảm xúc với bài viết của bạn: \"{post_title}\"",
     },
     NotificationType.POST_COMMENT: {
         "template": "{actor_name} đã bình luận về bài viết của bạn: \"{comment_preview}\"",

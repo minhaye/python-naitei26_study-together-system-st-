@@ -44,7 +44,7 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
 
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        if (entry.contentRect.width < 410) {
+        if (entry.contentRect.width < 390) {
           setVisibleCount(2);
         } else {
           setVisibleCount(4);
@@ -137,8 +137,8 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button
-            onClick={() => markAllAsRead(activeCategory)}
-            title="Đánh dấu tất cả đã đọc"
+            onClick={() => markAllAsRead()}
+            title="Đánh dấu tất cả thông báo đã đọc"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -156,7 +156,7 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
             className="hover:bg-blue-50"
           >
             <CheckCheck size={16} />
-            <span style={{ display: 'inline' }}>Đã đọc</span>
+            <span style={{ display: 'inline' }}>Đã đọc tất cả</span>
           </button>
           <button
             onClick={onClose}
