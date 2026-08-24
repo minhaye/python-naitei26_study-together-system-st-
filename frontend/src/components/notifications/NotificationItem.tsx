@@ -62,6 +62,7 @@ export const NotificationItem: React.FC<NotificationItemProps> = memo(({ item, o
   const navigate = useNavigate();
   const formatted = formatNotification(item);
   const [isBusy, setIsBusy] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
   const [actionDone, setActionDone] = useState<'accepted' | 'declined' | 'error' | null>(null);
 
   const handleClick = (e: React.MouseEvent) => {
@@ -114,6 +115,8 @@ export const NotificationItem: React.FC<NotificationItemProps> = memo(({ item, o
   return (
     <div
       onClick={handleClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       style={{
         display: 'flex',
         alignItems: 'flex-start',
@@ -122,14 +125,13 @@ export const NotificationItem: React.FC<NotificationItemProps> = memo(({ item, o
         minHeight: 60,
         borderRadius: 8,
         cursor: 'pointer',
-        backgroundColor: 'transparent',
+        backgroundColor: isHovered ? '#F2F3F5' : 'transparent',
         transition: 'background-color 0.15s ease',
         position: 'relative',
         flexShrink: 0,
         boxSizing: 'border-box',
         width: '100%',
       }}
-      className="hover:bg-slate-100 transition-colors"
     >
       {/* Avatar with type badge overlay */}
       <div style={{ position: 'relative', flexShrink: 0 }}>

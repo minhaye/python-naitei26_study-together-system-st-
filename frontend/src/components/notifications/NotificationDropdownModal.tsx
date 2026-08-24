@@ -8,6 +8,7 @@ import { CountBadge } from '../ui/CountBadge';
 interface NotificationDropdownModalProps {
   isOpen: boolean;
   onClose: () => void;
+  triggerRef?: React.RefObject<HTMLElement>;
 }
 
 const TABS: { key: NotificationCategory; label: string }[] = [
@@ -20,6 +21,7 @@ const TABS: { key: NotificationCategory; label: string }[] = [
 export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps> = ({
   isOpen,
   onClose,
+  triggerRef,
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
   const tabBarRef = useRef<HTMLDivElement>(null);
@@ -27,6 +29,7 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
 
   const [visibleCount, setVisibleCount] = useState<number>(4);
   const [isMoreOpen, setIsMoreOpen] = useState<boolean>(false);
+  const [hoveredElement, setHoveredElement] = useState<string | null>(null);
 
   const {
     notifications,
@@ -61,10 +64,15 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
     if (!isOpen) return;
 
     const handleClickOutside = (event: MouseEvent) => {
-      if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        modalRef.current &&
+        !modalRef.current.contains(target) &&
+        (!triggerRef?.current || !triggerRef.current.contains(target))
+      ) {
         onClose();
       }
-      if (moreMenuRef.current && !moreMenuRef.current.contains(event.target as Node)) {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(target)) {
         setIsMoreOpen(false);
       }
     };
@@ -73,7 +81,7 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, triggerRef]);
 
   if (!isOpen) return null;
 
@@ -144,22 +152,25 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
               alignItems: 'center',
               gap: 4,
               background: 'none',
+              backgroundColor: 'transparent',
               border: 'none',
+              outline: 'none',
+              boxShadow: 'none',
               color: '#1877F2',
               fontSize: 13,
               fontWeight: 600,
               cursor: 'pointer',
               padding: '4px 8px',
               borderRadius: 6,
-              transition: 'background-color 0.15s ease',
             }}
-            className="hover:bg-blue-50"
           >
             <CheckCheck size={16} />
             <span style={{ display: 'inline' }}>Đã đọc tất cả</span>
           </button>
           <button
             onClick={onClose}
+            onMouseEnter={() => setHoveredElement('close')}
+            onMouseLeave={() => setHoveredElement(null)}
             style={{
               background: 'none',
               border: 'none',
@@ -170,8 +181,9 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
+              backgroundColor: hoveredElement === 'close' ? '#F2F3F5' : 'transparent',
+              transition: 'background-color 0.15s ease',
             }}
-            className="hover:bg-slate-100"
           >
             <X size={18} />
           </button>
@@ -193,6 +205,7 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
         {visibleTabs.map((tab) => {
           const isActive = activeCategory === tab.key;
           const count = unreadCounts[tab.key] || 0;
+          const isHovered = hoveredElement === tab.key;
 
           return (
             <button
@@ -201,6 +214,8 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
                 setActiveCategory(tab.key);
                 setIsMoreOpen(false);
               }}
+              onMouseEnter={() => setHoveredElement(tab.key)}
+              onMouseLeave={() => setHoveredElement(null)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -209,7 +224,7 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
                 padding: '6px 14px',
                 borderRadius: 20,
                 border: 'none',
-                backgroundColor: isActive ? '#E7F3FF' : 'transparent',
+                backgroundColor: isActive ? '#E7F3FF' : isHovered ? '#F2F3F5' : 'transparent',
                 color: isActive ? '#1877F2' : '#050505',
                 fontSize: 13,
                 fontWeight: 600,
@@ -218,7 +233,6 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
                 position: 'relative',
                 whiteSpace: 'nowrap',
               }}
-              className={isActive ? '' : 'hover:bg-[#F2F3F5] transition-colors'}
             >
               <span>{tab.label}</span>
               <CountBadge count={count} style={{ position: 'relative', top: 'auto', right: 'auto' }} />
@@ -231,6 +245,8 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
           <div style={{ position: 'relative' }} ref={moreMenuRef}>
             <button
               onClick={() => setIsMoreOpen(!isMoreOpen)}
+              onMouseEnter={() => setHoveredElement('more')}
+              onMouseLeave={() => setHoveredElement(null)}
               title="Xem thêm mục lọc"
               style={{
                 display: 'flex',
@@ -240,7 +256,7 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
                 padding: '6px 12px',
                 borderRadius: 20,
                 border: 'none',
-                backgroundColor: isOverflowActive || isMoreOpen ? '#E7F3FF' : 'transparent',
+                backgroundColor: isOverflowActive || isMoreOpen ? '#E7F3FF' : hoveredElement === 'more' ? '#F2F3F5' : 'transparent',
                 color: isOverflowActive || isMoreOpen ? '#1877F2' : '#050505',
                 fontSize: 13,
                 fontWeight: 600,
@@ -248,7 +264,6 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
                 transition: 'all 0.15s ease',
                 position: 'relative',
               }}
-              className={isOverflowActive || isMoreOpen ? '' : 'hover:bg-[#F2F3F5] transition-colors'}
             >
               <MoreHorizontal size={18} />
               <CountBadge count={overflowUnreadTotal} style={{ position: 'relative', top: 'auto', right: 'auto' }} />
@@ -277,6 +292,7 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
                 {overflowTabs.map((tab) => {
                   const isActive = activeCategory === tab.key;
                   const count = unreadCounts[tab.key] || 0;
+                  const isPopHovered = hoveredElement === 'popover_' + tab.key;
 
                   return (
                     <button
@@ -285,6 +301,8 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
                         setActiveCategory(tab.key);
                         setIsMoreOpen(false);
                       }}
+                      onMouseEnter={() => setHoveredElement('popover_' + tab.key)}
+                      onMouseLeave={() => setHoveredElement(null)}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -293,14 +311,13 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
                         padding: '8px 12px',
                         borderRadius: 8,
                         border: 'none',
-                        backgroundColor: isActive ? '#E7F3FF' : 'transparent',
+                        backgroundColor: isActive ? '#E7F3FF' : isPopHovered ? '#F2F3F5' : 'transparent',
                         color: isActive ? '#1877F2' : '#050505',
                         fontSize: 13,
                         fontWeight: 600,
                         cursor: 'pointer',
                         transition: 'background-color 0.15s ease',
                       }}
-                      className={isActive ? '' : 'hover:bg-slate-100'}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span>{tab.label}</span>
@@ -341,11 +358,16 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
             onClick={() => markAllAsRead(activeCategory)}
             style={{
               background: 'none',
+              backgroundColor: 'transparent',
               border: 'none',
+              outline: 'none',
+              boxShadow: 'none',
               color: '#1877F2',
               fontSize: 13,
               fontWeight: 600,
               cursor: 'pointer',
+              padding: '4px 12px',
+              borderRadius: 6,
             }}
           >
             Đánh dấu đọc tất cả mục {TABS.find((t) => t.key === activeCategory)?.label}
