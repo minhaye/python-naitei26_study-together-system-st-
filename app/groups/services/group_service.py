@@ -29,7 +29,14 @@ class GroupsService:
         group = Group(**data.model_dump(), owner_id=owner_id)
         session.add(group)
         await session.flush()
-        return group
+        
+        # The group_streaks row is created synchronously by a DB trigger.
+        # We must reload the group to eagerly load the streak relationship,
+        # otherwise Pydantic serialization will raise a MissingGreenlet exception.
+        result = await session.execute(
+            select(Group).options(selectinload(Group.streak)).where(Group.id == group.id)
+        )
+        return result.scalar_one()
 
     async def get_by_id(self, session: AsyncSession, group_id: uuid.UUID) -> Group | None:
         result = await session.execute(
