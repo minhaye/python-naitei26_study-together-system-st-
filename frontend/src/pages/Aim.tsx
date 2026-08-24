@@ -525,23 +525,36 @@ export function AimPage() {
               Gợi ý bằng AI
             </label>
             {!aiQuestions ? (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <textarea
                   value={aiDescription}
                   onChange={e => setAiDescription(e.target.value)}
-                  placeholder="Mô tả mục tiêu, VD: Học lập trình web để đi thực tập trong 3 tháng"
-                  maxLength={500}
-                  style={{ ...input, flex: 1 }}
+                  placeholder="Mô tả chi tiết mục tiêu của bạn. VD: Mình muốn học lập trình web với React và Node.js để đi thực tập trong 3 tháng tới..."
+                  maxLength={1000}
+                  style={{ ...input, resize: 'vertical', minHeight: 80, lineHeight: '1.5' }}
                   disabled={aiLoading}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      if (!aiLoading && aiDescription.trim()) {
+                        void askQuestions();
+                      }
+                    }
+                  }}
                 />
-                <button
-                  type="button"
-                  onClick={() => void askQuestions()}
-                  disabled={aiLoading || !aiDescription.trim()}
-                  style={{ ...secondaryButton, background: '#7C3AED', color: 'white', border: 0, whiteSpace: 'nowrap' }}
-                >
-                  {aiLoading ? 'Đang tạo...' : 'Tiếp theo'}
-                </button>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, color: '#94A3B8' }}>
+                    {aiDescription.length}/1000 ký tự
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void askQuestions()}
+                    disabled={aiLoading || !aiDescription.trim()}
+                    style={{ ...secondaryButton, background: '#7C3AED', color: 'white', border: 0, padding: '8px 16px' }}
+                  >
+                    {aiLoading ? 'Đang xử lý...' : 'Tiếp theo'}
+                  </button>
+                </div>
               </div>
             ) : (
               <div style={{ display: 'grid', gap: 12 }}>

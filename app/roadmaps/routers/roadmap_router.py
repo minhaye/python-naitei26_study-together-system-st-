@@ -41,7 +41,10 @@ async def list_roadmaps(current_user: CurrentUser = Depends(get_current_user), s
 @router.post('/suggest/questions', response_model=RoadmapSuggestQuestionsResponse)
 async def suggest_roadmap_questions(data: RoadmapSuggestQuestionsRequest, current_user: CurrentUser = Depends(get_current_user)):
     try:
-        return await roadmap_ai_service.suggest_questions(data.description)
+        response = await roadmap_ai_service.suggest_questions(data.description)
+        if not response.questions:
+            raise HTTPException(400, 'Mô tả mục tiêu của bạn quá ngắn hoặc không rõ nghĩa. Vui lòng nhập chi tiết hơn.')
+        return response
     except RoadmapAiServiceNotConfigured as exc:
         logger.error("Roadmap AI questions requested but not configured: %s", exc)
         raise HTTPException(503, 'Tính năng gợi ý bằng AI hiện chưa khả dụng.') from exc
@@ -55,7 +58,10 @@ async def suggest_roadmap_questions(data: RoadmapSuggestQuestionsRequest, curren
 @router.post('/suggest', response_model=RoadmapSuggestion)
 async def suggest_roadmap(data: RoadmapSuggestRequest, current_user: CurrentUser = Depends(get_current_user)):
     try:
-        return await roadmap_ai_service.suggest(data.description, data.answers)
+        response = await roadmap_ai_service.suggest(data.description, data.answers)
+        if not response.phases:
+            raise HTTPException(400, 'Không thể tạo lộ trình. Mô tả mục tiêu của bạn không rõ nghĩa.')
+        return response
     except RoadmapAiServiceNotConfigured as exc:
         logger.error("Roadmap AI suggestion requested but not configured: %s", exc)
         raise HTTPException(503, 'Tính năng gợi ý bằng AI hiện chưa khả dụng.') from exc

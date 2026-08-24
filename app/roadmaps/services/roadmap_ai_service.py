@@ -15,7 +15,8 @@ _ROADMAP_SYSTEM_PROMPT = (
     "learner's goal (and any answers they gave to clarifying questions), respond with "
     "a concise title, a one-sentence goal restatement, and 4 to 8 sequential phases "
     "ordered from beginner to advanced. Write every field in Vietnamese, matching the "
-    "language the learner used."
+    "language the learner used. "
+    "CRITICAL: If the learner's goal is completely nonsensical, gibberish, or too vague to understand (e.g. 'abc', 'test', '123'), you MUST return an empty list for 'phases' and empty strings for title and goal."
 )
 
 _QUESTIONS_SYSTEM_PROMPT = (
@@ -24,7 +25,8 @@ _QUESTIONS_SYSTEM_PROMPT = (
     "change how the roadmap should be structured -- e.g. current skill level, hours "
     "available per week, how firm the deadline is, preferred learning style. Each "
     "question needs 2 to 4 concise answer options. Write every field in Vietnamese, "
-    "matching the language the learner used."
+    "matching the language the learner used. "
+    "CRITICAL: If the learner's goal is completely nonsensical, gibberish, or too vague to understand (e.g. 'abc', 'test', '123'), you MUST return an empty list for 'questions'."
 )
 
 # Plain JSON Schemas (not RoadmapSuggestion.model_json_schema()) -- Gemini's schema

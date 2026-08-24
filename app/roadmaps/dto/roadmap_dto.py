@@ -108,7 +108,7 @@ class RoadmapQuestion(BaseModel):
 
 
 class RoadmapSuggestQuestionsResponse(BaseModel):
-    questions: list[RoadmapQuestion] = Field(min_length=3, max_length=4)
+    questions: list[RoadmapQuestion] = Field(max_length=4)
 
 
 class RoadmapAnswer(BaseModel):
@@ -131,6 +131,6 @@ class RoadmapPhaseSuggestion(BaseModel):
 
 
 class RoadmapSuggestion(BaseModel):
-    title: str = Field(min_length=1, max_length=200)
-    goal: str = Field(min_length=1, max_length=500)
-    phases: list[RoadmapPhaseSuggestion] = Field(min_length=1, max_length=20)
+    title: str = Field(max_length=200)
+    goal: str = Field(max_length=500)
+    phases: list[RoadmapPhaseSuggestion] = Field(max_length=20)
