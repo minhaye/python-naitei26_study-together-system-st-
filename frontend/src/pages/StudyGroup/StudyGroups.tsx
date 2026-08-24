@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { ChevronDown, ChevronRight, UserPlus, Users, ArrowRight, Flame } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { getGroups, getMyGroups, createGroup, joinGroup, getMemberCounts, getMyMemberships } from '../../lib/group.api';
 import { ApiError } from '../../lib/apiClient';
@@ -122,13 +122,16 @@ export function StudyRooms() {
     const [groups, setGroups] = useState<GroupWithMembership[] | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
+    
+    const [searchParams, setSearchParams] = useSearchParams();
+    const searchQuery = searchParams.get('q') || '';
 
     const loadGroups = useCallback(async () => {
         setIsLoading(true);
         setLoadError(null);
         try {
             const [publicGroups, myGroupsList, memberCountsObj, myMemberships] = await Promise.all([
-                getGroups(true),
+                getGroups(true, searchQuery),
                 currentUserId ? getMyGroups().catch(() => []) : Promise.resolve([]),
                 getMemberCounts().catch(() => ({} as Record<string, number>)),
                 currentUserId ? getMyMemberships().catch(() => []) : Promise.resolve([]),
@@ -136,7 +139,14 @@ export function StudyRooms() {
 
             const merged = new Map<string, Group>();
             for (const group of publicGroups) merged.set(group.id, group);
-            for (const group of myGroupsList) merged.set(group.id, group);
+            
+            // For my groups, if there is a search query, filter them client-side
+            for (const group of myGroupsList) {
+                if (searchQuery && !group.name.toLowerCase().includes(searchQuery.toLowerCase())) {
+                    continue;
+                }
+                merged.set(group.id, group);
+            }
 
             // Membership lookup
             const myMembershipMap = new Map<string, GroupMember>();
@@ -161,7 +171,7 @@ export function StudyRooms() {
         } finally {
             setIsLoading(false);
         }
-    }, [currentUserId]);
+    }, [currentUserId, searchQuery]);
 
     useEffect(() => {
         let cancelled = false;
@@ -414,7 +424,7 @@ export function StudyRooms() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             {isDiscoverOpen ? <ChevronDown size={22} color="#0B1C30" /> : <ChevronRight size={22} color="#0B1C30" />}
                             <div style={{ color: '#0B1C30', fontSize: 24, fontFamily: 'Inter', fontWeight: '600', lineHeight: '32px' }}>
-                                Khám phá nhóm học ({discoverGroups.length})
+                                {searchQuery ? `Kết quả tìm kiếm cho "${searchQuery}" (${discoverGroups.length})` : `Khám phá nhóm học (${discoverGroups.length})`}
                             </div>
                         </div>
                         <div style={{ fontSize: 13, color: '#64748B', fontWeight: '500' }}>

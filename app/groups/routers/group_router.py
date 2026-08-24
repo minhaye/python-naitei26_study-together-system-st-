@@ -53,6 +53,7 @@ async def create_group(
 @router.get("/", response_model=list[GroupResponse])
 async def list_groups(
     public_only: bool = True,
+    search: str | None = None,
     skip: int = 0,
     limit: int = 50,
     session: AsyncSession = Depends(get_db_session)
@@ -62,8 +63,8 @@ async def list_groups(
     # basic metadata; the actually-sensitive data (membership rosters) is gated separately
     # below, not here.
     if public_only:
-        return await service.list_public(session, skip=skip, limit=limit)
-    return await service.list_all(session, skip=skip, limit=limit)
+        return await service.list_public(session, search=search, skip=skip, limit=limit)
+    return await service.list_all(session, search=search, skip=skip, limit=limit)
 
 
 @router.get("/mine", response_model=list[GroupResponse])

@@ -37,12 +37,20 @@ class GroupsService:
         )
         return result.scalar_one_or_none()
 
-    async def list_all(self, session: AsyncSession, skip: int = 0, limit: int = 50) -> list[Group]:
-        result = await session.execute(select(Group).options(selectinload(Group.streak)).offset(skip).limit(limit))
+    async def list_all(self, session: AsyncSession, search: str | None = None, skip: int = 0, limit: int = 50) -> list[Group]:
+        stmt = select(Group).options(selectinload(Group.streak))
+        if search:
+            stmt = stmt.where(Group.name.ilike(f"%{search}%"))
+        stmt = stmt.offset(skip).limit(limit)
+        result = await session.execute(stmt)
         return list(result.scalars().all())
 
-    async def list_public(self, session: AsyncSession, skip: int = 0, limit: int = 50) -> list[Group]:
-        result = await session.execute(select(Group).options(selectinload(Group.streak)).where(Group.is_public.is_(True)).offset(skip).limit(limit))
+    async def list_public(self, session: AsyncSession, search: str | None = None, skip: int = 0, limit: int = 50) -> list[Group]:
+        stmt = select(Group).options(selectinload(Group.streak)).where(Group.is_public.is_(True))
+        if search:
+            stmt = stmt.where(Group.name.ilike(f"%{search}%"))
+        stmt = stmt.offset(skip).limit(limit)
+        result = await session.execute(stmt)
         return list(result.scalars().all())
 
     async def list_by_member(self, session: AsyncSession, user_id: uuid.UUID) -> list[Group]:

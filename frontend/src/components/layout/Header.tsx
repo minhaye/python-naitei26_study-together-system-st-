@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { Search, Settings, ShieldCheck } from 'lucide-react';
-import { NavLink, Link, useNavigate } from 'react-router-dom';
+import { NavLink, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useAuthContext } from '../../contexts/auth-context';
 import { supabase } from '../../lib/supabase';
@@ -13,6 +14,8 @@ export function Header() {
   const { totalUnread } = useUnreadMessages();
   const { setDevSession, profile } = useAuthContext();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [headerSearch, setHeaderSearch] = useState(searchParams.get('q') || '');
 
   const handleLogout = async () => {
     setDevSession(null);
@@ -102,7 +105,23 @@ export function Header() {
             <div style={{justifyContent: 'flex-start', alignItems: 'center', gap: 24, display: 'flex'}}>
                 <div style={{position: 'relative', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'flex'}}>
                     <div style={{width: 256, paddingTop: 9, paddingBottom: 10, paddingLeft: 40, paddingRight: 16, background: '#F8F9FF', borderRadius: 6, outline: '1px #E2E8F0 solid', outlineOffset: '-1px', display: 'flex'}}>
-                        <input type="text" placeholder="Tìm kiếm nhóm..." style={{width: '100%', background: 'transparent', border: 'none', outline: 'none', color: '#6B7280', fontSize: 14, fontFamily: 'Inter', fontWeight: '400'}} />
+                        <input 
+                            type="text" 
+                            placeholder="Tìm kiếm nhóm..." 
+                            value={headerSearch}
+                            onChange={(e) => setHeaderSearch(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    const q = headerSearch.trim();
+                                    if (q) {
+                                        navigate(`/groups?q=${encodeURIComponent(q)}`);
+                                    } else {
+                                        navigate(`/groups`);
+                                    }
+                                }
+                            }}
+                            style={{width: '100%', background: 'transparent', border: 'none', outline: 'none', color: '#6B7280', fontSize: 14, fontFamily: 'Inter', fontWeight: '400'}} 
+                        />
                     </div>
                     <div style={{left: 12, top: 9, position: 'absolute', display: 'flex', alignItems: 'center'}}>
                         <Search size={18} color="#757682" />

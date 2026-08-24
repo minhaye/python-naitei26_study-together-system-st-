@@ -2,8 +2,10 @@ import { apiClient } from './apiClient';
 import { supabase } from './supabase';
 import type { Group, GroupCreate, GroupMember, GroupMemberCreate, GroupMemberRole, GroupUpdate } from './group.types';
 
-export function getGroups(publicOnly: boolean): Promise<Group[]> {
-  return apiClient.get<Group[]>(`/groups/?public_only=${publicOnly}`);
+export function getGroups(publicOnly: boolean, search?: string): Promise<Group[]> {
+  const query = new URLSearchParams({ public_only: String(publicOnly) });
+  if (search) query.set('search', search);
+  return apiClient.get<Group[]>(`/groups/?${query.toString()}`);
 }
 
 /** "My Groups": every Group the caller currently has an ACTIVE membership in, public or
