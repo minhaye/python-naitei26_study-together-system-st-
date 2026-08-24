@@ -10,11 +10,13 @@ from sqlalchemy.orm import selectinload
 
 from app.messages.entities.message_entity import Message, MessageReaction
 from app.messages.dto.message_dto import MessageCreate, MessageReactionSummary, MessageUpdate
+from app.notifications.services.notification_service import NotificationsService
 from app.profiles.services.profile_service import ProfilesService
 from app.attachments.services.attachment_service import AttachmentsService
 
 profiles_service = ProfilesService()
 attachments_service = AttachmentsService()
+notifications_service = NotificationsService()
 
 
 def _encode_cursor(created_at: datetime, message_id: uuid.UUID) -> str:
@@ -60,7 +62,19 @@ class MessagesService:
                 message.attachment_url = url_dict.get("url")
             except Exception:
                 pass
-                
+
+        try:
+            sender_name = (message.sender.display_name or message.sender.username or "Thành viên") if message.sender else "Thành viên"
+            await notifications_service.notify_direct_message(
+                session,
+                conversation_id=conversation_id,
+                sender_id=sender_id,
+                sender_name=sender_name,
+                message_content=data.content or "",
+            )
+        except Exception:
+            pass
+
         return message
 
     async def get_by_id(

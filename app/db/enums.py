@@ -34,15 +34,28 @@ class ModerationAction(str, enum.Enum):
 
 
 class NotificationType(str, enum.Enum):
+    # --- Forum tab ---
     POST_LIKE = "post_like"
     POST_COMMENT = "post_comment"
     COMMENT_REPLY = "comment_reply"
+    # --- Group tab (existing) ---
     GROUP_INVITE = "group_invite"
     GROUP_ROLE_CHANGED = "group_role_changed"
     ROOM_KICKED = "room_kicked"
     MENTION = "mention"
     STUDY_ROOM_INVITATION = "study_room_invitation"
     PRIVATE_CHANNEL_INVITATION = "private_channel_invitation"
+    # --- Goal tab (new) ---
+    TASK_DAILY_REMINDER = "task_daily_reminder"
+    TASK_DUE_SOON = "task_due_soon"
+    TASK_OVERDUE = "task_overdue"
+    # --- Group tab (new) ---
+    GROUP_NEW_RESOURCE = "group_new_resource"
+    STUDY_ROOM_FIRST_JOINER = "study_room_first_joiner"
+    STUDY_ROOM_ACTIVE = "study_room_active"
+    # --- Message tab (new) ---
+    NEW_DIRECT_MESSAGE = "new_direct_message"
+    MESSAGE_GROUP = "message_group"
 
 
 class InvitationMethod(str, enum.Enum):

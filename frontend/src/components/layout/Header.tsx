@@ -6,7 +6,7 @@ import { useAuthContext } from '../../contexts/auth-context';
 import { supabase } from '../../lib/supabase';
 import { Avatar } from '../ui/Avatar';
 import { CountBadge } from '../ui/CountBadge';
-import { PendingInvitationsBell } from '../invitations/PendingInvitationsBell';
+import { NotificationBell } from '../notifications/NotificationBell';
 import { useUnreadMessages } from '../../contexts/unread-messages-context';
 
 export function Header() {
@@ -130,7 +130,7 @@ export function Header() {
                 
                 {isLoggedIn ? (
                   <>
-                    <PendingInvitationsBell />
+                    <NotificationBell />
                     <Link to="/settings" aria-label="Cài đặt tài khoản" style={{display: 'flex', alignItems: 'center', color: '#00236F'}}>
                         <Settings size={21} strokeWidth={2.4} />
                     </Link>
