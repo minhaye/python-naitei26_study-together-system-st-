@@ -16,7 +16,8 @@ import {
     Ticket,
     Download,
     Image as ImageIcon,
-    ShieldCheck
+    ShieldCheck,
+    Flame
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useChannelMessagesRealtime } from '../../hooks/useChannelMessagesRealtime';
@@ -749,8 +750,25 @@ export function StudyGroupDetail() {
                         }}
                     >
                         <div style={{flex: 1, minWidth: 0, paddingRight: 8}}>
-                            <div style={{color: group.background_url ? '#FFFFFF' : '#0B1C30', fontSize: 16, fontFamily: 'Inter', fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>
-                                {group.name}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <div style={{color: group.background_url ? '#FFFFFF' : '#0B1C30', fontSize: 16, fontFamily: 'Inter', fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>
+                                    {group.name}
+                                </div>
+                                {(() => {
+                                    const currentStreak = group.streak?.current_streak || 0;
+                                    let color = '#3B82F6';
+                                    if (currentStreak === 0) color = '#94A3B8';
+                                    else if (currentStreak < 3) color = '#F59E0B';
+                                    else if (currentStreak < 10) color = '#EA580C';
+                                    else if (currentStreak < 30) color = '#E11D48';
+
+                                    return (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 2, background: 'rgba(255,255,255,0.9)', padding: '2px 6px', borderRadius: 12, boxShadow: '0 1px 2px rgba(0,0,0,0.1)', border: `1px solid ${color}33` }}>
+                                            <Flame size={14} color={color} fill={color} />
+                                            <span style={{ fontSize: 12, fontWeight: 700, color: color, fontFamily: 'Inter' }}>{currentStreak}</span>
+                                        </div>
+                                    );
+                                })()}
                             </div>
                             <div style={{color: group.background_url ? '#E2E8F0' : '#64748B', fontSize: 12, fontFamily: 'Inter', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6}}>
                                 <span style={{padding: '2px 6px', background: group.is_public ? '#DCFCE7' : '#FEF3C7', color: group.is_public ? '#15803D' : '#B45309', borderRadius: 4, fontSize: 10, fontWeight: '700'}}>

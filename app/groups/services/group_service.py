@@ -32,14 +32,17 @@ class GroupsService:
         return group
 
     async def get_by_id(self, session: AsyncSession, group_id: uuid.UUID) -> Group | None:
-        return await session.get(Group, group_id)
+        result = await session.execute(
+            select(Group).options(selectinload(Group.streak)).where(Group.id == group_id)
+        )
+        return result.scalar_one_or_none()
 
     async def list_all(self, session: AsyncSession, skip: int = 0, limit: int = 50) -> list[Group]:
-        result = await session.execute(select(Group).offset(skip).limit(limit))
+        result = await session.execute(select(Group).options(selectinload(Group.streak)).offset(skip).limit(limit))
         return list(result.scalars().all())
 
     async def list_public(self, session: AsyncSession, skip: int = 0, limit: int = 50) -> list[Group]:
-        result = await session.execute(select(Group).where(Group.is_public.is_(True)).offset(skip).limit(limit))
+        result = await session.execute(select(Group).options(selectinload(Group.streak)).where(Group.is_public.is_(True)).offset(skip).limit(limit))
         return list(result.scalars().all())
 
     async def list_by_member(self, session: AsyncSession, user_id: uuid.UUID) -> list[Group]:
@@ -52,6 +55,7 @@ class GroupsService:
         result = await session.execute(
             select(Group)
             .join(GroupMember, GroupMember.group_id == Group.id)
+            .options(selectinload(Group.streak))
             .where(GroupMember.user_id == user_id, GroupMember.status == MemberStatus.ACTIVE)
         )
         return list(result.scalars().all())

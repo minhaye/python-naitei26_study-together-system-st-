@@ -4,6 +4,13 @@ import type { UserSummary } from './profile.types';
 export type GroupMemberRole = 'owner' | 'moderator' | 'member';
 export type MemberStatus = 'active' | 'banned' | 'left';
 
+export interface GroupStreak {
+  current_streak: number;
+  highest_streak: number;
+  today_messages_count: number;
+  today_study_minutes: number;
+}
+
 /** Mirrors GroupResponse (app/groups/dto/group_dto.py) */
 export interface Group {
   id: string;
@@ -16,6 +23,7 @@ export interface Group {
   is_public: boolean;
   created_at: string;
   updated_at: string;
+  streak?: GroupStreak;
 }
 
 /** Mirrors GroupMemberResponse. `user` is the canonical identity source for this member --

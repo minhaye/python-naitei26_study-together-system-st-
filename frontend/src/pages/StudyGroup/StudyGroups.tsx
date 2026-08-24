@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { ChevronDown, ChevronRight, UserPlus, Users, ArrowRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, UserPlus, Users, ArrowRight, Flame } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { getGroups, getMyGroups, createGroup, joinGroup, getMemberCounts, getMyMemberships } from '../../lib/group.api';
 import { ApiError } from '../../lib/apiClient';
 import { JoinByCodeModal } from '../../components/invitations/JoinByCodeModal';
-import type { Group, GroupMember, GroupMemberRole } from '../../lib/group.types';
+import type { Group, GroupMember, GroupMemberRole, GroupStreak } from '../../lib/group.types';
 import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
 import { StudyGroupCardSkeleton } from '../../components/ui/Skeleton';
 import { RestrictionBanner } from '../../components/ui/RestrictionBanner';
@@ -21,6 +21,34 @@ function roleLabel(role: GroupMemberRole | null): string {
     if (role === 'owner') return 'Trưởng nhóm';
     if (role === 'moderator') return 'Điều hành viên';
     return 'Thành viên';
+}
+
+function getStreakColor(streak: number) {
+    if (streak === 0) return '#94A3B8'; // Gray for 0
+    if (streak < 3) return '#F59E0B'; // Amber
+    if (streak < 10) return '#EA580C'; // Orange
+    if (streak < 30) return '#E11D48'; // Rose/Red
+    return '#3B82F6'; // Blue fire
+}
+
+function GroupStreakBadge({ streak }: { streak?: GroupStreak }) {
+    const currentStreak = streak?.current_streak || 0;
+    const color = getStreakColor(currentStreak);
+    
+    return (
+        <div style={{
+            position: 'absolute', top: 12, right: 12, zIndex: 10,
+            background: 'white', borderRadius: 20, padding: '4px 10px',
+            display: 'flex', alignItems: 'center', gap: 4,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+            border: `1px solid ${color}33`,
+        }}>
+            <Flame size={16} color={color} fill={color} />
+            <span style={{ color, fontSize: 13, fontWeight: 700, fontFamily: 'Inter' }}>
+                {currentStreak}
+            </span>
+        </div>
+    );
 }
 
 /** Prefers the group's custom background_url (set via GroupSettingsModal by the owner or a
@@ -350,6 +378,7 @@ export function StudyRooms() {
                             {myGroups.map(({ group, activeMembersCount, role }) => (
                                 <div key={group.id} style={{ background: 'white', borderRadius: 8, outline: '1px #E2E8F0 solid', outlineOffset: '-1px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                                     <div style={{ height: 128, position: 'relative', background: '#E5EEFF' }}>
+                                        <GroupStreakBadge streak={group.streak} />
                                         <GroupCover group={group} />
                                     </div>
                                     <div style={{ padding: 24, display: 'flex', flexDirection: 'column', flex: 1 }}>
@@ -402,6 +431,7 @@ export function StudyRooms() {
                             {discoverGroups.map(({ group, activeMembersCount }) => (
                                 <div key={group.id} style={{ background: 'white', borderRadius: 8, outline: '1px #E2E8F0 solid', outlineOffset: '-1px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                                     <div style={{ height: 128, position: 'relative', background: '#E5EEFF' }}>
+                                        <GroupStreakBadge streak={group.streak} />
                                         <GroupCover group={group} />
                                     </div>
                                     <div style={{ padding: 24, display: 'flex', flexDirection: 'column', flex: 1 }}>

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.db.enums import GroupMemberRole, MemberStatus, pg_enum
+from app.groups.entities.group_streak_entity import GroupStreak
 
 if TYPE_CHECKING:
     from app.channels.entities.channel_entity import Channel
@@ -42,6 +43,7 @@ class Group(Base):
     resources: Mapped[list["Resource"]] = relationship(back_populates="group")
     study_rooms: Mapped[list["StudyRoom"]] = relationship(back_populates="group")
     notifications: Mapped[list["Notification"]] = relationship(back_populates="group")
+    streak: Mapped["GroupStreak"] = relationship(back_populates="group", uselist=False)
 
 
 class GroupMember(Base):

@@ -1,4 +1,5 @@
-import { Check, ChevronLeft, ChevronRight, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { useState } from 'react';
+import { Check, ChevronLeft, ChevronRight, Pencil, Plus, Trash2, X, ChevronDown } from 'lucide-react';
 import { getDisplayName } from '../../utils/userDisplay';
 import { NOTE_CONTENT_MAX_LENGTH, NOTE_TITLE_MAX_LENGTH } from '../../lib/note.types';
 import type { GroupNotesController } from '../../hooks/useGroupNotes';
@@ -85,18 +86,33 @@ export function NotesStackPanel({
   submitDelete,
   isGroupManager,
 }: NotesStackPanelProps) {
+  const [isExpanded, setIsExpanded] = useState(false); // Default to collapsed
+
   return (
     <div style={{ margin: '12px 12px 4px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: 11, fontWeight: '700', color: '#0369A1', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          Ghi chú
-        </span>
-        {isGroupManager && !isAdding && !isEditing && notes.length > 0 && (
-          <button onClick={startAdd} title="Tạo ghi chú" style={{ background: 'transparent', border: 'none', color: '#0284C7', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+      <div 
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          {isExpanded ? <ChevronDown size={14} color="#0369A1" /> : <ChevronRight size={14} color="#0369A1" />}
+          <span style={{ fontSize: 11, fontWeight: '700', color: '#0369A1', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Ghi chú
+          </span>
+        </div>
+        {isExpanded && isGroupManager && !isAdding && !isEditing && notes.length > 0 && (
+          <button 
+            onClick={(e) => { e.stopPropagation(); startAdd(); }} 
+            title="Tạo ghi chú" 
+            style={{ background: 'transparent', border: 'none', color: '#0284C7', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+          >
             <Plus size={16} />
           </button>
         )}
       </div>
+
+      {isExpanded && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
 
       {listError && <div style={errorStyle}>{listError.message}</div>}
 
@@ -262,6 +278,8 @@ export function NotesStackPanel({
 
           {deleteError && <div style={errorStyle}>{deleteError.message}</div>}
         </>
+      )}
+        </div>
       )}
     </div>
   );

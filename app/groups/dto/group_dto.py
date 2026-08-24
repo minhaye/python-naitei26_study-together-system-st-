@@ -7,6 +7,15 @@ from app.db.enums import GroupMemberRole, MemberStatus
 from app.profiles.dto.profile_dto import UserSummary
 
 
+class GroupStreakResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
+    current_streak: int
+    highest_streak: int
+    today_messages_count: int
+    today_study_minutes: int
+
+
 class GroupCreate(BaseModel):
     """No `owner_id` field: the group owner is always the authenticated caller
     (see GroupsService.create / group_router.create_group), never client-supplied."""
@@ -37,6 +46,7 @@ class GroupResponse(BaseModel):
     is_public: bool
     created_at: datetime
     updated_at: datetime
+    streak: GroupStreakResponse | None = None
 
 
 class GroupBackgroundConfirm(BaseModel):
