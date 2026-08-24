@@ -579,20 +579,79 @@ export function StudyGroupDetail() {
     const targetChannelId = activeChannel;
     setIsSendingMessage(true);
     setSendMessageError(null);
-    try {
-      // Upload first, create the message second -- a failed upload must never produce an
-      // orphaned/misleading message record (see useMessageImageAttachment.uploadImage).
-      const attachmentPath = imageAttachment.hasImage ? await imageAttachment.uploadImage(conversationId) : null;
-      const sent = await sendConversationMessage(conversationId, { content: trimmed || null, attachment_path: attachmentPath });
-      // Only reflect it in the visible list if the user hasn't switched channels while
-      // the request was in flight; the message is still persisted either way. Deduped
-      // against appendMessageDeduped since Realtime may also deliver this same row.
-      if (activeChannelRef.current === targetChannelId) {
-        setMessages((prev) => appendMessageDeduped(prev, sent));
-      }
+
+    const isTextOnly = !imageAttachment.hasImage;
+    const tempId = `temp-${Date.now()}`;
+    let sent: Message | null = null;
+
+    if (isTextOnly && activeChannelRef.current === targetChannelId) {
+      const tempMsg: Message = {
+        id: tempId,
+        conversation_id: conversationId,
+        sender_id: currentUser.id,
+        content: trimmed,
+        attachment_path: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        deleted_at: null,
+        sender: {
+          id: currentUser.id,
+          display_name: currentUser.name,
+          avatar_url: currentUser.avatarUrl || undefined,
+          color: currentUser.color,
+        },
+        reactions: []
+      };
+      setMessages((prev) => appendMessageDeduped(prev, tempMsg));
       setChatInput('');
-      imageAttachment.clearImage();
+    }
+
+    try {
+      // Upload first, create the message second
+      const attachmentPath = imageAttachment.hasImage ? await imageAttachment.uploadImage(conversationId) : null;
+      sent = await sendConversationMessage(conversationId, { content: trimmed || null, attachment_path: attachmentPath });
+      
+      if (activeChannelRef.current === targetChannelId) {
+        if (isTextOnly) {
+          setMessages((prev) => prev.map(m => m.id === tempId ? sent! : m));
+        } else {
+          setMessages((prev) => appendMessageDeduped(prev, sent!));
+          setChatInput('');
+          imageAttachment.clearImage();
+        }
+      }
+
+      // Optimistically update group streak on the client side
+      setGroup((prev) => {
+        if (!prev) return prev;
+        const streakObj = prev.streak || { current_streak: 0, highest_streak: 0, today_messages_count: 0, today_study_minutes: 0 };
+        const newCount = streakObj.today_messages_count + 1;
+        
+        let newStreak = streakObj.current_streak;
+        let newHighest = streakObj.highest_streak;
+        
+        // If it crosses the threshold of 5 messages today, and study minutes haven't already crossed 10
+        if (newCount === 5 && streakObj.today_study_minutes < 10) {
+          newStreak += 1;
+          if (newStreak > newHighest) newHighest = newStreak;
+        }
+        
+        return {
+          ...prev,
+          streak: {
+            ...streakObj,
+            today_messages_count: newCount,
+            current_streak: newStreak,
+            highest_streak: newHighest
+          }
+        };
+      });
+
     } catch (err) {
+      if (isTextOnly && activeChannelRef.current === targetChannelId) {
+        setMessages((prev) => prev.filter(m => m.id !== tempId));
+        setChatInput(trimmed); // Restore input
+      }
       setSendMessageError(err instanceof ApiError ? err.message : 'Không thể gửi tin nhắn.');
     } finally {
       setIsSendingMessage(false);
