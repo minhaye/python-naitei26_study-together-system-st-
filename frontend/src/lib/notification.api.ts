@@ -41,3 +41,21 @@ export function markAllAsRead(category?: NotificationCategory): Promise<{ update
 export function deleteNotification(notificationId: string): Promise<void> {
   return apiClient.delete<void>(`/notifications/${notificationId}`);
 }
+
+export interface NotificationSettings {
+  enable_forum: boolean;
+  enable_group: boolean;
+  enable_goal: boolean;
+  enable_message: boolean;
+  enable_sound: boolean;
+}
+
+export function getNotificationSettings(): Promise<NotificationSettings> {
+  return apiClient.get<NotificationSettings>('/notifications/settings');
+}
+
+export function updateNotificationSettings(
+  settings: Partial<NotificationSettings>
+): Promise<NotificationSettings> {
+  return apiClient.put<NotificationSettings>('/notifications/settings', settings);
+}

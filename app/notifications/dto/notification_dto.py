@@ -83,3 +83,19 @@ class UnreadCountsResponse(BaseModel):
     group: int
     goal: int
     message: int
+
+
+class NotificationSettingsResponse(BaseModel):
+    enable_forum: bool = True
+    enable_group: bool = True
+    enable_goal: bool = True
+    enable_message: bool = True
+    enable_sound: bool = True
+
+
+class NotificationSettingsUpdate(BaseModel):
+    enable_forum: bool | None = None
+    enable_group: bool | None = None
+    enable_goal: bool | None = None
+    enable_message: bool | None = None
+    enable_sound: bool | None = None

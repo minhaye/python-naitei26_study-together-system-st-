@@ -9,6 +9,7 @@ from app.db.enums import NotificationType
 from app.notifications.dto.notification_dto import (
     NotificationCategory,
     NotificationCreate,
+    NotificationSettingsUpdate,
     NOTIFICATION_TYPE_TO_CATEGORY,
 )
 from app.notifications.entities.notification_entity import Notification
@@ -47,6 +48,29 @@ def _clean_text_preview(text: str, max_len: int = 100) -> str:
 
 
 class NotificationsService:
+
+    DEFAULT_SETTINGS = {
+        "enable_forum": True,
+        "enable_group": True,
+        "enable_goal": True,
+        "enable_message": True,
+        "enable_sound": True,
+    }
+
+    _USER_SETTINGS_STORE: dict[uuid.UUID, dict] = {}
+
+    async def get_settings(self, session: AsyncSession, user_id: uuid.UUID) -> dict:
+        stored = self._USER_SETTINGS_STORE.get(user_id)
+        if stored:
+            return {**self.DEFAULT_SETTINGS, **stored}
+        return dict(self.DEFAULT_SETTINGS)
+
+    async def update_settings(self, session: AsyncSession, user_id: uuid.UUID, settings_in: NotificationSettingsUpdate) -> dict:
+        current = dict(self._USER_SETTINGS_STORE.get(user_id) or self.DEFAULT_SETTINGS)
+        updates = settings_in.model_dump(exclude_unset=True)
+        current.update(updates)
+        self._USER_SETTINGS_STORE[user_id] = current
+        return current
 
     # ── CRUD ───────────────────────────────────────────────────────────────
 

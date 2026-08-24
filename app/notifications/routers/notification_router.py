@@ -10,6 +10,8 @@ from app.db.session import get_db_session
 from app.notifications.dto.notification_dto import (
     NotificationCategory,
     NotificationResponse,
+    NotificationSettingsResponse,
+    NotificationSettingsUpdate,
     NOTIFICATION_TYPE_TO_CATEGORY,
     UnreadCountsResponse,
 )
@@ -31,6 +33,27 @@ def _enrich_response(notification) -> dict:
         **{c.key: getattr(notification, c.key) for c in notification.__table__.columns},
         "category": cat,
     }
+
+
+# ── Notification Settings ───────────────────────────────────────────────
+
+@router.get("/settings", response_model=NotificationSettingsResponse)
+async def get_notification_settings(
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Return user notification channel preferences."""
+    return await service.get_settings(session, current_user.id)
+
+
+@router.put("/settings", response_model=NotificationSettingsResponse)
+async def update_notification_settings(
+    body: NotificationSettingsUpdate,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Update user notification channel preferences."""
+    return await service.update_settings(session, current_user.id, body)
 
 
 # ── Scheduler trigger endpoint ───────────────────────────────────────────

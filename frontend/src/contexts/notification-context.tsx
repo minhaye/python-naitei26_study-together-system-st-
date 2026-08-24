@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
 import * as notificationApi from '../lib/notification.api';
+import { playNotificationChime } from '../utils/sound';
 import type {
   NotificationCategory,
   NotificationItem,
@@ -114,10 +115,26 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 total: prev.total + 1,
                 [cat]: (prev[cat] || 0) + 1,
               }));
+
+              // Play notification sound if enabled in settings
+              void notificationApi
+                .getNotificationSettings()
+                .then((settings) => {
+                  const categoryKey = `enable_${cat}` as keyof typeof settings;
+                  const channelEnabled = settings[categoryKey] ?? true;
+                  const soundEnabled = settings.enable_sound ?? true;
+                  if (soundEnabled && channelEnabled) {
+                    playNotificationChime();
+                  }
+                })
+                .catch(() => {
+                  playNotificationChime();
+                });
             }
           } catch (err) {
             console.error('[RealtimeNoti] ❌ Failed to fetch latest notification on realtime trigger:', err);
             setUnreadCounts((prev) => ({ ...prev, total: prev.total + 1 }));
+            playNotificationChime();
           }
         }
       )
