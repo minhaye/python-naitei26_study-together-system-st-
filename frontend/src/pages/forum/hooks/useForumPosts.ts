@@ -48,7 +48,8 @@ export function useForumPosts(
   categoryId: string | null,
   search: string,
   filter: FilterOption = 'latest',
-  currentUserId?: string
+  currentUserId?: string,
+  authLoading = false
 ) {
   const forumState = useForumState();
   const { posts, setPosts, hasMore, setHasMore, skip, setSkip, selectedTag } = forumState;
@@ -59,7 +60,7 @@ export function useForumPosts(
 
   /** Tải một trang bài viết và nối vào danh sách hiện tại */
   const fetchNextPage = useCallback(async () => {
-    if (isLoading || !hasMore || isFetchingRef.current) return;
+    if (isLoading || !hasMore || isFetchingRef.current || authLoading) return;
     isFetchingRef.current = true;
     setIsLoading(true);
 
@@ -83,7 +84,7 @@ export function useForumPosts(
       setIsLoading(false);
       isFetchingRef.current = false;
     }
-  }, [isLoading, hasMore, categoryId, skip, selectedTag, currentUserId, filter, search, setPosts, setSkip, setHasMore]);
+  }, [isLoading, hasMore, categoryId, skip, selectedTag, currentUserId, filter, search, setPosts, setSkip, setHasMore, authLoading]);
 
   /** Reset và tải lại từ đầu khi đổi danh mục, bộ lọc, từ khóa hoặc hashtag */
   useEffect(() => {
@@ -94,6 +95,9 @@ export function useForumPosts(
     }
 
     isInitialMountRef.current = false;
+
+    // Không gửi request khi Auth Session đang trong quá trình tải (tránh gửi request không có Bearer token)
+    if (authLoading) return;
 
     setHasMore(true);
     setSkip(0);
@@ -116,7 +120,7 @@ export function useForumPosts(
 
       setIsLoading(true);
 
-      // 2. REVALIDATE: Fetch ngầm dữ liệu mới
+      // 2. REVALIDATE: Fetch ngầm dữ liệu mới (đã có Bearer token nếu đã đăng nhập)
       try {
         const authorIdParam = filter === 'my_questions' ? currentUserId : undefined;
         const firstPage = await forumApi.getPosts(categoryId, 0, PAGE_SIZE, selectedTag, authorIdParam);
@@ -146,7 +150,7 @@ export function useForumPosts(
         setIsLoading(false);
       }
     })();
-  }, [categoryId, search, filter, selectedTag]);
+  }, [categoryId, search, filter, selectedTag, currentUserId, authLoading]);
 
   return { posts, setPosts, isLoading, hasMore, fetchNextPage };
 }

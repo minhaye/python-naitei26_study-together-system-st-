@@ -1,4 +1,4 @@
-import type { Post } from '../types/forum.types';
+import type { Post, ReactionSummary } from '../types/forum.types';
 
 const CACHE_KEY = 'forum_landing_posts_cache';
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 phút
@@ -45,5 +45,26 @@ export const forumCache = {
     } catch (e) {
       console.error('Failed to write forum cache', e);
     }
+  },
+
+  /**
+   * Cập nhật reaction của một bài viết trong LocalStorage cache
+   */
+  updatePostReaction: (postId: string, reactions: ReactionSummary[]) => {
+    const posts = forumCache.get();
+    if (!posts) return;
+    const updated = posts.map((p) => (p.id === postId ? { ...p, reactions } : p));
+    forumCache.set(updated);
+  },
+
+  /**
+   * Cập nhật thông tin một bài viết trong LocalStorage cache
+   */
+  updatePost: (postId: string, updatedPost: Post) => {
+    const posts = forumCache.get();
+    if (!posts) return;
+    const updated = posts.map((p) => (p.id === postId ? updatedPost : p));
+    forumCache.set(updated);
   }
 };
+

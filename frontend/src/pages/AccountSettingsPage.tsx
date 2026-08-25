@@ -47,7 +47,7 @@ export function AccountSettingsPage() {
     finally { setUploadingAvatar(false); }
   };
 
-  return <main style={{ width: '100%', minHeight: 'calc(100vh - 64px)', background: 'linear-gradient(180deg, #F8FAFC 0%, #F1F5F9 100%)', padding: 32, boxSizing: 'border-box' }}>
+  return <main style={{ width: '100%', height: 'calc(100vh - 64px)', overflowY: 'auto', background: 'linear-gradient(180deg, #F8FAFC 0%, #F1F5F9 100%)', padding: 32, boxSizing: 'border-box' }}>
     <style>{`
       .settings-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
       .settings-actions { border-top: 1px solid #DEE5F0; padding-top: 24px; display: flex; justify-content: flex-end; align-items: center; gap: 28px; }
