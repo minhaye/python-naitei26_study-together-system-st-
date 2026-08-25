@@ -36,12 +36,14 @@ import { ErrorBoundary } from '../../components/ui/ErrorBoundary';
 import { RestrictionBanner } from '../../components/ui/RestrictionBanner';
 import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
 import { getDisplayName } from '../../utils/userDisplay';
+import { isLocalhost } from '../../utils/env';
 import { InviteModal } from '../../components/invitations/InviteModal';
 import { MessageUserTrigger } from '../../components/messages/MessageUserTrigger';
 import { MeetingProvider } from './meeting/MeetingProvider';
 import { MeetingVideoGrid } from './meeting/MeetingVideoGrid';
 import { MeetingControls } from './meeting/MeetingControls';
-import { SyncedWhiteboard } from './meeting/SyncedWhiteboard';
+import { WhiteboardPanel } from './meeting/WhiteboardPanel';
+import { WhiteboardUnavailableModal } from './meeting/WhiteboardUnavailableModal';
 import { PresentationViewer } from './meeting/PresentationViewer';
 import { PreJoinLobby } from './meeting/PreJoinLobby';
 import type { MediaJoinChoice } from './meeting/PreJoinLobby';
@@ -119,6 +121,18 @@ export function StudyRoom() {
   const [mediaChoice, setMediaChoice] = useState<MediaJoinChoice>({ audioEnabled: true, videoEnabled: true });
 
   // Whiteboard tools (now handled internally by Tldraw)
+
+  // Tldraw's license only covers localhost/dev usage -- mounting it on any other origin would
+  // surface licensing violations, so the whiteboard is gated on the browser's own hostname
+  // rather than a build-time flag (see utils/env.ts).
+  const whiteboardAllowed = useMemo(() => isLocalhost(), []);
+  const [isWhiteboardUnavailableModalOpen, setIsWhiteboardUnavailableModalOpen] = useState(false);
+  const isWhiteboardTabActive = activeMode === 'whiteboard' && activeBoardTab === 'whiteboard';
+  useEffect(() => {
+    if (isWhiteboardTabActive && !whiteboardAllowed) {
+      setIsWhiteboardUnavailableModalOpen(true);
+    }
+  }, [isWhiteboardTabActive, whiteboardAllowed]);
 
   const handleLeaveRoom = async () => {
     if (document.fullscreenElement && document.exitFullscreen) {
@@ -545,6 +559,11 @@ export function StudyRoom() {
         targetLabel={room.name}
       />
 
+      <WhiteboardUnavailableModal
+        isOpen={isWhiteboardUnavailableModalOpen}
+        onClose={() => setIsWhiteboardUnavailableModalOpen(false)}
+      />
+
       {/* Modal: Xác nhận xóa phòng học */}
       {isDeleteRoomModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 200 }}>
@@ -646,13 +665,13 @@ export function StudyRoom() {
             <div style={{flex: 1, position: 'relative', overflow: 'hidden'}}>
               
               {activeBoardTab === 'whiteboard' ? (
-                <div style={{position: 'absolute', inset: 0}}>
-                  <SyncedWhiteboard
-                    roomId={room.id}
-                    initialState={room.whiteboard_state}
-                    isReadonly={!(isGroupManager || currentUserRole === 'host' || currentUserRole === 'moderator')}
-                  />
-                </div>
+                <WhiteboardPanel
+                  roomId={room.id}
+                  initialState={room.whiteboard_state}
+                  isReadonly={!(isGroupManager || currentUserRole === 'host' || currentUserRole === 'moderator')}
+                  isAvailable={whiteboardAllowed}
+                  onUnavailableClick={() => setIsWhiteboardUnavailableModalOpen(true)}
+                />
               ) : (
                 <div style={{position: 'absolute', inset: 0, background: '#FFFFFF', backgroundImage: 'radial-gradient(#CBD5E1 1px, transparent 1px)', backgroundSize: '24px 24px'}}>
                   <PresentationViewer
