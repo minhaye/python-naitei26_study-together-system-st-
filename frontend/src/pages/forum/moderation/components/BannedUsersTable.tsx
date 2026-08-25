@@ -6,33 +6,44 @@ import { ApiError } from '../../../../lib/apiClient';
 import { Button } from '../../../../components/ui/Button';
 import { BanUserModal } from './BanUserModal';
 import { MessageUserTrigger } from '../../../../components/messages/MessageUserTrigger';
+import { Pagination } from '../../../../components/ui/Pagination';
+
+const PAGE_SIZE = 10;
 
 export const BannedUsersTable: React.FC = () => {
   const [bans, setBans] = useState<BanResponse[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [isBanModalOpen, setIsBanModalOpen] = useState(false);
 
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
   const load = () => {
     setIsLoading(true);
     moderationApi
-      .listBans({ activeOnly: true, limit: 100 })
-      .then(setBans)
+      .listBans({ activeOnly: true, skip: (page - 1) * PAGE_SIZE, limit: PAGE_SIZE })
+      .then((res) => {
+        setBans(res.items);
+        setTotal(res.total);
+      })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Không thể tải danh sách lệnh cấm.'))
       .finally(() => setIsLoading(false));
   };
 
   useEffect(() => {
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
 
   const handleRevoke = async (ban: BanResponse) => {
     if (!window.confirm('Gỡ lệnh cấm này?')) return;
     setPendingId(ban.id);
     try {
       await moderationApi.revokeBan(ban.id);
-      setBans((prev) => prev.filter((b) => b.id !== ban.id));
+      load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Không thể gỡ lệnh cấm.');
     } finally {
@@ -45,7 +56,7 @@ export const BannedUsersTable: React.FC = () => {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h3 style={{ margin: 0, fontSize: 16, color: '#0F172A' }}>Người dùng đang bị cấm ({bans.length})</h3>
+        <h3 style={{ margin: 0, fontSize: 16, color: '#0F172A' }}>Người dùng đang bị cấm ({total})</h3>
         <Button variant="danger" onClick={() => setIsBanModalOpen(true)}>
           <UserX size={16} /> Cấm người dùng
         </Button>
@@ -89,6 +100,8 @@ export const BannedUsersTable: React.FC = () => {
           ))}
         </div>
       )}
+
+      <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
 
       <BanUserModal isOpen={isBanModalOpen} onClose={() => setIsBanModalOpen(false)} onCreated={load} />
     </div>

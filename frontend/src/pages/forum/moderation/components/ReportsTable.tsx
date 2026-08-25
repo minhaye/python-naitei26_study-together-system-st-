@@ -5,32 +5,43 @@ import { REPORT_REASON_LABELS, type ReportResponse } from '../../../../lib/moder
 import { ApiError } from '../../../../lib/apiClient';
 import { BanUserModal } from './BanUserModal';
 import { MessageUserTrigger } from '../../../../components/messages/MessageUserTrigger';
+import { Pagination } from '../../../../components/ui/Pagination';
+
+const PAGE_SIZE = 10;
 
 export const ReportsTable: React.FC = () => {
   const [reports, setReports] = useState<ReportResponse[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [restrictTarget, setRestrictTarget] = useState<ReportResponse | null>(null);
 
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
   const load = () => {
     setIsLoading(true);
     moderationApi
-      .listReports({ status: 'pending', limit: 100 })
-      .then(setReports)
+      .listReports({ status: 'pending', skip: (page - 1) * PAGE_SIZE, limit: PAGE_SIZE })
+      .then((res) => {
+        setReports(res.items);
+        setTotal(res.total);
+      })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Không thể tải danh sách báo cáo.'))
       .finally(() => setIsLoading(false));
   };
 
   useEffect(() => {
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
 
   const handleDismiss = async (report: ReportResponse) => {
     setPendingId(report.id);
     try {
       await moderationApi.updateReportStatus(report.id, { status: 'dismissed' });
-      setReports((prev) => prev.filter((r) => r.id !== report.id));
+      load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Không thể bỏ qua báo cáo.');
     } finally {
@@ -45,15 +56,15 @@ export const ReportsTable: React.FC = () => {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Không thể cập nhật trạng thái báo cáo.');
     }
-    setReports((prev) => prev.filter((r) => r.id !== restrictTarget.id));
     setRestrictTarget(null);
+    load();
   };
 
   const formatDate = (iso: string) => new Date(iso).toLocaleString('vi-VN');
 
   return (
     <div>
-      <h3 style={{ margin: '0 0 16px 0', fontSize: 16, color: '#0F172A' }}>Báo cáo đang chờ xử lý ({reports.length})</h3>
+      <h3 style={{ margin: '0 0 16px 0', fontSize: 16, color: '#0F172A' }}>Báo cáo đang chờ xử lý ({total})</h3>
 
       {error && (
         <div style={{ padding: '10px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, color: '#B91C1C', fontSize: 13, marginBottom: 12 }}>
@@ -115,6 +126,8 @@ export const ReportsTable: React.FC = () => {
           ))}
         </div>
       )}
+
+      <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
 
       <BanUserModal
         isOpen={restrictTarget !== null}

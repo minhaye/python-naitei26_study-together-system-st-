@@ -3,6 +3,7 @@ import { History } from 'lucide-react';
 import { moderationApi } from '../../../../lib/moderation.api';
 import { MODERATION_ACTION_LABELS, type ModerationActionResponse } from '../../../../lib/moderation.types';
 import { ApiError } from '../../../../lib/apiClient';
+import { Pagination } from '../../../../components/ui/Pagination';
 
 const ACTION_COLORS: Record<string, string> = {
   delete_post: '#DC2626',
@@ -13,18 +14,28 @@ const ACTION_COLORS: Record<string, string> = {
   revoke_moderator: '#7C3AED',
 };
 
+const PAGE_SIZE = 10;
+
 export const ModerationActionsLog: React.FC = () => {
   const [actions, setActions] = useState<ModerationActionResponse[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
   useEffect(() => {
+    setIsLoading(true);
     moderationApi
-      .listActions({ limit: 100 })
-      .then(setActions)
+      .listActions({ skip: (page - 1) * PAGE_SIZE, limit: PAGE_SIZE })
+      .then((res) => {
+        setActions(res.items);
+        setTotal(res.total);
+      })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Không thể tải lịch sử kiểm duyệt.'))
       .finally(() => setIsLoading(false));
-  }, []);
+  }, [page]);
 
   return (
     <div>
@@ -66,6 +77,8 @@ export const ModerationActionsLog: React.FC = () => {
           ))}
         </div>
       )}
+
+      <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
     </div>
   );
 };

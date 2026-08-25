@@ -5,29 +5,40 @@ import type { Post } from '../../../forum/types/forum.types';
 import { ReasonPromptModal } from '../../../../components/ui/ReasonPromptModal';
 import { ApiError } from '../../../../lib/apiClient';
 import { MessageUserTrigger } from '../../../../components/messages/MessageUserTrigger';
+import { Pagination } from '../../../../components/ui/Pagination';
+
+const PAGE_SIZE = 10;
 
 export const PostsModerationTable: React.FC = () => {
   const [posts, setPosts] = useState<Post[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Post | null>(null);
 
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
   const load = () => {
     setIsLoading(true);
     forumApi
-      .getPosts(null, 0, 50)
-      .then(setPosts)
+      .getPosts(null, (page - 1) * PAGE_SIZE, PAGE_SIZE)
+      .then((res) => {
+        setPosts(res.posts);
+        setTotal(res.total);
+      })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Không thể tải danh sách bài viết.'))
       .finally(() => setIsLoading(false));
   };
 
   useEffect(() => {
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
 
   return (
     <div>
-      <h3 style={{ margin: '0 0 16px 0', fontSize: 16, color: '#0F172A' }}>Bài viết gần đây ({posts.length})</h3>
+      <h3 style={{ margin: '0 0 16px 0', fontSize: 16, color: '#0F172A' }}>Bài viết gần đây ({total})</h3>
 
       {error && (
         <div style={{ padding: '10px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, color: '#B91C1C', fontSize: 13, marginBottom: 12 }}>
@@ -81,6 +92,8 @@ export const PostsModerationTable: React.FC = () => {
         </div>
       )}
 
+      <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+
       <ReasonPromptModal
         isOpen={deleteTarget !== null}
         onClose={() => setDeleteTarget(null)}
@@ -91,7 +104,7 @@ export const PostsModerationTable: React.FC = () => {
           if (!deleteTarget) return;
           try {
             await forumApi.deletePost(deleteTarget.id, reason || undefined);
-            setPosts((prev) => prev.filter((p) => p.id !== deleteTarget.id));
+            load();
           } catch (err) {
             setError(err instanceof ApiError ? err.message : 'Không thể xóa bài viết.');
           }

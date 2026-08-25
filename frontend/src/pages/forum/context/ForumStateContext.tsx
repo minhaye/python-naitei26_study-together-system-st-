@@ -24,10 +24,10 @@ interface ForumState {
   setPosts: React.Dispatch<React.SetStateAction<Post[]>>;
   updatePostInState: (updatedPost: Post) => void;
   deletePostInState: (postId: string) => void;
-  hasMore: boolean;
-  setHasMore: (hasMore: boolean) => void;
-  skip: number;
-  setSkip: (skip: number) => void;
+  page: number;
+  setPage: (page: number) => void;
+  total: number;
+  setTotal: (total: number) => void;
   scrollTop: number;
   setScrollTop: (pos: number) => void;
 }
@@ -41,8 +41,8 @@ export const ForumStateProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [selectedFilter, setSelectedFilter] = useState<FilterOption>('latest');
   const [search, setSearch] = useState('');
   const [posts, setPosts] = useState<Post[]>([]);
-  const [hasMore, setHasMore] = useState(true);
-  const [skip, setSkip] = useState(0);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
 
   const updatePostInState = (updatedPost: Post) => {
@@ -70,10 +70,10 @@ export const ForumStateProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setPosts,
         updatePostInState,
         deletePostInState,
-        hasMore,
-        setHasMore,
-        skip,
-        setSkip,
+        page,
+        setPage,
+        total,
+        setTotal,
         scrollTop,
         setScrollTop,
       }}

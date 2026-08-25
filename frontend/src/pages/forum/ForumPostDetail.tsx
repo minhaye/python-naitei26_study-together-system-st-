@@ -24,8 +24,8 @@ export const ForumPostDetail: React.FC = () => {
     setIsLoading(true);
     forumApi
       .getPosts(null, 0, 9999, null)
-      .then((all) => {
-        const found = all.find((p) => p.id === id);
+      .then(({ posts }) => {
+        const found = posts.find((p) => p.id === id);
         if (found) setPost(found);
       })
       .finally(() => setIsLoading(false));

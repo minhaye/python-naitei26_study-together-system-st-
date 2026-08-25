@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_admin, require_forum_moderator
 from app.auth.dto.auth_dto import CurrentUser
+from app.core.dto.pagination_dto import PaginatedResponse
 from app.db.enums import BanType, ForumModerationActionType, ProfileRole, ReportStatus
 from app.db.session import get_db_session
 from app.moderation.dto.moderation_dto import (
@@ -71,12 +72,17 @@ async def search_users(
     return await profiles_service.search(session, q, limit=limit)
 
 
-@router.get("/moderators", response_model=list[ProfileResponse])
+@router.get("/moderators", response_model=PaginatedResponse[ProfileResponse])
 async def list_moderators(
+    skip: int = 0,
+    limit: int = 50,
     _current_user: CurrentUser = Depends(require_forum_moderator),
     session: AsyncSession = Depends(get_db_session),
 ):
-    return await profiles_service.list_by_role(session, [ProfileRole.MODERATOR, ProfileRole.ADMIN])
+    moderators, total = await profiles_service.list_by_role(
+        session, [ProfileRole.MODERATOR, ProfileRole.ADMIN], skip=skip, limit=limit
+    )
+    return PaginatedResponse(items=moderators, total=total)
 
 
 @router.put("/users/{user_id}/role", response_model=ProfileResponse)
@@ -146,7 +152,7 @@ async def create_ban(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Could not create ban: {str(e)}")
 
 
-@router.get("/bans", response_model=list[BanResponse])
+@router.get("/bans", response_model=PaginatedResponse[BanResponse])
 async def list_bans(
     user_id: uuid.UUID | None = None,
     ban_type: BanType | None = None,
@@ -157,11 +163,12 @@ async def list_bans(
     session: AsyncSession = Depends(get_db_session),
 ):
     if user_id is not None:
-        bans = await service.list_bans_for_user(session, user_id, active_only=active_only)
-        bans = bans[skip : skip + limit]
+        all_bans = await service.list_bans_for_user(session, user_id, active_only=active_only)
+        total = len(all_bans)
+        bans = all_bans[skip : skip + limit]
     else:
-        bans = await service.list_bans(session, ban_type=ban_type, active_only=active_only, skip=skip, limit=limit)
-    return [_ban_response(b, user=b.user) for b in bans]
+        bans, total = await service.list_bans(session, ban_type=ban_type, active_only=active_only, skip=skip, limit=limit)
+    return PaginatedResponse(items=[_ban_response(b, user=b.user) for b in bans], total=total)
 
 
 @router.get("/users/{user_id}/bans", response_model=list[BanResponse])
@@ -196,7 +203,7 @@ async def revoke_ban(
 # --- Audit log ---
 
 
-@router.get("/actions", response_model=list[ModerationActionResponse])
+@router.get("/actions", response_model=PaginatedResponse[ModerationActionResponse])
 async def list_actions(
     moderator_id: uuid.UUID | None = None,
     target_user_id: uuid.UUID | None = None,
@@ -206,7 +213,7 @@ async def list_actions(
     _current_user: CurrentUser = Depends(require_forum_moderator),
     session: AsyncSession = Depends(get_db_session),
 ):
-    entries = await service.list_actions(
+    entries, total = await service.list_actions(
         session,
         moderator_id=moderator_id,
         target_user_id=target_user_id,
@@ -214,7 +221,9 @@ async def list_actions(
         skip=skip,
         limit=limit,
     )
-    return [_action_response(e, moderator=e.moderator, target=e.target_user) for e in entries]
+    return PaginatedResponse(
+        items=[_action_response(e, moderator=e.moderator, target=e.target_user) for e in entries], total=total
+    )
 
 
 # --- Reports ---
@@ -244,7 +253,7 @@ async def create_report(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Could not create report: {str(e)}")
 
 
-@router.get("/reports", response_model=list[ReportResponse])
+@router.get("/reports", response_model=PaginatedResponse[ReportResponse])
 async def list_reports(
     status_filter: ReportStatus | None = ReportStatus.PENDING,
     skip: int = 0,
@@ -252,8 +261,10 @@ async def list_reports(
     _current_user: CurrentUser = Depends(require_forum_moderator),
     session: AsyncSession = Depends(get_db_session),
 ):
-    reports = await service.list_reports(session, status_filter=status_filter, skip=skip, limit=limit)
-    return [_report_response(r, reporter=r.reporter, reported_user=r.reported_user) for r in reports]
+    reports, total = await service.list_reports(session, status_filter=status_filter, skip=skip, limit=limit)
+    return PaginatedResponse(
+        items=[_report_response(r, reporter=r.reporter, reported_user=r.reported_user) for r in reports], total=total
+    )
 
 
 @router.patch("/reports/{report_id}", response_model=ReportResponse)

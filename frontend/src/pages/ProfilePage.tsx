@@ -48,14 +48,14 @@ export const ProfilePage: React.FC = () => {
     setActionError(null);
     Promise.all([
       fetchProfile(id).catch(() => null),
-      forumApi.getPosts(null, 0, 10, null, id).catch(() => []),
+      forumApi.getPosts(null, 0, 10, null, id).catch(() => ({ posts: [], total: 0 })),
     ]).then(([fetchedProfile, fetchedPosts]) => {
       if (!fetchedProfile) {
         setNotFound(true);
         return;
       }
       setProfile(fetchedProfile);
-      setPosts(fetchedPosts);
+      setPosts(fetchedPosts.posts);
     }).finally(() => setIsLoading(false));
   }, [id]);
 

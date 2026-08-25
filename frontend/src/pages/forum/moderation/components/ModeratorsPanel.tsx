@@ -8,10 +8,15 @@ import { ApiError } from '../../../../lib/apiClient';
 import type { Profile } from '../../../../lib/profile.types';
 import { useAuth } from '../../../../hooks/useAuth';
 import { MessageUserTrigger } from '../../../../components/messages/MessageUserTrigger';
+import { Pagination } from '../../../../components/ui/Pagination';
+
+const PAGE_SIZE = 10;
 
 export const ModeratorsPanel: React.FC = () => {
   const { profile: currentProfile } = useAuth();
   const [moderators, setModerators] = useState<Profile[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -19,18 +24,24 @@ export const ModeratorsPanel: React.FC = () => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Profile[]>([]);
 
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
   const load = () => {
     setIsLoading(true);
     moderationApi
-      .listModerators()
-      .then(setModerators)
+      .listModerators({ skip: (page - 1) * PAGE_SIZE, limit: PAGE_SIZE })
+      .then((res) => {
+        setModerators(res.items);
+        setTotal(res.total);
+      })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Không thể tải danh sách kiểm duyệt viên.'))
       .finally(() => setIsLoading(false));
   };
 
   useEffect(() => {
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
 
   useEffect(() => {
     if (!query.trim()) {
@@ -62,7 +73,7 @@ export const ModeratorsPanel: React.FC = () => {
     setPendingId(user.id);
     try {
       await moderationApi.updateUserRole(user.id, 'user');
-      setModerators((prev) => prev.filter((m) => m.id !== user.id));
+      load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Không thể thu hồi quyền kiểm duyệt viên.');
     } finally {
@@ -107,7 +118,7 @@ export const ModeratorsPanel: React.FC = () => {
       </div>
 
       <div style={{ fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 8 }}>
-        Danh sách hiện tại ({moderators.length})
+        Danh sách hiện tại ({total})
       </div>
 
       {isLoading ? (
@@ -142,6 +153,8 @@ export const ModeratorsPanel: React.FC = () => {
           ))}
         </div>
       )}
+
+      <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
     </div>
   );
 };
