@@ -149,6 +149,11 @@ export const forumApi = {
     return response.map((p) => mapPost(p));
   },
 
+  getPostById: async (postId: string): Promise<Post> => {
+    const response = await apiClient.get<ForumPostResponse>(`/forum/posts/${postId}`);
+    return mapPost(response);
+  },
+
   getTrendingTags: async (limit = 5): Promise<TagResponse[]> => {
     return apiClient.get<TagResponse[]>(`/forum/tags/trending?limit=${limit}`);
   },

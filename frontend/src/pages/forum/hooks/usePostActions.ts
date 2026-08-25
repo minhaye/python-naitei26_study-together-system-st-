@@ -11,6 +11,7 @@
 import { useState } from 'react';
 import type { Post, ForumPostCreate, ForumPostUpdate } from '../types/forum.types';
 import { forumApi } from '../lib/forum.api';
+import { forumCache } from '../lib/forumCache';
 import { useAuth } from '../../../hooks/useAuth';
 import { applyReactionOptimistic } from '../constants/reactions';
 import { ApiError } from '../../../lib/apiClient';
@@ -171,7 +172,11 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
 
       // 2. Gửi API lên backend ở background
       try {
-        await forumApi.setPostReaction(postId, emoji);
+        const serverReactions = await forumApi.setPostReaction(postId, emoji);
+        setPosts((prev) =>
+          prev.map((p) => (p.id === postId ? { ...p, reactions: serverReactions } : p))
+        );
+        forumCache.updatePostReaction(postId, serverReactions);
         window.dispatchEvent(new CustomEvent('post_liked_toggled'));
       } catch (error) {
         console.error('Failed to set reaction', error);
@@ -196,7 +201,11 @@ export function usePostActions(setPosts: React.Dispatch<React.SetStateAction<Pos
       );
 
       try {
-        await forumApi.removePostReaction(postId);
+        const serverReactions = await forumApi.removePostReaction(postId);
+        setPosts((prev) =>
+          prev.map((p) => (p.id === postId ? { ...p, reactions: serverReactions } : p))
+        );
+        forumCache.updatePostReaction(postId, serverReactions);
         window.dispatchEvent(new CustomEvent('post_liked_toggled'));
       } catch (error) {
         console.error('Failed to remove reaction', error);
