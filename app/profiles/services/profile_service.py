@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.enums import ProfileRole
 from app.profiles.entities.profile_entity import Profile
@@ -40,9 +40,13 @@ class ProfilesService:
         )
         return list(result.scalars().all())
 
-    async def list_by_role(self, session: AsyncSession, roles: list[ProfileRole]) -> list[Profile]:
-        result = await session.execute(select(Profile).where(Profile.role.in_(roles)))
-        return list(result.scalars().all())
+    async def list_by_role(
+        self, session: AsyncSession, roles: list[ProfileRole], skip: int = 0, limit: int = 50
+    ) -> tuple[list[Profile], int]:
+        stmt = select(Profile).where(Profile.role.in_(roles)).order_by(Profile.display_name)
+        total = await session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        result = await session.execute(stmt.offset(skip).limit(limit))
+        return list(result.scalars().all()), total
 
     async def update(self, session: AsyncSession, profile: Profile, data: ProfileUpdate) -> Profile:
         for field, value in data.model_dump(exclude_unset=True).items():

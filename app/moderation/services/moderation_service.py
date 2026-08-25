@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from dateutil.relativedelta import relativedelta
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -128,7 +128,7 @@ class ModerationService:
         active_only: bool = True,
         skip: int = 0,
         limit: int = 50,
-    ) -> list[UserBan]:
+    ) -> tuple[list[UserBan], int]:
         stmt = select(UserBan).options(
             selectinload(UserBan.user)
         ).order_by(UserBan.created_at.desc())
@@ -138,7 +138,9 @@ class ModerationService:
         bans = list(result.scalars().all())
         if active_only:
             bans = [b for b in bans if self._is_active(b)]
-        return bans[skip : skip + limit]
+        # active_only filters in Python (see _is_active), so total must reflect the
+        # post-filter count, not a SQL COUNT() -- can't push this filter into the query.
+        return bans[skip : skip + limit], len(bans)
 
     async def log_action(
         self,
@@ -168,7 +170,7 @@ class ModerationService:
         action: ForumModerationActionType | None = None,
         skip: int = 0,
         limit: int = 50,
-    ) -> list[ForumModerationAction]:
+    ) -> tuple[list[ForumModerationAction], int]:
         stmt = select(ForumModerationAction).options(
             selectinload(ForumModerationAction.moderator), selectinload(ForumModerationAction.target_user)
         ).order_by(ForumModerationAction.created_at.desc())
@@ -178,9 +180,13 @@ class ModerationService:
             stmt = stmt.where(ForumModerationAction.target_user_id == target_user_id)
         if action is not None:
             stmt = stmt.where(ForumModerationAction.action == action)
+
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total = await session.scalar(count_stmt) or 0
+
         stmt = stmt.offset(skip).limit(limit)
         result = await session.execute(stmt)
-        return list(result.scalars().all())
+        return list(result.scalars().all()), total
 
     # --- Reports ---
 
@@ -204,15 +210,19 @@ class ModerationService:
         status_filter: ReportStatus | None = None,
         skip: int = 0,
         limit: int = 50,
-    ) -> list[UserReport]:
+    ) -> tuple[list[UserReport], int]:
         stmt = select(UserReport).options(
             selectinload(UserReport.reporter), selectinload(UserReport.reported_user)
         ).order_by(UserReport.created_at.desc())
         if status_filter is not None:
             stmt = stmt.where(UserReport.status == status_filter)
+
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total = await session.scalar(count_stmt) or 0
+
         stmt = stmt.offset(skip).limit(limit)
         result = await session.execute(stmt)
-        return list(result.scalars().all())
+        return list(result.scalars().all()), total
 
     async def update_report_status(
         self,

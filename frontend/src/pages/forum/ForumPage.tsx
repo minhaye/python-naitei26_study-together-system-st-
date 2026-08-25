@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, Loader2 } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { ForumSidebar } from './components/ForumSidebar';
 import { ForumFilterBar } from './components/ForumFilterBar';
 import { PostCard } from './components/PostCard';
@@ -20,6 +20,7 @@ import { forumApi } from './lib/forum.api';
 import type { ForumCategoryResponse } from './types/forum.types';
 import { PostSkeleton } from '../../components/ui/Skeleton';
 import { RestrictionBanner } from '../../components/ui/RestrictionBanner';
+import { Pagination } from '../../components/ui/Pagination';
 import { useForumState } from './context/ForumStateContext';
 
 export const ForumPage: React.FC = () => {
@@ -45,7 +46,7 @@ export const ForumPage: React.FC = () => {
 
   // Hooks với bộ lọc selectedFilter từ Context
   // Chỉ truyền userId khi đã đăng nhập để tránh gửi 'user-current' (không phải UUID hợp lệ) lên backend → 422 error
-  const { posts, setPosts, isLoading, hasMore, fetchNextPage } = useForumPosts(
+  const { posts, setPosts, isLoading, page, setPage, totalPages } = useForumPosts(
     selectedCategoryId,
     search,
     selectedFilter,
@@ -56,7 +57,6 @@ export const ForumPage: React.FC = () => {
 
   // Ref cho cột giữa (Middle Feed) để lưu & khôi phục scrollTop
   const feedRef = useRef<HTMLDivElement | null>(null);
-  const observerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     forumApi.getCategories().then((cats) => {
@@ -83,23 +83,6 @@ export const ForumPage: React.FC = () => {
       }
     };
   }, [setScrollTop]);
-
-  // IntersectionObserver trigger cho Infinite Scroll khi cuộn cột giữa
-  useEffect(() => {
-    if (!observerRef.current || !hasMore || isLoading) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          fetchNextPage();
-        }
-      },
-      { threshold: 0.5 }
-    );
-
-    observer.observe(observerRef.current);
-    return () => observer.disconnect();
-  }, [hasMore, isLoading, fetchNextPage]);
 
   // Cập nhật selectedCategoryName nếu tìm thấy từ danh sách categories
   const resolvedCategoryName =
@@ -140,7 +123,7 @@ export const ForumPage: React.FC = () => {
           />
         </div>
 
-        {/* CỘT 2: Feed Giữa (Flex 1 - Scroll độc lập 60 FPS + Infinite Scroll) */}
+        {/* CỘT 2: Feed Giữa (Flex 1 - Scroll độc lập, phân trang số ở cuối) */}
         <main
           ref={feedRef}
           style={{
@@ -241,15 +224,10 @@ export const ForumPage: React.FC = () => {
               </div>
             )}
 
-            {/* Loading spinner ở cuối Feed khi Infinite Scroll nạp trang tiếp */}
-            {isLoading && posts.length > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0' }}>
-                <Loader2 size={24} color="#2563EB" style={{ animation: 'spin 1s linear infinite' }} />
-              </div>
+            {/* Phân trang -- Trước/Sau + nhảy tới trang cụ thể */}
+            {!isLoading && posts.length > 0 && (
+              <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
             )}
-
-            {/* Observer Element trigger khi cuộn tới đáy */}
-            <div ref={observerRef} style={{ height: 20 }} />
           </div>
         </main>
 

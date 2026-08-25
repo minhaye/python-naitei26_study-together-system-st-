@@ -1,17 +1,19 @@
 /**
- * useForumPosts — Quản lý danh sách bài viết Forum với Infinite Scroll và 4 Bộ lọc.
+ * useForumPosts — Quản lý danh sách bài viết Forum theo trang (phân trang số, không còn
+ * cuộn vô hạn) với 4 Bộ lọc.
  *
- * Tích hợp ForumStateContext lưu giữ bài viết và khôi phục tức thì khi Back từ trang Chi tiết.
+ * Tích hợp ForumStateContext giữ nguyên trang hiện tại và khôi phục tức thì khi Back từ
+ * trang Chi tiết.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Post } from '../types/forum.types';
 import { forumApi } from '../lib/forum.api';
 import { forumCache } from '../lib/forumCache';
 import type { FilterOption } from '../components/ForumFilterBar';
 import { useForumState } from '../context/ForumStateContext';
 
-const PAGE_SIZE = 5;
+export const PAGE_SIZE = 10;
 
 function applyFilterAndSearch(
   posts: Post[],
@@ -19,21 +21,14 @@ function applyFilterAndSearch(
   search: string,
   currentUserId?: string
 ): Post[] {
-  let result = [...posts];
+  let result = posts;
 
-  // 1. Lọc theo 4 tùy chọn Dropdown
-  switch (filter) {
-    case 'latest':
-      result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      break;
-    case 'my_questions':
-      if (currentUserId) {
-        result = result.filter((p) => p.authorId === currentUserId || p.authorId === 'user-1');
-      }
-      break;
+  // my_questions đã được lọc ở backend qua author_id -- giữ lại lượt lọc này để an toàn
+  // nếu backend trả thừa (vd. chưa đăng nhập).
+  if (filter === 'my_questions' && currentUserId) {
+    result = result.filter((p) => p.authorId === currentUserId);
   }
 
-  // 2. Lọc theo từ khóa tìm kiếm
   if (search.trim()) {
     const q = search.toLowerCase();
     result = result.filter(
@@ -52,105 +47,81 @@ export function useForumPosts(
   authLoading = false
 ) {
   const forumState = useForumState();
-  const { posts, setPosts, hasMore, setHasMore, skip, setSkip, selectedTag } = forumState;
+  const { posts, setPosts, page, setPage, total, setTotal, selectedTag } = forumState;
 
   const [isLoading, setIsLoading] = useState(false);
-  const isFetchingRef = useRef(false);
+  const [error, setError] = useState<string | null>(null);
+  const prevFilterKeyRef = useRef<string | null>(null);
   const isInitialMountRef = useRef(true);
 
-  /** Tải một trang bài viết và nối vào danh sách hiện tại */
-  const fetchNextPage = useCallback(async () => {
-    if (isLoading || !hasMore || isFetchingRef.current || authLoading) return;
-    isFetchingRef.current = true;
-    setIsLoading(true);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-    try {
-      const authorIdParam = filter === 'my_questions' ? currentUserId : undefined;
-      const newPosts = await forumApi.getPosts(categoryId, skip, PAGE_SIZE, selectedTag, authorIdParam);
-      const processed = applyFilterAndSearch(newPosts, filter, search, currentUserId);
-
-      setPosts((prev) => {
-        const existingIds = new Set(prev.map((p) => p.id));
-        const uniqueNew = processed.filter((p) => !existingIds.has(p.id));
-        return [...prev, ...uniqueNew];
-      });
-      setSkip(skip + PAGE_SIZE);
-
-      if (newPosts.length < PAGE_SIZE) setHasMore(false);
-    } catch (err) {
-      console.error('Lỗi khi tải thêm bài viết diễn đàn:', err);
-      setHasMore(false);
-    } finally {
-      setIsLoading(false);
-      isFetchingRef.current = false;
-    }
-  }, [isLoading, hasMore, categoryId, skip, selectedTag, currentUserId, filter, search, setPosts, setSkip, setHasMore, authLoading]);
-
-  /** Reset và tải lại từ đầu khi đổi danh mục, bộ lọc, từ khóa hoặc hashtag */
   useEffect(() => {
-    // Nếu mount lần đầu và đã có bài viết lưu trong Context (do vừa Back về) -> Giữ nguyên, không fetch lại
+    const filterKey = `${categoryId ?? ''}|${search}|${filter}|${selectedTag ?? ''}`;
+    const filterChanged = prevFilterKeyRef.current !== null && prevFilterKeyRef.current !== filterKey;
+    prevFilterKeyRef.current = filterKey;
+
+    // Đổi danh mục/bộ lọc/từ khóa/hashtag -> quay về trang 1 trước, hiệu ứng này sẽ chạy lại
+    // ngay khi page cập nhật (tránh gọi API 2 lần liên tiếp).
+    if (filterChanged && page !== 1) {
+      setPage(1);
+      return;
+    }
+
+    // Nếu mount lần đầu và đã có bài viết lưu trong Context (do vừa Back về) -> Giữ nguyên
     if (isInitialMountRef.current && posts.length > 0) {
       isInitialMountRef.current = false;
       return;
     }
-
     isInitialMountRef.current = false;
 
     // Không gửi request khi Auth Session đang trong quá trình tải (tránh gửi request không có Bearer token)
     if (authLoading) return;
 
-    setHasMore(true);
-    setSkip(0);
-
-    const isLandingPage = !categoryId && !search && filter === 'latest' && !selectedTag;
+    const isLandingPage = !categoryId && !search && filter === 'latest' && !selectedTag && page === 1;
+    let cancelled = false;
 
     (async () => {
-      // 1. STALE: Load dữ liệu cũ ngay lập tức nếu có cache (chỉ áp dụng cho trang chủ không filter)
       if (isLandingPage) {
         const cached = forumCache.get();
-        if (cached && cached.length > 0) {
-          setPosts(cached);
-          setSkip(cached.length);
-        } else {
-          setPosts([]);
-        }
-      } else {
-        setPosts([]);
+        if (cached && cached.length > 0) setPosts(cached);
       }
 
       setIsLoading(true);
+      setError(null);
 
-      // 2. REVALIDATE: Fetch ngầm dữ liệu mới (đã có Bearer token nếu đã đăng nhập)
+      // REVALIDATE: Fetch ngầm dữ liệu mới (đã có Bearer token nếu đã đăng nhập)
       try {
         const authorIdParam = filter === 'my_questions' ? currentUserId : undefined;
-        const firstPage = await forumApi.getPosts(categoryId, 0, PAGE_SIZE, selectedTag, authorIdParam);
-        const processed = applyFilterAndSearch(firstPage, filter, search, currentUserId);
+        const { posts: fetched, total: fetchedTotal } = await forumApi.getPosts(
+          categoryId,
+          (page - 1) * PAGE_SIZE,
+          PAGE_SIZE,
+          selectedTag,
+          authorIdParam
+        );
+        if (cancelled) return;
 
-        setPosts((prev) => {
-          if (prev.length <= PAGE_SIZE) return processed;
-          const updated = [...prev];
-          processed.forEach((item, idx) => {
-            updated[idx] = item;
-          });
-          return updated;
-        });
+        const processed = applyFilterAndSearch(fetched, filter, search, currentUserId);
+        setPosts(processed);
+        setTotal(fetchedTotal);
 
-        setSkip(skip < PAGE_SIZE ? PAGE_SIZE : skip);
-        if (firstPage.length < PAGE_SIZE) setHasMore(false);
-
-        // Lưu cache lại nếu là trang chủ
-        if (isLandingPage) {
-          forumCache.set(processed);
-        }
+        if (isLandingPage) forumCache.set(processed);
       } catch (err) {
-        console.error('Lỗi khi tải bài viết diễn đàn ban đầu:', err);
-        setPosts((prev) => (prev.length === 0 ? [] : prev));
-        setHasMore(false);
+        if (!cancelled) {
+          console.error('Lỗi khi tải bài viết diễn đàn:', err);
+          setError('Không thể tải bài viết diễn đàn.');
+        }
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     })();
-  }, [categoryId, search, filter, selectedTag, currentUserId, authLoading]);
 
-  return { posts, setPosts, isLoading, hasMore, fetchNextPage };
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categoryId, search, filter, selectedTag, page, currentUserId, authLoading]);
+
+  return { posts, setPosts, isLoading, error, page, setPage, totalPages, total };
 }

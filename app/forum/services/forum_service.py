@@ -207,7 +207,7 @@ class ForumService:
         user_id: uuid.UUID | None = None,
         skip: int = 0,
         limit: int = 50,
-    ) -> list[ForumPost]:
+    ) -> tuple[list[ForumPost], int]:
         from sqlalchemy.orm import selectinload
 
         comments_count_subq = (
@@ -215,6 +215,8 @@ class ForumService:
             .where(Comment.post_id == ForumPost.id)
             .scalar_subquery()
         )
+
+        base_filter = select(ForumPost.id).where(ForumPost.deleted_at.is_(None))
 
         stmt = select(
             ForumPost,
@@ -226,14 +228,19 @@ class ForumService:
         ).where(ForumPost.deleted_at.is_(None))
 
         if category_id:
+            base_filter = base_filter.where(ForumPost.category_id == category_id)
             stmt = stmt.where(ForumPost.category_id == category_id)
 
         if author_id:
+            base_filter = base_filter.where(ForumPost.author_id == author_id)
             stmt = stmt.where(ForumPost.author_id == author_id)
 
         if tag:
             clean_tag = tag.lstrip("#").lower().strip()
+            base_filter = base_filter.join(ForumPost.post_tags).join(PostTag.tag).where(Tag.name == clean_tag)
             stmt = stmt.join(ForumPost.post_tags).join(PostTag.tag).where(Tag.name == clean_tag)
+
+        total = await session.scalar(select(func.count()).select_from(base_filter.subquery())) or 0
 
         stmt = stmt.order_by(ForumPost.created_at.desc()).offset(skip).limit(limit)
 
@@ -250,7 +257,7 @@ class ForumService:
             posts.append(post)
 
         await self._attach_post_reactions(session, posts, user_id)
-        return posts
+        return posts, total
 
     async def update_post(self, session: AsyncSession, post: ForumPost, data: ForumPostUpdate) -> ForumPost:
         for field, value in data.model_dump(exclude_unset=True).items():

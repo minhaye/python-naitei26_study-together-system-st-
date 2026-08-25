@@ -9,6 +9,10 @@ import type { Group, GroupMember, GroupMemberRole, GroupStreak } from '../../lib
 import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
 import { StudyGroupCardSkeleton } from '../../components/ui/Skeleton';
 import { RestrictionBanner } from '../../components/ui/RestrictionBanner';
+import { Pagination } from '../../components/ui/Pagination';
+import { usePagination } from '../../hooks/usePagination';
+
+const GROUPS_PAGE_SIZE = 8;
 
 interface GroupWithMembership {
     group: Group;
@@ -225,6 +229,9 @@ export function StudyRooms() {
     const myGroups = groups?.filter((g) => g.isMember) ?? [];
     const discoverGroups = groups?.filter((g) => !g.isMember) ?? [];
 
+    const myGroupsPagination = usePagination(myGroups, GROUPS_PAGE_SIZE);
+    const discoverGroupsPagination = usePagination(discoverGroups, GROUPS_PAGE_SIZE);
+
     return (
         <div style={{ width: '100%', height: 'calc(100vh - 64px)', overflowY: 'auto', background: 'linear-gradient(0deg, #F8FAFC 0%, #F8FAFC 100%), white', display: 'flex', justifyContent: 'center' }}>
 
@@ -385,7 +392,7 @@ export function StudyRooms() {
                     {/* My Groups Grid */}
                     {isMyGroupsOpen && (
                         <div className="study-groups-grid" style={{ marginTop: 8 }}>
-                            {myGroups.map(({ group, activeMembersCount, role }) => (
+                            {myGroupsPagination.pageItems.map(({ group, activeMembersCount, role }) => (
                                 <div key={group.id} style={{ background: 'white', borderRadius: 8, outline: '1px #E2E8F0 solid', outlineOffset: '-1px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                                     <div style={{ height: 128, position: 'relative', background: '#E5EEFF' }}>
                                         <GroupStreakBadge streak={group.streak} />
@@ -411,6 +418,13 @@ export function StudyRooms() {
                                 </div>
                             ))}
                         </div>
+                    )}
+                    {isMyGroupsOpen && (
+                        <Pagination
+                            page={myGroupsPagination.page}
+                            totalPages={myGroupsPagination.totalPages}
+                            onPageChange={myGroupsPagination.setPage}
+                        />
                     )}
                 </div>
 
@@ -438,7 +452,7 @@ export function StudyRooms() {
                     {/* Discover Grid Section */}
                     {isDiscoverOpen && (
                         <div className="study-groups-grid" style={{ marginTop: 8 }}>
-                            {discoverGroups.map(({ group, activeMembersCount }) => (
+                            {discoverGroupsPagination.pageItems.map(({ group, activeMembersCount }) => (
                                 <div key={group.id} style={{ background: 'white', borderRadius: 8, outline: '1px #E2E8F0 solid', outlineOffset: '-1px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                                     <div style={{ height: 128, position: 'relative', background: '#E5EEFF' }}>
                                         <GroupStreakBadge streak={group.streak} />
@@ -468,6 +482,13 @@ export function StudyRooms() {
                                 </div>
                             ))}
                         </div>
+                    )}
+                    {isDiscoverOpen && (
+                        <Pagination
+                            page={discoverGroupsPagination.page}
+                            totalPages={discoverGroupsPagination.totalPages}
+                            onPageChange={discoverGroupsPagination.setPage}
+                        />
                     )}
                 </div>
                 </>

@@ -1,4 +1,5 @@
 import { apiClient } from '../../../lib/apiClient';
+import type { PaginatedResponse } from '../../../lib/pagination.types';
 import type {
   ForumCategoryResponse,
   ForumPostResponse,
@@ -134,7 +135,7 @@ export const forumApi = {
     limit = 5,
     tag?: string | null,
     authorId?: string | null
-  ): Promise<Post[]> => {
+  ): Promise<{ posts: Post[]; total: number }> => {
     let url = `/forum/posts?skip=${skip}&limit=${limit}`;
     if (categoryId) {
       url += `&category_id=${categoryId}`;
@@ -145,8 +146,8 @@ export const forumApi = {
     if (authorId) {
       url += `&author_id=${authorId}`;
     }
-    const response = await apiClient.get<ForumPostResponse[]>(url);
-    return response.map((p) => mapPost(p));
+    const response = await apiClient.get<PaginatedResponse<ForumPostResponse>>(url);
+    return { posts: response.items.map((p) => mapPost(p)), total: response.total };
   },
 
   getPostById: async (postId: string): Promise<Post> => {

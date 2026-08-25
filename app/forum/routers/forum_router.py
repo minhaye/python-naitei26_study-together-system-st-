@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, get_current_user_optional, require_forum_moderator
 from app.auth.dto.auth_dto import CurrentUser
+from app.core.dto.pagination_dto import PaginatedResponse
 from app.core.permissions import get_active_ban, is_forum_moderator
 from app.db.enums import BanType, ForumModerationActionType
 from app.db.session import get_db_session
@@ -161,7 +162,7 @@ async def get_post(
     return post
 
 
-@router.get("/posts", response_model=list[ForumPostResponse])
+@router.get("/posts", response_model=PaginatedResponse[ForumPostResponse])
 async def list_posts(
     category_id: uuid.UUID | None = None,
     author_id: uuid.UUID | None = None,
@@ -171,9 +172,10 @@ async def list_posts(
     current_user: CurrentUser | None = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_db_session)
 ):
-    return await service.list_posts_by_category(
+    posts, total = await service.list_posts_by_category(
         session, category_id, tag=tag, author_id=author_id, user_id=current_user.id if current_user else None, skip=skip, limit=limit
     )
+    return PaginatedResponse(items=posts, total=total)
 
 
 # --- Tags ---
