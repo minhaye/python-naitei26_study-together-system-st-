@@ -1,4 +1,4 @@
-import { Camera, ChevronDown } from 'lucide-react';
+import { Camera } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useAuthContext } from '../contexts/auth-context';
@@ -11,16 +11,12 @@ const sectionTitle: React.CSSProperties = { margin: 0, color: '#151E34', fontSiz
 const mutedText: React.CSSProperties = { margin: '3px 0 0', color: '#51596B', fontSize: 14, lineHeight: 1.45 };
 const divider: React.CSSProperties = { height: 1, background: '#DEE5F0', marginTop: 8 };
 const labelStyle: React.CSSProperties = { display: 'grid', gap: 5, color: '#172139', fontSize: 14, fontWeight: 650 };
-const settingLabel: React.CSSProperties = { color: '#172139', fontSize: 14, fontWeight: 650 };
-const settingRow: React.CSSProperties = { minHeight: 32, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 18 };
 const primaryButton: React.CSSProperties = { minHeight: 34, border: 0, borderRadius: 5, padding: '0 16px', background: '#062A78', color: '#FFF', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, fontSize: 14, fontWeight: 650, cursor: 'pointer' };
 const textButton: React.CSSProperties = { border: 0, background: 'transparent', color: '#0A347F', fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: 0 };
-const selectButton: React.CSSProperties = { height: 30, border: '1px solid #D9E1EF', borderRadius: 3, background: '#F8FAFF', color: '#344460', fontSize: 14, padding: '0 9px' };
 
 export function AccountSettingsPage() {
   const { currentUser, user } = useAuth();
   const { profile, refreshProfile } = useAuthContext();
-  const [language, setLanguage] = useState('Tiếng Việt');
   const [saved, setSaved] = useState(false);
   const [name, setName] = useState(currentUser?.name || '');
   const [organization, setOrganization] = useState('');

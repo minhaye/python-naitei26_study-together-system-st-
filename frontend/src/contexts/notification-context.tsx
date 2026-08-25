@@ -30,6 +30,16 @@ const DEFAULT_UNREAD: UnreadCounts = {
   message: 0,
 };
 
+// A real NotificationItem.category is always one of these -- 'all'/'unread' only ever
+// appear as virtual/aggregate tab keys (see NotificationDropdownModal), never as a
+// per-item category. This guard lets per-item category updates index UnreadCounts safely
+// without widening UnreadCounts itself with keys the API never actually returns.
+function isCountableCategory(
+  category: NotificationCategory
+): category is keyof Omit<UnreadCounts, 'total'> {
+  return category === 'forum' || category === 'group' || category === 'goal' || category === 'message';
+}
+
 const NotificationContext = createContext<NotificationContextValue | null>(null);
 
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -113,7 +123,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
               setUnreadCounts((prev) => ({
                 ...prev,
                 total: prev.total + 1,
-                [cat]: (prev[cat] || 0) + 1,
+                ...(isCountableCategory(cat) ? { [cat]: (prev[cat] || 0) + 1 } : {}),
               }));
 
               // Play notification sound if enabled in settings
@@ -160,7 +170,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       setUnreadCounts((prev) => ({
         ...prev,
         total: Math.max(0, prev.total - 1),
-        [category]: Math.max(0, (prev[category] || 0) - 1),
+        ...(isCountableCategory(category) ? { [category]: Math.max(0, (prev[category] || 0) - 1) } : {}),
       }));
 
       try {
@@ -175,10 +185,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   // Optimistic Mark All Read
   const markAllAsRead = useCallback(
     async (category?: NotificationCategory) => {
-      if (!category) {
-        setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-        setUnreadCounts({ total: 0, forum: 0, group: 0, goal: 0, message: 0 });
-      } else {
+      // 'all'/'unread' are the aggregate virtual tabs (same convention as
+      // notification.api.ts's markAllAsRead), so they mean "everything", not a real
+      // per-item category -- indexing UnreadCounts with them would be both a type error
+      // and a functional bug (no notification's own category is ever 'all'/'unread', so
+      // the per-category branch would silently match nothing).
+      if (category && isCountableCategory(category)) {
         setNotifications((prev) =>
           prev.map((n) => (n.category === category ? { ...n, is_read: true } : n))
         );
@@ -190,6 +202,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
             [category]: 0,
           };
         });
+      } else {
+        setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+        setUnreadCounts({ total: 0, forum: 0, group: 0, goal: 0, message: 0 });
       }
 
       try {
@@ -211,7 +226,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           setUnreadCounts((counts) => ({
             ...counts,
             total: Math.max(0, counts.total - 1),
-            [cat]: Math.max(0, (counts[cat] || 0) - 1),
+            ...(isCountableCategory(cat) ? { [cat]: Math.max(0, (counts[cat] || 0) - 1) } : {}),
           }));
         }
         return prev.filter((n) => n.id !== notificationId);

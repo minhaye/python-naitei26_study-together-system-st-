@@ -8,7 +8,10 @@ import { CountBadge } from '../ui/CountBadge';
 interface NotificationDropdownModalProps {
   isOpen: boolean;
   onClose: () => void;
-  triggerRef?: React.RefObject<HTMLElement>;
+  // React 19's useRef(null) types `.current` as nullable (it genuinely is, before mount
+  // and after unmount) -- the caller passes a RefObject<HTMLButtonElement | null>, so this
+  // prop must accept that instead of the old non-nullable RefObject<HTMLElement>.
+  triggerRef?: React.RefObject<HTMLElement | null>;
 }
 
 const TABS: { key: NotificationCategory; label: string }[] = [
@@ -87,12 +90,19 @@ export const NotificationDropdownModal: React.FC<NotificationDropdownModalProps>
 
   if (!isOpen) return null;
 
-  const currentTabUnread = unreadCounts[activeCategory] || 0;
+  // 'all' and 'unread' are aggregate/virtual tabs, not real UnreadCounts keys -- their
+  // badge count is the overall total, matching the same convention already used for the
+  // per-tab badges below (visibleTabs/overflowTabs render loops).
+  const currentTabUnread =
+    activeCategory === 'all' || activeCategory === 'unread'
+      ? unreadCounts.total
+      : unreadCounts[activeCategory] || 0;
   const visibleTabs = TABS.slice(0, visibleCount);
   const overflowTabs = TABS.slice(visibleCount);
   const isOverflowActive = overflowTabs.some((tab) => tab.key === activeCategory);
   const overflowUnreadTotal = overflowTabs.reduce(
-    (sum, tab) => sum + (unreadCounts[tab.key] || 0),
+    (sum, tab) =>
+      sum + (tab.key === 'all' || tab.key === 'unread' ? unreadCounts.total : unreadCounts[tab.key] || 0),
     0
   );
 

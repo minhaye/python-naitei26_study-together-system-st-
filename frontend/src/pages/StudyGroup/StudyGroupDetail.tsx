@@ -591,14 +591,15 @@ export function StudyGroupDetail() {
         sender_id: currentUser.id,
         content: trimmed,
         attachment_path: null,
+        attachment_url: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        deleted_at: null,
         sender: {
           id: currentUser.id,
+          username: null,
           display_name: currentUser.name,
-          avatar_url: currentUser.avatarUrl || undefined,
-          color: currentUser.color,
+          avatar_url: currentUser.avatarUrl || null,
+          role: 'user',
         },
         reactions: []
       };

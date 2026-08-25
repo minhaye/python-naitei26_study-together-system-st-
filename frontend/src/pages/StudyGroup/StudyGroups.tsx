@@ -127,7 +127,7 @@ export function StudyRooms() {
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     
-    const [searchParams, setSearchParams] = useSearchParams();
+    const [searchParams] = useSearchParams();
     const searchQuery = searchParams.get('q') || '';
 
     const loadGroups = useCallback(async () => {
