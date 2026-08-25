@@ -24,7 +24,7 @@ import { Pagination } from '../../components/ui/Pagination';
 import { useForumState } from './context/ForumStateContext';
 
 export const ForumPage: React.FC = () => {
-  const { isLoggedIn, currentUser, requireAuth, getBan } = useAuth();
+  const { isLoggedIn, currentUser, requireAuth, getBan, loading: authLoading } = useAuth();
   const postBan = getBan('post');
   const forumState = useForumState();
 
@@ -50,7 +50,8 @@ export const ForumPage: React.FC = () => {
     selectedCategoryId,
     search,
     selectedFilter,
-    isLoggedIn ? currentUser.id : undefined
+    isLoggedIn ? currentUser.id : undefined,
+    authLoading
   );
   const { showCreateModal, setShowCreateModal, handleCreatePost, handleUpdatePost, handleDeletePost, handleRetryPost, handleDiscardPost, handleReact, handleRemoveReaction } = usePostActions(setPosts);
 

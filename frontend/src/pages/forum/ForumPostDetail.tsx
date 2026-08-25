@@ -4,6 +4,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { PostCard } from './components/PostCard';
 import { ForumRightSidebar } from './components/ForumRightSidebar';
 import { forumApi } from './lib/forum.api';
+import { forumCache } from './lib/forumCache';
 import type { Post, ForumPostUpdate } from './types/forum.types';
 import { applyReactionOptimistic } from './constants/reactions';
 
@@ -13,35 +14,52 @@ import { useForumState } from './context/ForumStateContext';
 export const ForumPostDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { requireAuth } = useAuth();
+  const { requireAuth, loading: authLoading } = useAuth();
   const { updatePostInState, deletePostInState } = useForumState();
 
   const [post, setPost] = useState<Post | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!id) return;
+    if (!id || authLoading) return;
     setIsLoading(true);
     forumApi
-      .getPosts(null, 0, 9999, null)
-      .then(({ posts }) => {
-        const found = posts.find((p) => p.id === id);
-        if (found) setPost(found);
+      .getPostById(id)
+      .then((found) => {
+        setPost(found);
+      })
+      .catch((err) => {
+        console.error('Lỗi khi tải chi tiết bài viết:', err);
+        setPost(null);
       })
       .finally(() => setIsLoading(false));
-  }, [id]);
+  }, [id, authLoading]);
 
   const handleReact = (postId: string, emoji: string) => {
     requireAuth(async () => {
       setPost((prev) => (prev ? { ...prev, reactions: applyReactionOptimistic(prev.reactions, emoji) } : null));
-      await forumApi.setPostReaction(postId, emoji);
+      try {
+        const serverReactions = await forumApi.setPostReaction(postId, emoji);
+        setPost((prev) => (prev ? { ...prev, reactions: serverReactions } : null));
+        forumCache.updatePostReaction(postId, serverReactions);
+        window.dispatchEvent(new CustomEvent('post_liked_toggled'));
+      } catch (err) {
+        console.error('Failed to set reaction in detail', err);
+      }
     });
   };
 
   const handleRemoveReaction = (postId: string) => {
     requireAuth(async () => {
       setPost((prev) => (prev ? { ...prev, reactions: applyReactionOptimistic(prev.reactions, null) } : null));
-      await forumApi.removePostReaction(postId);
+      try {
+        const serverReactions = await forumApi.removePostReaction(postId);
+        setPost((prev) => (prev ? { ...prev, reactions: serverReactions } : null));
+        forumCache.updatePostReaction(postId, serverReactions);
+        window.dispatchEvent(new CustomEvent('post_liked_toggled'));
+      } catch (err) {
+        console.error('Failed to remove reaction in detail', err);
+      }
     });
   };
 

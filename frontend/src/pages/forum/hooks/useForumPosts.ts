@@ -43,7 +43,8 @@ export function useForumPosts(
   categoryId: string | null,
   search: string,
   filter: FilterOption = 'latest',
-  currentUserId?: string
+  currentUserId?: string,
+  authLoading = false
 ) {
   const forumState = useForumState();
   const { posts, setPosts, page, setPage, total, setTotal, selectedTag } = forumState;
@@ -74,6 +75,9 @@ export function useForumPosts(
     }
     isInitialMountRef.current = false;
 
+    // Không gửi request khi Auth Session đang trong quá trình tải (tránh gửi request không có Bearer token)
+    if (authLoading) return;
+
     const isLandingPage = !categoryId && !search && filter === 'latest' && !selectedTag && page === 1;
     let cancelled = false;
 
@@ -86,6 +90,7 @@ export function useForumPosts(
       setIsLoading(true);
       setError(null);
 
+      // REVALIDATE: Fetch ngầm dữ liệu mới (đã có Bearer token nếu đã đăng nhập)
       try {
         const authorIdParam = filter === 'my_questions' ? currentUserId : undefined;
         const { posts: fetched, total: fetchedTotal } = await forumApi.getPosts(
@@ -116,7 +121,7 @@ export function useForumPosts(
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoryId, search, filter, selectedTag, page]);
+  }, [categoryId, search, filter, selectedTag, page, currentUserId, authLoading]);
 
   return { posts, setPosts, isLoading, error, page, setPage, totalPages, total };
 }
