@@ -52,10 +52,15 @@ interface RequestOptions {
   body?: unknown;
   headers?: Record<string, string>;
   signal?: AbortSignal;
+  /** Lets the request survive page unload (tab close/reload/navigation) -- see
+   * `fetch`'s `keepalive` option. Used for best-effort cleanup calls fired from a
+   * `pagehide` handler, where the page may finish unloading before a normal request
+   * would otherwise complete. */
+  keepalive?: boolean;
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, headers, signal } = options;
+  const { method = 'GET', body, headers, signal, keepalive } = options;
 
   const requestHeaders: Record<string, string> = { Accept: 'application/json', ...headers };
   if (body !== undefined) {
@@ -80,6 +85,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       headers: requestHeaders,
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal,
+      keepalive,
     });
 
     const contentType = response.headers.get('content-type') ?? '';

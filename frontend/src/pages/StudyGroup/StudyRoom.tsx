@@ -99,6 +99,7 @@ export function StudyRoom() {
     deleteRoom,
     moderate,
     changeMemberRole,
+    refetchRoom,
   } = useStudyRoom(roomId);
 
   const currentUserRole = useMemo(() => {
@@ -428,6 +429,7 @@ export function StudyRoom() {
       initialVideoEnabled={mediaChoice.videoEnabled}
       audioDeviceId={mediaChoice.audioDeviceId}
       videoDeviceId={mediaChoice.videoDeviceId}
+      onSessionEnded={refetchRoom}
     >
     <div style={{width: '100vw', height: '100vh', background: '#0F172A', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: 'Inter, sans-serif'}}>
 
