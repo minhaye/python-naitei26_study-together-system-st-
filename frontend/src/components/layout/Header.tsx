@@ -18,9 +18,9 @@ export function Header() {
   const [headerSearch, setHeaderSearch] = useState(searchParams.get('q') || '');
 
   const handleLogout = async () => {
+    navigate('/');
     setDevSession(null);
     await supabase.auth.signOut().catch(() => {});
-    navigate('/');
   };
 
   return (
