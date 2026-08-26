@@ -27,6 +27,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
 }) => {
   const [categories, setCategories] = useState<ForumCategoryResponse[]>([]);
   const [categoryId, setCategoryId] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [editorKey, setEditorKey] = useState(0);
@@ -77,15 +78,16 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
     setShowTagSuggestions(false);
   };
 
-  // Nạp danh sách môn học khi mở Modal
+  // Nạp danh sách danh mục khi mở Modal (Không tự động chọn danh mục đầu tiên)
   useEffect(() => {
     if (isOpen) {
       forumApi.getCategories().then((cats) => {
         setCategories(cats);
-        if (cats.length > 0 && !categoryId) {
-          setCategoryId(cats[0].id);
-        }
       });
+    } else {
+      setCategoryId('');
+      setSearchQuery('');
+      setIsDropdownOpen(false);
     }
   }, [isOpen]);
 
@@ -126,10 +128,14 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
 
   const selectedCategory = categories.find((cat) => cat.id === categoryId);
 
+  const filteredCategories = categories.filter((cat) =>
+    cat.name.toLowerCase().includes(searchQuery.toLowerCase().trim())
+  );
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !hasContent(content) || !categoryId || isSubmitting) return;
-    
+
     setIsSubmitting(true);
     try {
       await onSubmit(
@@ -142,6 +148,8 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
       );
       setTitle('');
       setContent('');
+      setCategoryId('');
+      setSearchQuery('');
       setIsDropdownOpen(false);
     } finally {
       setIsSubmitting(false);
@@ -151,39 +159,66 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Đặt câu hỏi mới">
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {/* Dropdown Chọn môn học Tùy chỉnh (Modern Custom Select Dropdown) */}
+        {/* Dropdown Chọn danh mục Combobox Input (Searchable Input Box) */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <label style={{ fontSize: 13, fontWeight: '600', color: FORUM_COLORS.textSecondary }}>
-            Môn học / Danh mục
+            Danh mục / Môn học
           </label>
           <div ref={dropdownRef} style={{ position: 'relative' }}>
-            {/* Box chọn chính (Dropdown Trigger Box) */}
+            {/* Box chọn chính dạng Ô Input nhập trực tiếp */}
             <div
-              onClick={() => setIsDropdownOpen((prev) => !prev)}
+              onClick={() => setIsDropdownOpen(true)}
               style={{
-                padding: '10px 14px',
+                padding: '8px 14px',
                 borderRadius: 10,
                 border: isDropdownOpen ? '1px solid #3B82F6' : `1px solid ${FORUM_COLORS.border}`,
                 background: isDropdownOpen ? '#FFFFFF' : FORUM_COLORS.subtle,
-                fontSize: 14,
-                fontWeight: '500',
-                color: selectedCategory ? FORUM_COLORS.textPrimary : '#94A3B8',
-                cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 boxShadow: isDropdownOpen ? '0 0 0 3px rgba(59, 130, 246, 0.1)' : 'none',
                 transition: 'all 0.2s ease',
-                userSelect: 'none',
               }}
             >
-              <span>{selectedCategory ? selectedCategory.name : 'Chọn môn học...'}</span>
+              <input
+                type="text"
+                placeholder="Chọn danh mục..."
+                value={isDropdownOpen ? searchQuery : (selectedCategory ? selectedCategory.name : '')}
+                onFocus={() => {
+                  setIsDropdownOpen(true);
+                  setSearchQuery(selectedCategory ? selectedCategory.name : '');
+                }}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSearchQuery(val);
+                  setIsDropdownOpen(true);
+                  if (!val.trim()) {
+                    setCategoryId('');
+                  }
+                }}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  outline: 'none',
+                  fontSize: 14,
+                  fontWeight: '500',
+                  color: selectedCategory || isDropdownOpen ? FORUM_COLORS.textPrimary : '#94A3B8',
+                  width: '100%',
+                  cursor: 'text',
+                }}
+              />
               <ChevronDown
                 size={18}
                 color="#64748B"
                 style={{
                   transition: 'transform 0.2s ease',
                   transform: isDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                  flexShrink: 0,
+                  cursor: 'pointer',
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsDropdownOpen((prev) => !prev);
                 }}
               />
             </div>
@@ -206,39 +241,46 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
                   padding: '6px 0',
                 }}
               >
-                {categories.map((cat) => {
-                  const isSelected = cat.id === categoryId;
-                  return (
-                    <div
-                      key={cat.id}
-                      onClick={() => {
-                        setCategoryId(cat.id);
-                        setIsDropdownOpen(false);
-                      }}
-                      style={{
-                        padding: '10px 14px',
-                        fontSize: 14,
-                        fontWeight: isSelected ? '600' : '400',
-                        color: isSelected ? '#1D4ED8' : FORUM_COLORS.textPrimary,
-                        background: isSelected ? '#EFF6FF' : 'transparent',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        transition: 'background 0.15s ease',
-                      }}
-                      onMouseOver={(e) => {
-                        if (!isSelected) e.currentTarget.style.background = '#F8FAFC';
-                      }}
-                      onMouseOut={(e) => {
-                        if (!isSelected) e.currentTarget.style.background = 'transparent';
-                      }}
-                    >
-                      <span>{cat.name}</span>
-                      {isSelected && <Check size={16} color="#1D4ED8" />}
-                    </div>
-                  );
-                })}
+                {filteredCategories.length === 0 ? (
+                  <div style={{ padding: '12px 14px', fontSize: 13, color: '#94A3B8', textAlign: 'center' }}>
+                    Không tìm thấy danh mục phù hợp
+                  </div>
+                ) : (
+                  filteredCategories.map((cat) => {
+                    const isSelected = cat.id === categoryId;
+                    return (
+                      <div
+                        key={cat.id}
+                        onClick={() => {
+                          setCategoryId(cat.id);
+                          setSearchQuery(cat.name);
+                          setIsDropdownOpen(false);
+                        }}
+                        style={{
+                          padding: '10px 14px',
+                          fontSize: 14,
+                          fontWeight: isSelected ? '600' : '400',
+                          color: isSelected ? '#1D4ED8' : FORUM_COLORS.textPrimary,
+                          background: isSelected ? '#EFF6FF' : 'transparent',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          transition: 'background 0.15s ease',
+                        }}
+                        onMouseOver={(e) => {
+                          if (!isSelected) e.currentTarget.style.background = '#F8FAFC';
+                        }}
+                        onMouseOut={(e) => {
+                          if (!isSelected) e.currentTarget.style.background = 'transparent';
+                        }}
+                      >
+                        <span>{cat.name}</span>
+                        {isSelected && <Check size={16} color="#1D4ED8" />}
+                      </div>
+                    );
+                  })
+                )}
               </div>
             )}
           </div>
