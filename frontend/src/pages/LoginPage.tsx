@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, ArrowRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuthContext } from '../contexts/auth-context';
+import { clearAuthUrlError, describeAuthError, readAuthUrlError, resendSignupConfirmation } from '../lib/authFlow';
+import { useResendCooldown } from '../hooks/useResendCooldown';
 import type { AuthError, Session } from '@supabase/supabase-js';
 
 // Only used when Supabase itself isn't configured for this environment (no URL/anon key
@@ -41,9 +43,14 @@ function createDevSession(email: string): Session {
 }
 
 function describeSignInError(err: AuthError): string {
-  if (err.message.includes('Invalid login credentials')) return 'Email hoặc mật khẩu không đúng.';
-  if (err.message.includes('Email not confirmed')) return 'Email chưa được xác thực.';
-  return err.message;
+  console.error('signIn error', err);
+  if (err.code === 'invalid_credentials' || err.message.includes('Invalid login credentials')) {
+    return 'Email hoặc mật khẩu không đúng.';
+  }
+  if (err.code === 'email_not_confirmed' || err.message.includes('Email not confirmed')) {
+    return 'Email chưa được xác thực. Vui lòng kiểm tra hộp thư của bạn.';
+  }
+  return describeAuthError(err);
 }
 
 export function LoginPage() {
@@ -53,12 +60,26 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [needsConfirmation, setNeedsConfirmation] = useState(false);
+  const [isResending, setIsResending] = useState(false);
+  const [resendInfo, setResendInfo] = useState<string | null>(null);
+  const { cooldown: resendCooldown, start: startResendCooldown } = useResendCooldown();
+
+  useEffect(() => {
+    const urlError = readAuthUrlError();
+    if (urlError) {
+      setError(urlError);
+      clearAuthUrlError();
+    }
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
 
     setError(null);
+    setResendInfo(null);
+    setNeedsConfirmation(false);
     setIsSubmitting(true);
 
     try {
@@ -76,16 +97,39 @@ export function LoginPage() {
           return;
         }
         setError(describeSignInError(signInError));
+        setNeedsConfirmation(signInError.code === 'email_not_confirmed');
       }
-    } catch {
+    } catch (err) {
       if (!IS_SUPABASE_CONFIGURED) {
         setDevSession(createDevSession(email));
         navigate('/');
         return;
       }
+      console.error('signIn failed unexpectedly', err);
       setError('Không thể kết nối đến máy chủ đăng nhập. Vui lòng thử lại.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (isResending || resendCooldown > 0) return;
+    setIsResending(true);
+    setResendInfo(null);
+    try {
+      const { error: resendError } = await resendSignupConfirmation(email);
+      if (resendError) {
+        console.error('resend confirmation error', resendError);
+        setError(describeAuthError(resendError));
+      } else {
+        setResendInfo('Đã gửi lại email xác nhận. Vui lòng kiểm tra hộp thư của bạn.');
+        startResendCooldown();
+      }
+    } catch (err) {
+      console.error('resend confirmation failed unexpectedly', err);
+      setError('Không thể kết nối đến máy chủ. Vui lòng thử lại.');
+    } finally {
+      setIsResending(false);
     }
   };
 
@@ -139,6 +183,24 @@ export function LoginPage() {
 
             {error && (
               <p style={{color: '#EF4444', fontSize: 14, margin: 0}}>{error}</p>
+            )}
+            {resendInfo && (
+              <p style={{color: '#16A34A', fontSize: 14, margin: 0}}>{resendInfo}</p>
+            )}
+
+            {needsConfirmation && (
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={isResending || resendCooldown > 0}
+                style={{width: '100%', padding: '10px', background: 'transparent', color: '#00236F', border: '1px solid #CBD5E1', borderRadius: 12, fontSize: 14, fontWeight: '600', cursor: isResending || resendCooldown > 0 ? 'default' : 'pointer', opacity: isResending || resendCooldown > 0 ? 0.6 : 1}}
+              >
+                {isResending
+                  ? 'Đang gửi lại...'
+                  : resendCooldown > 0
+                    ? `Gửi lại email xác nhận (${resendCooldown}s)`
+                    : 'Gửi lại email xác nhận'}
+              </button>
             )}
 
             <button type="submit" disabled={isSubmitting} style={{width: '100%', marginTop: 8, padding: '14px', background: '#00236F', color: 'white', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: '600', cursor: isSubmitting ? 'default' : 'pointer', opacity: isSubmitting ? 0.7 : 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, transition: 'background 0.2s'}} onMouseOver={e => e.currentTarget.style.background = '#1E3A8A'} onMouseOut={e => e.currentTarget.style.background = '#00236F'}>

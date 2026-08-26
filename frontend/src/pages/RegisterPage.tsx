@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, User, ArrowRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { createProfile } from '../lib/profile.api';
+import { describeAuthError, getEmailConfirmationRedirect, resendSignupConfirmation } from '../lib/authFlow';
+import { useResendCooldown } from '../hooks/useResendCooldown';
 
 export function RegisterPage() {
   const navigate = useNavigate();
@@ -12,6 +13,9 @@ export function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pendingConfirmation, setPendingConfirmation] = useState(false);
+  const [isResending, setIsResending] = useState(false);
+  const { cooldown: resendCooldown, start: startResendCooldown } = useResendCooldown();
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,35 +24,60 @@ export function RegisterPage() {
     setError(null);
     setInfo(null);
     setIsSubmitting(true);
-    const { data, error: signUpError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name: fullName } },
-    });
+    let data;
+    let signUpError;
+    try {
+      ({ data, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { full_name: fullName }, emailRedirectTo: getEmailConfirmationRedirect() },
+      }));
+    } catch (err) {
+      console.error('signUp failed unexpectedly', err);
+      setIsSubmitting(false);
+      setError('Không thể kết nối đến máy chủ. Vui lòng thử lại.');
+      return;
+    }
     setIsSubmitting(false);
 
     if (signUpError) {
-      setError(signUpError.message);
+      console.error('signUp error', signUpError);
+      setError(describeAuthError(signUpError));
       return;
     }
 
+    // A profile row is created lazily by AuthContext the first time a session for this
+    // user appears (works whether that happens immediately, i.e. email confirmation is
+    // disabled, or only later once the user confirms their email).
     if (data.session) {
-      try {
-        await createProfile(
-          { id: data.session.user.id, display_name: fullName.trim() || null },
-          data.session.access_token,
-        );
-      } catch (profileError) {
-        setError(profileError instanceof Error ? profileError.message : 'Could not create your profile.');
-        return;
-      }
-      // Email confirmation is disabled for this project — a session is issued immediately.
       navigate('/');
       return;
     }
 
-    // Email confirmation is required: signUp succeeded but there is no session yet.
+    setPendingConfirmation(true);
+    startResendCooldown();
     setInfo('Đăng ký thành công! Vui lòng kiểm tra email để xác nhận tài khoản trước khi đăng nhập.');
+  };
+
+  const handleResend = async () => {
+    if (isResending || resendCooldown > 0) return;
+    setIsResending(true);
+    setError(null);
+    try {
+      const { error: resendError } = await resendSignupConfirmation(email);
+      if (resendError) {
+        console.error('resend confirmation error', resendError);
+        setError(describeAuthError(resendError));
+      } else {
+        setInfo('Đã gửi lại email xác nhận. Vui lòng kiểm tra hộp thư của bạn.');
+        startResendCooldown();
+      }
+    } catch (err) {
+      console.error('resend confirmation failed unexpectedly', err);
+      setError('Không thể kết nối đến máy chủ. Vui lòng thử lại.');
+    } finally {
+      setIsResending(false);
+    }
   };
 
   return (
@@ -119,6 +148,21 @@ export function RegisterPage() {
             )}
             {info && (
               <p style={{color: '#16A34A', fontSize: 14, margin: 0}}>{info}</p>
+            )}
+
+            {pendingConfirmation && (
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={isResending || resendCooldown > 0}
+                style={{width: '100%', padding: '10px', background: 'transparent', color: '#00236F', border: '1px solid #CBD5E1', borderRadius: 12, fontSize: 14, fontWeight: '600', cursor: isResending || resendCooldown > 0 ? 'default' : 'pointer', opacity: isResending || resendCooldown > 0 ? 0.6 : 1}}
+              >
+                {isResending
+                  ? 'Đang gửi lại...'
+                  : resendCooldown > 0
+                    ? `Gửi lại email xác nhận (${resendCooldown}s)`
+                    : 'Gửi lại email xác nhận'}
+              </button>
             )}
 
             <button type="submit" disabled={isSubmitting} style={{width: '100%', marginTop: 8, padding: '14px', background: '#00236F', color: 'white', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: '600', cursor: isSubmitting ? 'default' : 'pointer', opacity: isSubmitting ? 0.7 : 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, transition: 'background 0.2s'}} onMouseOver={e => e.currentTarget.style.background = '#1E3A8A'} onMouseOut={e => e.currentTarget.style.background = '#00236F'}>
