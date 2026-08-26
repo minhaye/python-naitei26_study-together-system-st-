@@ -58,14 +58,14 @@ async def main():
         if cat_count == 0:
             print("Creating mock categories...")
             cats = [
-                ("THCS (Trung học Cơ sở)", "thcs"),
-                ("THPT (Trung học Phổ thông)", "thpt"),
-                ("Ngoại ngữ & Chứng chỉ", "ngoaingu"),
-                ("CNTT & Lập trình (IT)", "it"),
-                ("Kinh tế & Quản trị", "kinhte"),
-                ("Toán cao cấp & Đại số", "toan-caocap"),
-                ("Triết học & Lý luận", "triethoc"),
-                ("Y Dược & Sức khỏe", "yduoc"),
+                ("Ngoại ngữ", "ngoai-ngu"),
+                ("Công nghệ thông tin", "cntt"),
+                ("Toán học", "toan-hoc"),
+                ("Trung học Phổ thông (THPT)", "thpt"),
+                ("Kinh tế & Tài chính", "kinh-te-tai-chinh"),
+                ("Y khoa & Dược học", "y-khoa-duoc-hoc"),
+                ("Luật học", "luat-hoc"),
+                ("Giáo dục & Sư phạm", "giao-duc-su-pham"),
             ]
             for name, _ in cats:
                 cat_id = str(uuid.uuid4())

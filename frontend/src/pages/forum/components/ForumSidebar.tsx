@@ -2,9 +2,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   Search, X, Hash, Code, LineChart, Megaphone,
   Calculator, FlaskConical, Languages, Stethoscope,
-  Scale, BookOpen, Lightbulb, PenTool, GraduationCap,
-  School, HeartPulse, Briefcase, Smile, MessageCircle,
-  LayoutGrid
+  Scale, BookOpen, Brain, ShieldCheck, Atom, Dna,
+  Receipt, Cog, Building2, BookMarked, School,
+  GraduationCap, LayoutGrid
 } from 'lucide-react';
 import { forumApi } from '../lib/forum.api';
 import type { ForumCategoryResponse } from '../types/forum.types';
@@ -15,31 +15,34 @@ interface ForumSidebarProps {
   onSearchChange?: (search: string) => void;
 }
 
-// Hàm trợ giúp để gán icon cho từng chuyên mục dựa trên tên
+// Icon cho từng chuyên mục cố định (19 danh mục học thuật) — khớp chính xác theo tên
+const CATEGORY_ICONS: Record<string, React.ComponentType<{ size?: number; color?: string }>> = {
+  'Ngoại ngữ': Languages,
+  'Công nghệ thông tin': Code,
+  'Trí tuệ nhân tạo & Khoa học dữ liệu': Brain,
+  'An toàn thông tin & Mạng máy tính': ShieldCheck,
+  'Toán học': Calculator,
+  'Vật lý': Atom,
+  'Hóa học': FlaskConical,
+  'Sinh học': Dna,
+  'Y khoa & Dược học': Stethoscope,
+  'Kinh tế & Tài chính': LineChart,
+  'Quản trị kinh doanh & Marketing': Megaphone,
+  'Kế toán & Kiểm toán': Receipt,
+  'Luật học': Scale,
+  'Khoa học Xã hội & Nhân văn': BookOpen,
+  'Kỹ thuật & Công nghệ': Cog,
+  'Kiến trúc & Xây dựng': Building2,
+  'Giáo dục & Sư phạm': BookMarked,
+  'Trung học Phổ thông (THPT)': School,
+  'Ôn thi THPT Quốc gia – TSA – HSA': GraduationCap,
+};
+
 const getCategoryIcon = (name: string, isActive: boolean) => {
   const color = isActive ? '#1D4ED8' : '#64748B';
   const size = 18;
-  const n = name.toLowerCase();
-
-  if (n.includes('công nghệ') || n.includes('it')) return <Code size={size} color={color} />;
-  if (n.includes('kinh tế') || n.includes('tài chính')) return <LineChart size={size} color={color} />;
-  if (n.includes('quản trị') || n.includes('marketing')) return <Megaphone size={size} color={color} />;
-  if (n.includes('toán')) return <Calculator size={size} color={color} />;
-  if (n.includes('tự nhiên') || n.includes('hoá') || n.includes('sinh')) return <FlaskConical size={size} color={color} />;
-  if (n.includes('ngoại ngữ')) return <Languages size={size} color={color} />;
-  if (n.includes('y khoa') || n.includes('dược')) return <Stethoscope size={size} color={color} />;
-  if (n.includes('luật')) return <Scale size={size} color={color} />;
-  if (n.includes('xã hội') || n.includes('nhân văn')) return <BookOpen size={size} color={color} />;
-  if (n.includes('triết')) return <Lightbulb size={size} color={color} />;
-  if (n.includes('kiến trúc') || n.includes('thiết kế')) return <PenTool size={size} color={color} />;
-  if (n.includes('thpt') || n.includes('đại học')) return <GraduationCap size={size} color={color} />;
-  if (n.includes('thcs')) return <School size={size} color={color} />;
-  if (n.includes('sức khỏe')) return <HeartPulse size={size} color={color} />;
-  if (n.includes('kỹ năng') || n.includes('nghề nghiệp')) return <Briefcase size={size} color={color} />;
-  if (n.includes('thư giãn')) return <Smile size={size} color={color} />;
-  if (n.includes('hỏi đáp')) return <MessageCircle size={size} color={color} />;
-  
-  return <Hash size={size} color={color} />;
+  const Icon = CATEGORY_ICONS[name] ?? Hash;
+  return <Icon size={size} color={color} />;
 };
 
 export const ForumSidebar: React.FC<ForumSidebarProps> = ({
@@ -56,12 +59,7 @@ export const ForumSidebar: React.FC<ForumSidebarProps> = ({
 
   useEffect(() => {
     forumApi.getCategories().then((apiCats) => {
-      const sortedCats = [...apiCats].sort((a, b) => {
-        if (a.name === 'Hỏi đáp chung') return 1;
-        if (b.name === 'Hỏi đáp chung') return -1;
-        return 0;
-      });
-      setCategories(sortedCats);
+      setCategories(apiCats);
     });
   }, []);
 
