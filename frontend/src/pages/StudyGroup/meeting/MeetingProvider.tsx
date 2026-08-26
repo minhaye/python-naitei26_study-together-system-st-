@@ -17,6 +17,13 @@ interface MeetingProviderProps {
   initialVideoEnabled?: boolean;
   audioDeviceId?: string;
   videoDeviceId?: string;
+  /** Invoked when the LiveKit session disconnects (kick, room end/delete closing the LiveKit
+   * room server-side, or an unrecoverable connection loss -- LiveKit itself already retries
+   * transient network blips internally and only calls `onDisconnected` once it gives up, so
+   * this isn't fired for those). Used by the caller to refetch the room's current status so
+   * the UI can show *why* (e.g. "phòng học đã kết thúc") instead of just going dark with no
+   * explanation -- see StudyRoom.tsx. */
+  onSessionEnded?: () => void;
   children: ReactNode;
 }
 
@@ -32,6 +39,7 @@ export function MeetingProvider({
   initialVideoEnabled = true,
   audioDeviceId,
   videoDeviceId,
+  onSessionEnded,
   children,
 }: MeetingProviderProps) {
   const { status, data, error, retry } = useMeetingToken(roomId, enabled);
@@ -63,7 +71,10 @@ export function MeetingProvider({
           setConnected(true);
           setLiveKitError(null);
         }}
-        onDisconnected={() => setConnected(false)}
+        onDisconnected={() => {
+          setConnected(false);
+          onSessionEnded?.();
+        }}
         onError={(err) => {
           setConnected(false);
           setLiveKitError(err);

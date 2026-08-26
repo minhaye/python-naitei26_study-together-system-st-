@@ -6,6 +6,7 @@ No third-party package is required.
 """
 
 import asyncio
+import itertools
 import os
 import re
 import shutil
@@ -15,6 +16,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 FRONTEND_DIR = ROOT / "frontend"
+
+# Shared sequence number for every backend/frontend log line.
+LOG_COUNTER = itertools.count(1)
 
 # Note: on Windows, asyncio subprocess creation requires the default Proactor
 # event loop, so this process must NOT switch to WindowsSelectorEventLoopPolicy
@@ -152,7 +156,9 @@ async def stream_output(
 
     async for line in process.stdout:
         text = line.decode(errors="replace").rstrip()
-        print(colorize_log(prefix, text), flush=True)
+        line_no = next(LOG_COUNTER)
+        number = f"{BOLD}{YELLOW}{line_no:05d}{RESET}"
+        print(f"{number} {colorize_log(prefix, text)}", flush=True)
 
 
 async def run_process(

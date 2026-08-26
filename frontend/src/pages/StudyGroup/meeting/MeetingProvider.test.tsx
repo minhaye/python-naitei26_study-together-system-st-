@@ -112,4 +112,28 @@ describe('MeetingProvider', () => {
     await waitFor(() => expect(screen.queryByTestId('livekit-room')).not.toBeInTheDocument());
     expect(screen.getByTestId('connected').textContent).toBe('false');
   });
+
+  it('calls onSessionEnded when the LiveKit connection disconnects, so the caller can refetch room status (kick/end/delete)', async () => {
+    mockedCreateMeetingToken.mockResolvedValue({ server_url: 'wss://x', participant_token: 'tok' });
+    const onSessionEnded = vi.fn();
+
+    const { rerender } = render(
+      <MeetingProvider roomId="room-1" enabled onSessionEnded={onSessionEnded}>
+        <StatusProbe />
+      </MeetingProvider>
+    );
+    await waitFor(() => expect(screen.getByTestId('connected').textContent).toBe('true'));
+    expect(onSessionEnded).not.toHaveBeenCalled();
+
+    // Disabling tears down the LiveKit room (mirrors what the real component does once the
+    // room ends/the caller is kicked and `enabled` flips false) -- the fake LiveKitRoom above
+    // fires onDisconnected from its cleanup effect.
+    rerender(
+      <MeetingProvider roomId="room-1" enabled={false} onSessionEnded={onSessionEnded}>
+        <StatusProbe />
+      </MeetingProvider>
+    );
+
+    await waitFor(() => expect(onSessionEnded).toHaveBeenCalledTimes(1));
+  });
 });
