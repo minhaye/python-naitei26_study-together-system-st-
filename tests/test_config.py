@@ -26,6 +26,9 @@ def test_supabase_storage_headers_secret_key_sends_apikey_only(monkeypatch):
     assert settings.supabase_storage_headers == {"apikey": "sb_secret_new"}
 
 
+
+
+
 def test_supabase_storage_headers_legacy_fallback_sends_bearer_jwt(monkeypatch):
     monkeypatch.setattr(settings, "supabase_secret_key", None)
     monkeypatch.setattr(settings, "supabase_service_role_key", "legacy-jwt")

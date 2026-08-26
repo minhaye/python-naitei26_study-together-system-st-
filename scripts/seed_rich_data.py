@@ -515,28 +515,25 @@ async def seed():
                         ON CONFLICT (roadmap_id, position) DO NOTHING;
                     """), {"rm_id": rm_id, "name": phase_names[pos-1], "pos": pos, "prog": random.choice([0, 25, 50, 75, 100])})
 
-        # 12. Forum Categories (Target: 52+)
+        # 12. Forum Categories (Target: 19 fixed study-subject categories)
         res = await conn.execute(text("SELECT id, name FROM forum_categories;"))
         existing_cats = res.fetchall()
         cat_ids = [r[0] for r in existing_cats]
         cat_names = set([r[1] for r in existing_cats])
-        
-        needed_cats = max(0, 52 - len(cat_ids))
+
+        needed_cats = max(0, 19 - len(cat_ids))
         if needed_cats > 0:
             print(f"Creating {needed_cats} forum categories...")
             new_cat_list = [
-                "Lập Trình Di Động (Flutter/React Native)", "Trí Tuệ Nhân Tạo & Data Science", "An Toàn Thông Tin & Cyber Security",
-                "Thiết Kế Đồ Họa & UI/UX", "Kỹ Năng Mềm & Phát Triển Bản Thân", "Góc Tuyển Dụng & Thực Tập Sinh",
-                "Săn Học Bổng Du Học 2026", "Tiếng Trung (HSK)", "Tiếng Hàn (TOPIK)", "Vật Lý Đại Xung & Cơ Học",
-                "Hóa Học & Đời Sống", "Sinh Học & Y Học Thường Thức", "Kinh Tế Vĩ Mô & Vi Mô", "Tài Chính Doanh Nghiệp",
-                "Marketing Digital", "Quản Trị Nhân Sự", "Luật Kinh Tế & Pháp Luật", "Tâm Lý Học Học Đường",
-                "Kinh Nghiệm Phỏng Vấn Công Ty", "Góc Tự Học & Quản Lý Thời Gian", "Luyện Thi SAT & ACT",
-                "Kỹ Thuật Điện Điện Tử", "Kiến Trúc & Xây Dựng", "Ngoại Ngữ - Tiếng Nhật", "Ngoại Ngữ - Tiếng Anh",
-                "Văn Học & Nghệ Thuật", "Âm Nhạc & Cảm Âm", "Thể Thao & Sức Khỏe Học Đường", "Kỹ Năng Quản Lý Tài Chính",
-                "Khởi Nghiệp & Startup Student", "Triết Học & Tư Duy Phản Biện", "Chế Tạo Robot & IoT", "DevOps & Cloud Computing", "Game Development"
+                "Ngoại ngữ", "Công nghệ thông tin", "Trí tuệ nhân tạo & Khoa học dữ liệu",
+                "An toàn thông tin & Mạng máy tính", "Toán học", "Vật lý", "Hóa học", "Sinh học",
+                "Y khoa & Dược học", "Kinh tế & Tài chính", "Quản trị kinh doanh & Marketing",
+                "Kế toán & Kiểm toán", "Luật học", "Khoa học Xã hội & Nhân văn", "Kỹ thuật & Công nghệ",
+                "Kiến trúc & Xây dựng", "Giáo dục & Sư phạm", "Trung học Phổ thông (THPT)",
+                "Ôn thi THPT Quốc gia – TSA – HSA"
             ]
             for cname in new_cat_list:
-                if cname not in cat_names and len(cat_ids) < 55:
+                if cname not in cat_names and len(cat_ids) < 19:
                     c_id = uuid.uuid4()
                     await conn.execute(text("""
                         INSERT INTO forum_categories (id, name, description)
