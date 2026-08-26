@@ -45,6 +45,7 @@ async def create_upload_url(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Generate a signed upload URL for adding a file to a group's resources. Requires group membership."""
     await _require_group_member(session, group_id, current_user.id)
     path = storage_service.build_object_path(group_id, current_user.id, data.file_name)
     try:
@@ -96,6 +97,7 @@ async def create_folder(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Create a new resource folder within a group. Requires group membership."""
     await _require_group_member(session, data.group_id, current_user.id)
     try:
         folder = await service.create_folder(session, data, created_by=current_user.id)
@@ -115,6 +117,7 @@ async def get_folder(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Retrieve a resource folder by ID. Requires group membership."""
     folder = await service.get_folder_by_id(session, folder_id)
     if not folder:
         raise HTTPException(
@@ -131,6 +134,7 @@ async def list_folders(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """List all top-level resource folders in a group. Requires group membership."""
     await _require_group_member(session, group_id, current_user.id)
     return await service.list_folders_by_group(session, group_id)
 
@@ -141,6 +145,7 @@ async def list_subfolders(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """List subfolders of a resource folder. Requires group membership."""
     folder = await service.get_folder_by_id(session, folder_id)
     if not folder:
         raise HTTPException(
@@ -158,6 +163,7 @@ async def update_folder(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Update a resource folder's details. Only the folder creator or a group manager may perform this action."""
     folder = await service.get_folder_by_id(session, folder_id)
     if not folder:
         raise HTTPException(
@@ -184,6 +190,7 @@ async def delete_folder(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Delete a resource folder. Only the folder creator or a group manager may perform this action."""
     folder = await service.get_folder_by_id(session, folder_id)
     if not folder:
         raise HTTPException(
@@ -212,6 +219,7 @@ async def create_file(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Register a previously uploaded file as a resource in a group. Requires group membership; the file must already exist in storage at the referenced path."""
     await _require_group_member(session, data.group_id, current_user.id)
 
     if not storage_service.validate_ownership(data.file_path, data.group_id, current_user.id):
@@ -243,6 +251,7 @@ async def get_file(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Retrieve a resource file's metadata by ID. Requires group membership."""
     resource = await service.get_file_by_id(session, file_id)
     if not resource:
         raise HTTPException(
@@ -260,6 +269,7 @@ async def list_files(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """List resource files in a group or folder. Provide either group_id or folder_id as a query parameter. Requires group membership."""
     if group_id:
         await _require_group_member(session, group_id, current_user.id)
         return await service.list_files_by_group(session, group_id)
@@ -283,6 +293,7 @@ async def update_file(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Update a resource file's metadata. Only the uploader or a group manager may perform this action."""
     resource = await service.get_file_by_id(session, file_id)
     if not resource:
         raise HTTPException(
@@ -311,6 +322,7 @@ async def delete_file(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Delete a resource file and its underlying storage object. Only the uploader or a group manager may perform this action."""
     resource = await service.get_file_by_id(session, file_id)
     if not resource:
         raise HTTPException(

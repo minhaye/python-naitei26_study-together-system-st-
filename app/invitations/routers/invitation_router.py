@@ -130,6 +130,7 @@ async def create_invitation(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Create an invitation (email or code) for a group, study room, or private channel. Requires authentication; only an active owner or moderator of the target's group may create invitations."""
     resolved = await _load_target(session, data.group_id, data.room_id, data.channel_id)
     if resolved is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Invitation target not found")
@@ -200,6 +201,7 @@ async def list_incoming_invitations(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """List pending invitations addressed to the authenticated user's email. Requires authentication."""
     if current_user.email is None:
         return []
     return await service.list_incoming(session, current_user.email.strip().lower())
@@ -213,6 +215,7 @@ async def get_active_code(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Get the currently active invitation code, if any, for a group, study room, or private channel (exactly one target must be given). Requires authentication; only an active owner or moderator of the target's group may view this."""
     if sum(x is not None for x in (group_id, room_id, channel_id)) != 1:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Exactly one of group_id, room_id, channel_id is required")
     resolved = await _load_target(session, group_id, room_id, channel_id)
@@ -348,6 +351,7 @@ async def decline_invitation(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Decline an email-based invitation. Requires authentication; only the invitation's recipient (matched by verified email) may decline it."""
     invitation = await service.get_by_id(session, invitation_id)
     if invitation is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Invitation not found")
@@ -378,6 +382,7 @@ async def revoke_invitation(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Revoke a pending invitation before it is used. Requires authentication; only an active owner or moderator of the target's group may revoke it."""
     invitation = await service.get_by_id(session, invitation_id)
     if invitation is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Invitation not found")

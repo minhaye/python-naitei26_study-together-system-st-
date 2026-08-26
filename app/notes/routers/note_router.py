@@ -35,6 +35,7 @@ async def create_note(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Create a note within a group. Only the group owner or a moderator can create notes."""
     await _require_note_manager(session, data.group_id, current_user.id)
     try:
         note = await service.create(session, data, author_id=current_user.id)
@@ -51,6 +52,7 @@ async def list_notes(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """List notes for a group. Requires active membership in the group."""
     await _require_group_member(session, group_id, current_user.id)
     return await service.list_by_group(session, group_id)
 
@@ -79,6 +81,7 @@ async def update_note(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Update a note. Only the group owner or a moderator of the note's group can update it."""
     note = await service.get_by_id(session, note_id)
     if not note:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Note not found")
@@ -98,6 +101,7 @@ async def delete_note(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Delete a note. Only the group owner or a moderator of the note's group can delete it."""
     note = await service.get_by_id(session, note_id)
     if not note:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Note not found")

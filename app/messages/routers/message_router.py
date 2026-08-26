@@ -87,6 +87,7 @@ async def list_messages(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """List messages in a conversation (channel, room, or direct), paginated with a cursor. Requires the caller to have access to the conversation."""
     from sqlalchemy import select
     from app.conversations.entities.conversation_entity import Conversation
     from app.channels.entities.channel_entity import Channel
@@ -142,6 +143,7 @@ async def create_message(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Send a new message to a conversation. Requires permission to write to the conversation; blocked if the caller has an active messaging ban, and any attachment must reference a file already uploaded and owned by the caller."""
     conversation = await _load_conversation(session, conversation_id)
     await _authorize_send(session, conversation, current_user.id)
 
@@ -206,6 +208,7 @@ async def get_message(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Retrieve a single message by ID. Requires access to the message's parent conversation."""
     message = await message_service.get_by_id(session, message_id, viewer_id=current_user.id)
     if not message:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
@@ -222,6 +225,7 @@ async def update_message(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Edit the content of an existing message. Only the original sender may edit, and not once the parent study room has ended."""
     message = await message_service.get_by_id(session, message_id, viewer_id=current_user.id)
     if not message:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
@@ -251,6 +255,7 @@ async def delete_message(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Delete a message. Allowed for the original sender or a group/channel manager, and not once the parent study room has ended. Also removes any attached file."""
     message = await message_service.get_by_id(session, message_id)
     if not message:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
@@ -302,6 +307,7 @@ async def set_message_reaction(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Add or update the caller's emoji reaction on a message. Requires access to the message's conversation."""
     message = await message_service.get_by_id(session, message_id)
     if not message:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
@@ -324,6 +330,7 @@ async def remove_message_reaction(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Remove the caller's reaction from a message. Requires access to the message's conversation."""
     message = await message_service.get_by_id(session, message_id)
     if not message:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")

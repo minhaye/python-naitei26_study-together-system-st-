@@ -8,4 +8,5 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 @router.get("/me", response_model=CurrentUser)
 async def get_me(current_user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    """Return the currently authenticated user's profile. Requires authentication."""
     return current_user

@@ -31,6 +31,7 @@ async def create_group(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Create a new study group with the authenticated user as its owner. Requires authentication; blocked if the caller has an active ban from creating groups."""
     ban = await get_active_ban(session, current_user.id, BanType.CREATE_GROUP)
     if ban:
         raise HTTPException(
@@ -58,6 +59,7 @@ async def list_groups(
     limit: int = 50,
     session: AsyncSession = Depends(get_db_session)
 ):
+    """List groups, optionally filtered by search text. Public endpoint; by default only public groups are returned, while public_only=false returns all groups' basic metadata."""
     # Public discovery stays unauthenticated by design (documented decision, mirrors Study
     # Room's public GET /study-rooms). public_only=false is unrestricted read of all groups'
     # basic metadata; the actually-sensitive data (membership rosters) is gated separately
@@ -97,6 +99,7 @@ async def get_member_counts(session: AsyncSession = Depends(get_db_session)):
 
 @router.get("/{group_id}", response_model=GroupResponse)
 async def get_group(group_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)):
+    """Get a single group's details by id. Public endpoint."""
     group = await service.get_by_id(session, group_id)
     if not group:
         raise HTTPException(
@@ -113,6 +116,7 @@ async def update_group(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Update a group's details. Requires authentication; only the group owner may perform this action."""
     group = await service.get_by_id(session, group_id)
     if not group:
         raise HTTPException(
@@ -197,6 +201,7 @@ async def delete_group(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Delete a group. Requires authentication; only the group owner may perform this action."""
     group = await service.get_by_id(session, group_id)
     if not group:
         raise HTTPException(
@@ -226,6 +231,7 @@ async def add_member(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Join a group or add another user as a member. Self-join is only allowed for public groups (and is blocked by an active join ban); adding a different user requires the caller to be the group owner or a moderator. New members always join with the plain member role."""
     group = await service.get_by_id(session, group_id)
     if not group:
         raise HTTPException(
@@ -283,6 +289,7 @@ async def list_members(
     current_user: CurrentUser | None = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """List a group's members. Public groups' rosters are readable by anyone; private groups require the caller to be an active member or the owner."""
     group = await service.get_by_id(session, group_id)
     if not group:
         raise HTTPException(
@@ -300,6 +307,7 @@ async def get_member(
     current_user: CurrentUser | None = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Get a single membership record for a user in a group. Public groups' rosters are readable by anyone; private groups require the caller to be an active member or the owner."""
     group = await service.get_by_id(session, group_id)
     if not group:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Group not found")
@@ -339,6 +347,7 @@ async def update_member_role(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Change a member's role within the group. Requires authentication; only the group owner may perform this action. Ownership transfer and changing the owner's own role are not supported."""
     group = await service.get_by_id(session, group_id)
     if not group:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Group not found")
@@ -377,6 +386,7 @@ async def update_member_status(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Update a member's status (e.g. active, left, banned). Requires authentication; a member may set their own status to "left" (self-leave), but changing another member's status requires the group owner."""
     group = await service.get_by_id(session, group_id)
     if not group:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Group not found")
@@ -415,6 +425,7 @@ async def remove_member(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Permanently remove ("kick") a member from the group. Requires authentication; only the group owner may perform this action. To leave voluntarily, use the member status update endpoint instead."""
     group = await service.get_by_id(session, group_id)
     if not group:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Group not found")

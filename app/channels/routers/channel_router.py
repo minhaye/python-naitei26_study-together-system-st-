@@ -28,6 +28,7 @@ async def create_channel(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Create a new channel within a group. Only the group owner or a moderator may create channels."""
     group = await groups_service.get_by_id(session, data.group_id)
     if not group:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Group not found")
@@ -53,6 +54,7 @@ async def list_channels(
     current_user: CurrentUser | None = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """List channels for a group. Public endpoint; private channels are only included for callers who can access them."""
     if not group_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -114,6 +116,7 @@ async def update_channel(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Update a channel's details. Only the group owner or a moderator of the channel's group may perform this action."""
     channel = await _get_active_channel_or_404(session, channel_id)
     # Authorization follows the channel's *actual stored* group_id, never a client-supplied
     # one -- ChannelUpdate has no group_id field, so there is no bypass surface here.
@@ -167,6 +170,7 @@ async def add_member(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Add a member to a channel. Only the group owner or a moderator of the channel's group may manage channel membership."""
     channel = await _get_active_channel_or_404(session, channel_id)
     # No self-join case for channels (unlike groups) -- managing (typically private)
     # channel membership always requires group manager authority over channel.group_id.
@@ -200,6 +204,7 @@ async def list_members(
     current_user: CurrentUser | None = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """List the members of a channel. Public channel rosters are open; private channel rosters require membership or group-manager authority."""
     channel = await _get_active_channel_or_404(session, channel_id)
     await _require_channel_member_access(session, channel, current_user)
     return await service.list_members(session, channel_id)
@@ -212,6 +217,7 @@ async def get_member(
     current_user: CurrentUser | None = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Get a single channel membership. Public channel rosters are open; private channel rosters require membership or group-manager authority."""
     channel = await _get_active_channel_or_404(session, channel_id)
     await _require_channel_member_access(session, channel, current_user)
     member = await service.get_member(session, channel_id, user_id)
@@ -251,6 +257,7 @@ async def remove_member(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Remove a member from a channel. A user may remove themselves; removing another member requires group owner or moderator authority."""
     channel = await _get_active_channel_or_404(session, channel_id)
     member = await service.get_member(session, channel_id, user_id)
     if not member:

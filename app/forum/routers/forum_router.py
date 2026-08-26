@@ -49,6 +49,7 @@ async def create_category(
     _current_user: CurrentUser = Depends(require_forum_moderator),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Create a new forum category. Requires forum moderator role."""
     try:
         category = await service.create_category(session, data)
         await session.commit()
@@ -63,11 +64,13 @@ async def create_category(
 
 @router.get("/categories", response_model=list[ForumCategoryResponse])
 async def list_categories(session: AsyncSession = Depends(get_db_session)):
+    """List all forum categories."""
     return await service.list_categories(session)
 
 
 @router.get("/categories/{category_id}", response_model=ForumCategoryResponse)
 async def get_category(category_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)):
+    """Get a single forum category by its ID."""
     category = await service.get_category_by_id(session, category_id)
     if not category:
         raise HTTPException(
@@ -84,6 +87,7 @@ async def update_category(
     _current_user: CurrentUser = Depends(require_forum_moderator),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Update an existing forum category. Requires forum moderator role."""
     category = await service.get_category_by_id(session, category_id)
     if not category:
         raise HTTPException(
@@ -108,6 +112,7 @@ async def delete_category(
     _current_user: CurrentUser = Depends(require_forum_moderator),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Delete a forum category. Requires forum moderator role."""
     category = await service.get_category_by_id(session, category_id)
     if not category:
         raise HTTPException(
@@ -134,6 +139,7 @@ async def create_post(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Create a new forum post. Requires authentication; users with an active post ban are rejected."""
     await _ensure_not_post_banned(session, current_user.id)
     try:
         post = await service.create_post(session, data, author_id=current_user.id)
@@ -153,6 +159,7 @@ async def get_post(
     current_user: CurrentUser | None = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Get a single forum post by its ID. Authentication is optional; if provided, the response reflects the current user's reactions."""
     post = await service.get_post_by_id(session, post_id, user_id=current_user.id if current_user else None)
     if not post:
         raise HTTPException(
@@ -172,6 +179,7 @@ async def list_posts(
     current_user: CurrentUser | None = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """List forum posts, optionally filtered by category, author, or tag. Supports pagination via `skip`/`limit` (default limit 50)."""
     posts, total = await service.list_posts_by_category(
         session, category_id, tag=tag, author_id=author_id, user_id=current_user.id if current_user else None, skip=skip, limit=limit
     )
@@ -183,11 +191,13 @@ async def list_posts(
 
 @router.get("/tags/trending", response_model=list[TagResponse])
 async def get_trending_tags(limit: int = 5, session: AsyncSession = Depends(get_db_session)):
+    """Get the most popular forum tags, ordered by usage."""
     return await service.get_trending_tags(session, limit=limit)
 
 
 @router.get("/tags/search", response_model=list[TagResponse])
 async def search_tags(q: str = "", limit: int = 10, session: AsyncSession = Depends(get_db_session)):
+    """Search forum tags by name prefix/substring."""
     return await service.search_tags(session, query=q, limit=limit)
 
 
@@ -198,6 +208,7 @@ async def update_post(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Update a forum post. Only the original author may edit their own post."""
     post = await service.get_post_by_id(session, post_id)
     if not post:
         raise HTTPException(
@@ -225,6 +236,7 @@ async def delete_post(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Soft-delete a forum post. The author may delete their own post; moderators may delete any post, which is logged as a moderation action with an optional `reason`."""
     post = await service.get_post_by_id(session, post_id)
     if not post:
         raise HTTPException(
@@ -266,6 +278,7 @@ async def create_comment(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Create a new comment on a forum post. Requires authentication; users with an active post ban are rejected."""
     await _ensure_not_post_banned(session, current_user.id)
     try:
         comment = await service.create_comment(session, data, author_id=current_user.id)
@@ -285,6 +298,7 @@ async def get_comment(
     current_user: CurrentUser | None = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Get a single comment by its ID. Authentication is optional; if provided, the response reflects the current user's reactions."""
     comment = await service.get_comment_by_id(session, comment_id, user_id=current_user.id if current_user else None)
     if not comment:
         raise HTTPException(
@@ -302,6 +316,7 @@ async def list_comments(
     current_user: CurrentUser | None = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """List comments on a forum post. Supports pagination via `skip`/`limit` (default limit 50)."""
     return await service.list_comments_by_post(
         session, post_id, user_id=current_user.id if current_user else None, skip=skip, limit=limit
     )
@@ -314,6 +329,7 @@ async def update_comment(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Update a comment. Only the original author may edit their own comment."""
     comment = await service.get_comment_by_id(session, comment_id)
     if not comment:
         raise HTTPException(
@@ -341,6 +357,7 @@ async def delete_comment(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Delete a comment. The author may delete their own comment; moderators may delete any comment, which is logged as a moderation action with an optional `reason`."""
     comment = await service.get_comment_by_id(session, comment_id)
     if not comment:
         raise HTTPException(
@@ -380,6 +397,7 @@ async def list_reacted_posts(
     limit: int = 50,
     session: AsyncSession = Depends(get_db_session)
 ):
+    """List forum posts that a given user has reacted to. Supports pagination via `skip`/`limit` (default limit 50)."""
     return await service.list_reacted_posts(session, user_id, skip=skip, limit=limit)
 
 
@@ -390,6 +408,7 @@ async def set_post_reaction(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Set (or replace) the current user's emoji reaction on a post. Requires authentication and returns the updated reaction summary."""
     post = await service.get_post_by_id(session, post_id)
     if not post:
         raise HTTPException(
@@ -414,6 +433,7 @@ async def remove_post_reaction(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Remove the current user's emoji reaction from a post. Requires authentication and returns the updated reaction summary."""
     try:
         await service.remove_post_reaction(session, post_id, current_user.id)
         await session.commit()
@@ -432,6 +452,7 @@ async def get_post_reactions(
     current_user: CurrentUser | None = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Get the emoji reaction summary for a post. Authentication is optional; if provided, indicates the current user's own reaction."""
     return await service.get_post_reactions(session, post_id, current_user.id if current_user else None)
 
 
@@ -442,6 +463,7 @@ async def set_comment_reaction(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Set (or replace) the current user's emoji reaction on a comment. Requires authentication and returns the updated reaction summary."""
     comment = await service.get_comment_by_id(session, comment_id)
     if not comment:
         raise HTTPException(
@@ -466,6 +488,7 @@ async def remove_comment_reaction(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Remove the current user's emoji reaction from a comment. Requires authentication and returns the updated reaction summary."""
     try:
         await service.remove_comment_reaction(session, comment_id, current_user.id)
         await session.commit()
@@ -484,4 +507,5 @@ async def get_comment_reactions(
     current_user: CurrentUser | None = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Get the emoji reaction summary for a comment. Authentication is optional; if provided, indicates the current user's own reaction."""
     return await service.get_comment_reactions(session, comment_id, current_user.id if current_user else None)

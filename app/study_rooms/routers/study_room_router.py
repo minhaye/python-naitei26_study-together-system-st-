@@ -70,6 +70,7 @@ async def create_room(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Create a new study room under a group. Only an active group owner or moderator may create a study room; the authenticated caller becomes the room's host."""
     group = await groups_service.get_by_id(session, data.group_id)
     if not group:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Group not found")
@@ -96,11 +97,13 @@ async def create_room(
 
 @router.get("/", response_model=list[StudyRoomResponse])
 async def list_rooms(group_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)):
+    """List all study rooms belonging to a given group."""
     return await service.list_by_group(session, group_id)
 
 
 @router.get("/{room_id}", response_model=StudyRoomResponse)
 async def get_room(room_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)):
+    """Get a single study room by its ID."""
     room = await _get_active_room_or_404(session, room_id)
     return room
 
@@ -112,6 +115,7 @@ async def update_room(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Update a study room's details. Only an active group owner or moderator of the room's group may update it."""
     room = await _get_active_room_or_404(session, room_id)
     # Management authority derives from the actor's CURRENT Group role, never from a stale
     # room.host_id snapshot -- see can_manage_room's docstring.
@@ -136,6 +140,7 @@ async def update_whiteboard_state(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Update the persisted whiteboard state for a study room. Only the room's host or a moderator may edit the whiteboard."""
     room = await _get_active_room_or_404(session, room_id)
     # Only the host or a moderator may write the persisted board -- mirrors the
     # can_publish_data LiveKit grant (see can_edit_whiteboard's docstring); a plain
@@ -259,6 +264,7 @@ async def start_room(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Start a study room's live session. Only an active group owner or moderator may start it."""
     room = await _get_active_room_or_404(session, room_id)
     if not await is_group_manager(session, room.group_id, current_user.id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only an active group owner or moderator can start this study room")
@@ -280,6 +286,7 @@ async def end_room(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """End a study room's live session. Only an active group owner or moderator may end it."""
     room = await _get_active_room_or_404(session, room_id)
     if not await is_group_manager(session, room.group_id, current_user.id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only an active group owner or moderator can end this study room")
@@ -337,6 +344,7 @@ async def join_room(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Join a study room as a participant. Requires active membership in the room's group; blocked if the room has ended or the caller is banned from joining rooms."""
     room = await _get_active_room_or_404(session, room_id)
     if not can_join_room(room):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "This study room has ended")
@@ -379,6 +387,7 @@ async def leave_room(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Leave a study room, ending the caller's own membership in it."""
     # A deleted room must behave as if it no longer exists here too -- the soft-delete
     # invariant (deleted_at set -> normal operations stop) applies to leave just like every
     # other mutation, even though leaving only touches the caller's own membership row.
@@ -411,6 +420,7 @@ async def list_members(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """List the members of a study room, optionally filtered to active members only. Requires access to the room."""
     room = await _get_active_room_or_404(session, room_id)
     if not await can_access_room(session, room, current_user.id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have access to this study room")
@@ -427,6 +437,7 @@ async def update_member_role(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Change a study room member's role. Only an active group owner or moderator may change member roles."""
     room = await _get_active_room_or_404(session, room_id)
     if not await is_group_manager(session, room.group_id, current_user.id):
         raise HTTPException(
@@ -460,6 +471,7 @@ async def log_moderation(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
+    """Log a moderation action in a study room (e.g. kick, mute, unmute, raise/lower hand). Self-service hand actions require room access; kick/mute/unmute require an active group owner or moderator."""
     room = await _get_active_room_or_404(session, room_id)
 
     # The acting moderator is always the authenticated caller -- data.moderator_id
@@ -505,6 +517,7 @@ async def list_moderation(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """List the moderation action history for a study room. Requires access to the room."""
     room = await _get_active_room_or_404(session, room_id)
     if not await can_access_room(session, room, current_user.id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not have access to this study room")
@@ -520,6 +533,7 @@ async def create_meeting_token(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Issue a LiveKit access token for joining this study room's live meeting. Requires permission to join the room's meeting; only the host or a moderator is granted data-publish rights (e.g. for the whiteboard)."""
     room = await _get_active_room_or_404(session, room_id)
     if not await can_join_room_meeting(session, room, current_user.id):
         raise HTTPException(

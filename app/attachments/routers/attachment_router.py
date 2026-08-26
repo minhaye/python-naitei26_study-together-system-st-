@@ -34,6 +34,7 @@ async def create_upload_url(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Generate a signed upload URL for an attachment on a channel, study room, or direct conversation. Requires authentication and send access to the conversation."""
     conversation = await conversation_service.get_by_id(session, conversation_id)
     if not conversation:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found")
@@ -73,6 +74,7 @@ async def get_attachment_url(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Generate a signed download URL for a message's attachment. Requires authentication and access to the message's conversation."""
     message = await message_service.get_by_id(session, message_id)
     if not message:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
