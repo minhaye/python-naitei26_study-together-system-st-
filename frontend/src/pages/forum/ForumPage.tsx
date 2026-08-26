@@ -45,12 +45,15 @@ export const ForumPage: React.FC = () => {
   const [categories, setCategories] = useState<ForumCategoryResponse[]>([]);
 
   // Hooks với bộ lọc selectedFilter từ Context
-  // Chỉ truyền userId khi đã đăng nhập để tránh gửi 'user-current' (không phải UUID hợp lệ) lên backend → 422 error
+  // Chỉ truyền userId khi đã đăng nhập VÀ auth đã xong → tránh:
+  //   1. Gửi 'user-current' (không phải UUID hợp lệ) lên backend → 422 error
+  //   2. Effect re-run 2 lần (undefined → uuid) gây double fetch sau login
+  const resolvedUserId = !authLoading && isLoggedIn ? currentUser.id : undefined;
   const { posts, setPosts, isLoading, page, setPage, totalPages } = useForumPosts(
     selectedCategoryId,
     search,
     selectedFilter,
-    isLoggedIn ? currentUser.id : undefined,
+    resolvedUserId,
     authLoading
   );
   const { showCreateModal, setShowCreateModal, handleCreatePost, handleUpdatePost, handleDeletePost, handleRetryPost, handleDiscardPost, handleReact, handleRemoveReaction } = usePostActions(setPosts);
@@ -151,8 +154,8 @@ export const ForumPage: React.FC = () => {
           {/* Restriction Banner -- pinned up front, not just after a failed post/comment */}
           {postBan && <RestrictionBanner ban={postBan} actionLabel="đăng bài và bình luận trong diễn đàn" />}
 
-          {/* Unauthenticated Alert Banner */}
-          {!isLoggedIn && (
+          {/* Unauthenticated Alert Banner -- chỉ hiện khi auth đã xong (tránh flash "khách" khi đang load session) */}
+          {!authLoading && !isLoggedIn && (
             <div
               style={{
                 display: 'flex',

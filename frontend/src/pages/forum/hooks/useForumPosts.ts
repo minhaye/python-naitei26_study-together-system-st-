@@ -49,7 +49,8 @@ export function useForumPosts(
   const forumState = useForumState();
   const { posts, setPosts, page, setPage, total, setTotal, selectedTag } = forumState;
 
-  const [isLoading, setIsLoading] = useState(false);
+  // Bắt đầu với isLoading=true nếu auth chưa xong → tránh flash "không có bài viết"
+  const [isLoading, setIsLoading] = useState(authLoading);
   const [error, setError] = useState<string | null>(null);
   const prevFilterKeyRef = useRef<string | null>(null);
   const isInitialMountRef = useRef(true);
@@ -71,12 +72,17 @@ export function useForumPosts(
     // Nếu mount lần đầu và đã có bài viết lưu trong Context (do vừa Back về) -> Giữ nguyên
     if (isInitialMountRef.current && posts.length > 0) {
       isInitialMountRef.current = false;
+      setIsLoading(false);
       return;
     }
     isInitialMountRef.current = false;
 
     // Không gửi request khi Auth Session đang trong quá trình tải (tránh gửi request không có Bearer token)
-    if (authLoading) return;
+    // Giữ isLoading=true để UI hiển thị skeleton thay vì "không có bài viết"
+    if (authLoading) {
+      setIsLoading(true);
+      return;
+    }
 
     const isLandingPage = !categoryId && !search && filter === 'latest' && !selectedTag && page === 1;
     let cancelled = false;
