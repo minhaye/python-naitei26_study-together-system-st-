@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
 import { ForumSidebar } from './components/ForumSidebar';
 import { ForumFilterBar } from './components/ForumFilterBar';
@@ -27,6 +27,7 @@ export const ForumPage: React.FC = () => {
   const { isLoggedIn, currentUser, requireAuth, getBan, loading: authLoading } = useAuth();
   const postBan = getBan('post');
   const forumState = useForumState();
+  const [searchParams] = useSearchParams();
 
   const {
     selectedCategoryId,
@@ -41,6 +42,19 @@ export const ForumPage: React.FC = () => {
     scrollTop,
     setScrollTop,
   } = forumState;
+
+  // Đọc ?hashtag= từ URL khi ForumPage mount lần đầu (navigate từ Header search bar)
+  // Dùng ref để chỉ chạy đúng 1 lần, không override khi user đã tự clear tag
+  const appliedHashtagRef = useRef(false);
+  useEffect(() => {
+    if (appliedHashtagRef.current) return;
+    appliedHashtagRef.current = true;
+    const hashtagParam = searchParams.get('hashtag');
+    if (hashtagParam) {
+      setSelectedTag(hashtagParam.toLowerCase().replace(/^#/, ''));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [categories, setCategories] = useState<ForumCategoryResponse[]>([]);
 

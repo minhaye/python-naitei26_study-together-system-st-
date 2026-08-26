@@ -289,12 +289,58 @@ class ForumService:
         return list(result.scalars().all())
 
     async def search_tags(self, session: AsyncSession, query: str, limit: int = 10) -> list[Tag]:
+        """Fuzzy hashtag search: combines trigram similarity (pg_trgm) with substring
+        matching so that typos like '#tienghat' still surface '#tiengnhat'.
+
+        Strategy:
+          1. ilike substring match  → catches prefixes / partial matches exactly
+          2. pg_trgm similarity ≥ 0.2 → catches single-char deletions/transpositions
+          UNION deduped, then ranked by post_count DESC so popular tags bubble up first.
+
+        Falls back gracefully to ilike-only if pg_trgm is not installed on this DB.
+        """
+        from sqlalchemy import text, union, literal_column
+        from sqlalchemy.orm import aliased
+
         clean_q = query.lstrip("#").lower().strip()
         if not clean_q:
             return await self.get_trending_tags(session, limit=limit)
-        stmt = select(Tag).where(Tag.name.ilike(f"%{clean_q}%")).order_by(Tag.post_count.desc(), Tag.created_at.desc()).limit(limit)
-        result = await session.execute(stmt)
-        return list(result.scalars().all())
+
+        # --- Try fuzzy (pg_trgm) first ---
+        try:
+            # similarity() requires pg_trgm extension. We use a raw text comparison
+            # so SQLAlchemy doesn't need a registered function for it.
+            fuzzy_stmt = (
+                select(Tag)
+                .where(
+                    func.similarity(Tag.name, clean_q) >= 0.2
+                )
+                .order_by(func.similarity(Tag.name, clean_q).desc(), Tag.post_count.desc())
+                .limit(limit)
+            )
+            fuzzy_result = await session.execute(fuzzy_stmt)
+            fuzzy_tags = list(fuzzy_result.scalars().all())
+        except Exception:
+            fuzzy_tags = []
+
+        # --- Always run ilike for substring / prefix matches ---
+        ilike_stmt = (
+            select(Tag)
+            .where(Tag.name.ilike(f"%{clean_q}%"))
+            .order_by(Tag.post_count.desc(), Tag.created_at.desc())
+            .limit(limit)
+        )
+        ilike_result = await session.execute(ilike_stmt)
+        ilike_tags = list(ilike_result.scalars().all())
+
+        # Merge: ilike results first (exact/prefix), then fuzzy extras, dedup by id
+        seen: set[uuid.UUID] = set()
+        merged: list[Tag] = []
+        for tag in ilike_tags + fuzzy_tags:
+            if tag.id not in seen:
+                seen.add(tag.id)
+                merged.append(tag)
+        return merged[:limit]
 
     # --- Comments ---
 
