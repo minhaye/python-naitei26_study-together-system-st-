@@ -69,6 +69,7 @@ async def search_users(
     _current_user: CurrentUser = Depends(require_forum_moderator),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Search user profiles by name or username. Requires forum moderator privileges."""
     return await profiles_service.search(session, q, limit=limit)
 
 
@@ -79,6 +80,7 @@ async def list_moderators(
     _current_user: CurrentUser = Depends(require_forum_moderator),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """List users with the moderator or admin role, paginated. Requires forum moderator privileges."""
     moderators, total = await profiles_service.list_by_role(
         session, [ProfileRole.MODERATOR, ProfileRole.ADMIN], skip=skip, limit=limit
     )
@@ -92,6 +94,7 @@ async def update_user_role(
     current_user: CurrentUser = Depends(require_admin),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Update a user's platform role, e.g. to grant or revoke moderator/admin privileges. Requires admin privileges; an admin cannot revoke their own admin role."""
     profile = await profiles_service.get_by_id(session, user_id)
     if not profile:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
@@ -136,6 +139,7 @@ async def create_ban(
     current_user: CurrentUser = Depends(require_forum_moderator),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Create one or more bans restricting a user's actions (e.g. messaging, posting, joining rooms). Requires forum moderator privileges; a moderator cannot ban themself."""
     target = await profiles_service.get_by_id(session, data.user_id)
     if not target:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
@@ -162,6 +166,7 @@ async def list_bans(
     _current_user: CurrentUser = Depends(require_forum_moderator),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """List bans, optionally filtered by user or ban type. Requires forum moderator privileges."""
     if user_id is not None:
         all_bans = await service.list_bans_for_user(session, user_id, active_only=active_only)
         total = len(all_bans)
@@ -178,6 +183,7 @@ async def list_user_bans(
     _current_user: CurrentUser = Depends(require_forum_moderator),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """List all bans issued to a specific user. Requires forum moderator privileges."""
     bans = await service.list_bans_for_user(session, user_id, active_only=active_only)
     return [_ban_response(b) for b in bans]
 
@@ -188,6 +194,7 @@ async def revoke_ban(
     current_user: CurrentUser = Depends(require_forum_moderator),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Revoke an active ban before its expiry. Requires forum moderator privileges."""
     ban = await service.get_ban_by_id(session, ban_id)
     if not ban:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Ban not found")
@@ -213,6 +220,7 @@ async def list_actions(
     _current_user: CurrentUser = Depends(require_forum_moderator),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """List the forum moderation action audit log, optionally filtered by moderator, target user, or action type. Requires forum moderator privileges."""
     entries, total = await service.list_actions(
         session,
         moderator_id=moderator_id,
@@ -261,6 +269,7 @@ async def list_reports(
     _current_user: CurrentUser = Depends(require_forum_moderator),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """List user reports, optionally filtered by status. Requires forum moderator privileges."""
     reports, total = await service.list_reports(session, status_filter=status_filter, skip=skip, limit=limit)
     return PaginatedResponse(
         items=[_report_response(r, reporter=r.reporter, reported_user=r.reported_user) for r in reports], total=total
@@ -274,6 +283,7 @@ async def update_report_status(
     current_user: CurrentUser = Depends(require_forum_moderator),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Update the status of a user report (e.g. resolve or dismiss), with an optional resolution note. Requires forum moderator privileges."""
     report = await service.get_report_by_id(session, report_id)
     if not report:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Report not found")

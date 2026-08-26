@@ -34,6 +34,7 @@ roadmap_ai_service = RoadmapAiService()
 
 @router.get('', response_model=list[RoadmapResponse])
 async def list_roadmaps(current_user: CurrentUser = Depends(get_current_user), session: AsyncSession = Depends(get_db_session)):
+    """List all roadmaps belonging to the current user, including their phases, most recently created first."""
     result = await session.execute(
         select(Roadmap).where(Roadmap.user_id == current_user.id).options(selectinload(Roadmap.phases)).order_by(Roadmap.created_at.desc())
     )
@@ -42,6 +43,7 @@ async def list_roadmaps(current_user: CurrentUser = Depends(get_current_user), s
 
 @router.post('/suggest/questions', response_model=RoadmapSuggestQuestionsResponse)
 async def suggest_roadmap_questions(data: RoadmapSuggestQuestionsRequest, current_user: CurrentUser = Depends(get_current_user)):
+    """Use AI to generate clarifying questions for a roadmap goal description, to refine the roadmap suggestion."""
     try:
         response = await roadmap_ai_service.suggest_questions(data.description)
         if not response.questions:
@@ -59,6 +61,7 @@ async def suggest_roadmap_questions(data: RoadmapSuggestQuestionsRequest, curren
 
 @router.post('/suggest', response_model=RoadmapSuggestion)
 async def suggest_roadmap(data: RoadmapSuggestRequest, current_user: CurrentUser = Depends(get_current_user)):
+    """Use AI to generate a suggested roadmap (phases) based on a goal description and answers to clarifying questions."""
     try:
         response = await roadmap_ai_service.suggest(data.description, data.answers)
         if not response.phases:
@@ -76,6 +79,7 @@ async def suggest_roadmap(data: RoadmapSuggestRequest, current_user: CurrentUser
 
 @router.post('/suggest/tasks', response_model=TaskSuggestionResponse)
 async def suggest_tasks(data: TaskSuggestRequest, current_user: CurrentUser = Depends(get_current_user)):
+    """Use AI to generate suggested tasks for a roadmap phase based on the goal, phases, and due date."""
     try:
         response = await roadmap_ai_service.suggest_tasks(
             goal=data.goal,
@@ -96,6 +100,7 @@ async def suggest_tasks(data: TaskSuggestRequest, current_user: CurrentUser = De
 
 @router.post('', response_model=RoadmapResponse, status_code=201)
 async def create_roadmap(data: RoadmapCreate, current_user: CurrentUser = Depends(get_current_user), session: AsyncSession = Depends(get_db_session)):
+    """Create a new roadmap for the current user with an initial set of phases."""
     roadmap = Roadmap(
         user_id=current_user.id,
         title=data.title,
@@ -111,6 +116,7 @@ async def create_roadmap(data: RoadmapCreate, current_user: CurrentUser = Depend
 
 @router.patch('/{roadmap_id}', response_model=RoadmapResponse)
 async def update_roadmap(roadmap_id: uuid.UUID, data: RoadmapUpdate, current_user: CurrentUser = Depends(get_current_user), session: AsyncSession = Depends(get_db_session)):
+    """Update a roadmap owned by the current user."""
     roadmap = await session.scalar(select(Roadmap).where(Roadmap.id == roadmap_id, Roadmap.user_id == current_user.id).options(selectinload(Roadmap.phases)))
     if not roadmap:
         raise HTTPException(404, 'Roadmap not found')
@@ -122,6 +128,7 @@ async def update_roadmap(roadmap_id: uuid.UUID, data: RoadmapUpdate, current_use
 
 @router.delete('/{roadmap_id}', status_code=204)
 async def delete_roadmap(roadmap_id: uuid.UUID, current_user: CurrentUser = Depends(get_current_user), session: AsyncSession = Depends(get_db_session)):
+    """Delete a roadmap owned by the current user."""
     roadmap = await session.scalar(select(Roadmap).where(Roadmap.id == roadmap_id, Roadmap.user_id == current_user.id))
     if not roadmap:
         raise HTTPException(404, 'Roadmap not found')
@@ -131,6 +138,7 @@ async def delete_roadmap(roadmap_id: uuid.UUID, current_user: CurrentUser = Depe
 
 @router.post('/{roadmap_id}/phases', response_model=RoadmapPhaseResponse, status_code=201)
 async def add_phase(roadmap_id: uuid.UUID, data: RoadmapPhaseCreate, current_user: CurrentUser = Depends(get_current_user), session: AsyncSession = Depends(get_db_session)):
+    """Add a new phase to a roadmap owned by the current user. A roadmap may have at most 20 phases."""
     roadmap = await session.scalar(select(Roadmap).where(Roadmap.id == roadmap_id, Roadmap.user_id == current_user.id).options(selectinload(Roadmap.phases)))
     if not roadmap:
         raise HTTPException(404, 'Roadmap not found')
@@ -146,6 +154,7 @@ async def add_phase(roadmap_id: uuid.UUID, data: RoadmapPhaseCreate, current_use
 
 @router.patch('/{roadmap_id}/phases/{phase_id}', response_model=RoadmapPhaseResponse)
 async def update_phase(roadmap_id: uuid.UUID, phase_id: uuid.UUID, data: RoadmapPhaseUpdate, current_user: CurrentUser = Depends(get_current_user), session: AsyncSession = Depends(get_db_session)):
+    """Update a phase of a roadmap owned by the current user, e.g. its name or progress."""
     phase = await session.scalar(
         select(RoadmapPhase).join(Roadmap).where(RoadmapPhase.id == phase_id, RoadmapPhase.roadmap_id == roadmap_id, Roadmap.user_id == current_user.id)
     )
@@ -160,6 +169,7 @@ async def update_phase(roadmap_id: uuid.UUID, phase_id: uuid.UUID, data: Roadmap
 
 @router.delete('/{roadmap_id}/phases/{phase_id}', status_code=204)
 async def delete_phase(roadmap_id: uuid.UUID, phase_id: uuid.UUID, current_user: CurrentUser = Depends(get_current_user), session: AsyncSession = Depends(get_db_session)):
+    """Delete a phase from a roadmap owned by the current user."""
     phase = await session.scalar(
         select(RoadmapPhase).join(Roadmap).where(RoadmapPhase.id == phase_id, RoadmapPhase.roadmap_id == roadmap_id, Roadmap.user_id == current_user.id)
     )

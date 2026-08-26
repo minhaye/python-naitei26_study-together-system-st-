@@ -98,6 +98,7 @@ async def list_notifications(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """List notifications for the authenticated user, optionally filtered by unread status or category tab, with pagination."""
     notifications = await service.list_for_user(
         session, current_user.id,
         unread_only=unread_only,
@@ -116,6 +117,7 @@ async def get_notification(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Retrieve a single notification by ID. Users may only view their own notifications."""
     notification = await service.get_by_id(session, notification_id)
     if not notification or notification.user_id != current_user.id:
         raise HTTPException(
@@ -133,6 +135,7 @@ async def mark_read(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Mark a single notification as read. Users may only update their own notifications."""
     notification = await service.get_by_id(session, notification_id)
     if not notification or notification.user_id != current_user.id:
         raise HTTPException(
@@ -159,6 +162,7 @@ async def mark_all_read(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Mark all of the authenticated user's notifications as read, optionally restricted to a single category tab."""
     try:
         count = await service.mark_all_read(session, current_user.id, category=category)
         await session.commit()
@@ -179,6 +183,7 @@ async def delete_notification(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Delete a single notification. Users may only delete their own notifications."""
     notification = await service.get_by_id(session, notification_id)
     if not notification or notification.user_id != current_user.id:
         raise HTTPException(

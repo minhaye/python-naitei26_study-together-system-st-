@@ -19,6 +19,7 @@ async def confirm_avatar_upload(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Confirm an uploaded avatar file and set it as the authenticated user's profile avatar."""
     prefix = f"users/{current_user.id}/"
     if not data.path.startswith(prefix) or not data.path.endswith(".avatar"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid avatar reference")
@@ -42,6 +43,7 @@ async def create_profile(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Create a new profile. Users may only create a profile for themselves."""
     if data.id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -63,6 +65,7 @@ async def create_profile(
 async def get_profile(
     profile_id: uuid.UUID, session: AsyncSession = Depends(get_db_session)
 ):
+    """Retrieve a single user profile by ID. Publicly accessible, no authentication required."""
     profile = await service.get_by_id(session, profile_id)
     if not profile:
         raise HTTPException(
@@ -75,6 +78,7 @@ async def get_profile(
 async def list_profiles(
     skip: int = 0, limit: int = 50, session: AsyncSession = Depends(get_db_session)
 ):
+    """List profiles with pagination. Publicly accessible, no authentication required."""
     return await service.list_all(session, skip=skip, limit=limit)
 
 
@@ -85,6 +89,7 @@ async def update_profile(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Update a user profile. Users may only update their own profile."""
     if profile_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -113,6 +118,7 @@ async def delete_profile(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Delete a user profile. Users may only delete their own profile."""
     if profile_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

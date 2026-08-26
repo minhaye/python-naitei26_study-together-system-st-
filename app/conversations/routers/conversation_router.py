@@ -78,6 +78,7 @@ async def list_direct_conversations(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """List the direct conversations for the current user, including unread counts. Requires authentication."""
     conversations = await conversation_service.list_direct_for_user(session, current_user.id)
     unread_map = await conversation_service.count_unread_for_user(
         session, current_user.id, [conversation.id for conversation in conversations]
@@ -94,6 +95,7 @@ async def mark_conversation_read(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
+    """Mark a direct conversation as read for the current user. Only direct conversations support read tracking; requires conversation membership."""
     conversation = await conversation_service.get_by_id(session, conversation_id)
     if conversation is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found")
