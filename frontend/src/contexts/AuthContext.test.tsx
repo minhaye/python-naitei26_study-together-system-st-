@@ -7,7 +7,7 @@ import { ApiError } from '../lib/apiClient';
 import { createProfile, fetchProfile } from '../lib/profile.api';
 import { fetchCurrentUser } from '../lib/auth.api';
 import { moderationApi } from '../lib/moderation.api';
-import type { Session } from '@supabase/supabase-js';
+import type { AuthChangeEvent, Session, Subscription } from '@supabase/supabase-js';
 import type { Profile } from '../lib/profile.types';
 
 vi.mock('../lib/supabase', () => ({
@@ -23,6 +23,12 @@ const mockedFetchProfile = vi.mocked(fetchProfile);
 const mockedCreateProfile = vi.mocked(createProfile);
 const mockedFetchCurrentUser = vi.mocked(fetchCurrentUser);
 const mockedListMyBans = vi.mocked(moderationApi.listMyBans);
+
+/** A structurally complete Subscription (per @supabase/auth-js's Subscription interface --
+ * id, callback, unsubscribe) so onAuthStateChange mocks don't need an unsafe cast. */
+function createMockSubscription(): Subscription {
+  return { id: 'mock-subscription', callback: () => {}, unsubscribe: vi.fn() };
+}
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void;
@@ -74,10 +80,10 @@ describe('AuthProvider profile auto-create race', () => {
     const getSessionDeferred = createDeferred<{ data: { session: Session | null } }>();
     mockedGetSession.mockReturnValue(getSessionDeferred.promise as ReturnType<typeof supabase.auth.getSession>);
 
-    let authStateCallback: ((event: string, session: Session | null) => void) | null = null;
+    let authStateCallback: ((event: AuthChangeEvent, session: Session | null) => void) | null = null;
     mockedOnAuthStateChange.mockImplementation((cb) => {
       authStateCallback = cb;
-      return { data: { subscription: { unsubscribe: vi.fn() } } } as ReturnType<typeof supabase.auth.onAuthStateChange>;
+      return { data: { subscription: createMockSubscription() } };
     });
 
     const fetchProfileDeferred = createDeferred<Profile>();
@@ -130,7 +136,7 @@ describe('AuthProvider profile auto-create race', () => {
       // Fire INITIAL_SESSION synchronously too, mirroring the real client, to make sure the
       // duplicate trigger still doesn't reach createProfile when a profile already exists.
       cb('INITIAL_SESSION', newUserSession);
-      return { data: { subscription: { unsubscribe: vi.fn() } } } as ReturnType<typeof supabase.auth.onAuthStateChange>;
+      return { data: { subscription: createMockSubscription() } };
     });
     mockedFetchProfile.mockResolvedValue(createdProfile);
 
