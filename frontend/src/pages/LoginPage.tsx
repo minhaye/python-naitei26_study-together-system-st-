@@ -120,7 +120,7 @@ export function LoginPage() {
             <div>
               <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8}}>
                 <label style={{fontSize: 14, fontWeight: '600', color: '#334155'}}>Mật khẩu</label>
-                <Link to="#" style={{fontSize: 13, fontWeight: '600', color: '#3B82F6', textDecoration: 'none'}}>Quên mật khẩu?</Link>
+                <Link to="/forgot-password" style={{fontSize: 13, fontWeight: '600', color: '#3B82F6', textDecoration: 'none'}}>Quên mật khẩu?</Link>
               </div>
               <div style={{position: 'relative'}}>
                 <Lock size={18} color="#94A3B8" style={{position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)'}} />

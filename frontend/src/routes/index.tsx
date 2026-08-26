@@ -11,6 +11,8 @@ import { StudyGroupDetail } from '../pages/StudyGroup/StudyGroupDetail';
 import { StudyRoom } from '../pages/StudyGroup/StudyRoom';
 import { LoginPage } from '../pages/LoginPage';
 import { RegisterPage } from '../pages/RegisterPage';
+import { ForgotPasswordPage } from '../pages/ForgotPasswordPage';
+import { UpdatePasswordPage } from '../pages/UpdatePasswordPage';
 import { AimPage } from '../pages/Aim';
 import { AccountSettingsPage } from '../pages/AccountSettingsPage';
 import { DirectMessagesPage } from '../pages/messages/DirectMessagesPage';
@@ -37,6 +39,8 @@ export function AppRoutes() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/update-password" element={<UpdatePasswordPage />} />
         <Route path="/room/:id" element={<ProtectedRoute><StudyRoom /></ProtectedRoute>} />
         <Route path="/" element={<Layout />}>
           <Route index element={<HomePage />} />
