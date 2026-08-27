@@ -281,8 +281,8 @@ export function Header() {
                                 fontFamily: 'Inter',
                             }}>
                                 {headerSearch.replace(/^#/, '').trim()
-                                    ? `🔍 Gợi ý cho "${headerSearch}"`
-                                    : '🔥 Hashtag nổi bật'
+                                    ? `Gợi ý cho "${headerSearch}"`
+                                    : 'Hashtag nổi bật'
                                 }
                             </div>
 
@@ -301,7 +301,7 @@ export function Header() {
                             {/* Empty state */}
                             {!isLoadingSuggestions && tagSuggestions.length === 0 && (
                                 <div style={{padding: '16px 14px', fontSize: 13, color: '#94A3B8', fontFamily: 'Inter', textAlign: 'center'}}>
-                                    Không tìm thấy hashtag phù hợp 😕<br/>
+                                    Không tìm thấy hashtag phù hợp<br/>
                                     <span style={{fontSize: 12}}>Nhấn Enter để tìm bất kỳ</span>
                                 </div>
                             )}

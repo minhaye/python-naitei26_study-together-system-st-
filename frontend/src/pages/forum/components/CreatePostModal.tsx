@@ -31,11 +31,13 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
   const [content, setContent] = useState('');
   const [editorKey, setEditorKey] = useState(0);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [categorySearch, setCategorySearch] = useState('');
 
   const [tagSuggestions, setTagSuggestions] = useState<TagResponse[]>([]);
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const categorySearchRef = useRef<HTMLInputElement>(null);
   const tagSuggestionsRef = useRef<HTMLDivElement>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
 
@@ -159,7 +161,14 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
           <div ref={dropdownRef} style={{ position: 'relative' }}>
             {/* Box chọn chính (Dropdown Trigger Box) */}
             <div
-              onClick={() => setIsDropdownOpen((prev) => !prev)}
+              onClick={() => {
+                const willOpen = !isDropdownOpen;
+                setIsDropdownOpen(willOpen);
+                if (willOpen) {
+                  setCategorySearch('');
+                  setTimeout(() => categorySearchRef.current?.focus(), 10);
+                }
+              }}
               style={{
                 padding: '10px 14px',
                 borderRadius: 10,
@@ -203,42 +212,72 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
                   zIndex: 999,
                   maxHeight: 220,
                   overflowY: 'auto',
-                  padding: '6px 0',
+                  padding: '0',
                 }}
               >
-                {categories.map((cat) => {
-                  const isSelected = cat.id === categoryId;
-                  return (
-                    <div
-                      key={cat.id}
-                      onClick={() => {
-                        setCategoryId(cat.id);
-                        setIsDropdownOpen(false);
-                      }}
-                      style={{
-                        padding: '10px 14px',
-                        fontSize: 14,
-                        fontWeight: isSelected ? '600' : '400',
-                        color: isSelected ? '#1D4ED8' : FORUM_COLORS.textPrimary,
-                        background: isSelected ? '#EFF6FF' : 'transparent',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        transition: 'background 0.15s ease',
-                      }}
-                      onMouseOver={(e) => {
-                        if (!isSelected) e.currentTarget.style.background = '#F8FAFC';
-                      }}
-                      onMouseOut={(e) => {
-                        if (!isSelected) e.currentTarget.style.background = 'transparent';
-                      }}
-                    >
-                      <span>{cat.name}</span>
-                      {isSelected && <Check size={16} color="#1D4ED8" />}
+                <div style={{ padding: '8px', borderBottom: '1px solid #E2E8F0', position: 'sticky', top: 0, background: 'white', zIndex: 1, borderTopLeftRadius: 12, borderTopRightRadius: 12 }}>
+                  <input
+                    ref={categorySearchRef}
+                    type="text"
+                    placeholder="Tìm danh mục..."
+                    value={categorySearch}
+                    onChange={(e) => setCategorySearch(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: 6,
+                      border: '1px solid #CBD5E1',
+                      fontSize: 14,
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    onFocus={(e) => e.currentTarget.style.borderColor = '#3B82F6'}
+                    onBlur={(e) => e.currentTarget.style.borderColor = '#CBD5E1'}
+                  />
+                </div>
+                <div style={{ padding: '6px 0', maxHeight: '180px', overflowY: 'auto' }}>
+                  {categories
+                    .filter((cat) => cat.name.toLowerCase().includes(categorySearch.toLowerCase()))
+                    .map((cat) => {
+                    const isSelected = cat.id === categoryId;
+                    return (
+                      <div
+                        key={cat.id}
+                        onClick={() => {
+                          setCategoryId(cat.id);
+                          setIsDropdownOpen(false);
+                        }}
+                        style={{
+                          padding: '10px 14px',
+                          fontSize: 14,
+                          fontWeight: isSelected ? '600' : '400',
+                          color: isSelected ? '#1D4ED8' : FORUM_COLORS.textPrimary,
+                          background: isSelected ? '#EFF6FF' : 'transparent',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          transition: 'background 0.15s ease',
+                        }}
+                        onMouseOver={(e) => {
+                          if (!isSelected) e.currentTarget.style.background = '#F8FAFC';
+                        }}
+                        onMouseOut={(e) => {
+                          if (!isSelected) e.currentTarget.style.background = 'transparent';
+                        }}
+                      >
+                        <span>{cat.name}</span>
+                        {isSelected && <Check size={16} color="#1D4ED8" />}
+                      </div>
+                    );
+                  })}
+                  {categories.filter((cat) => cat.name.toLowerCase().includes(categorySearch.toLowerCase())).length === 0 && (
+                    <div style={{ padding: '16px 14px', textAlign: 'center', color: '#94A3B8', fontSize: 13 }}>
+                      Không tìm thấy danh mục phù hợp
                     </div>
-                  );
-                })}
+                  )}
+                </div>
               </div>
             )}
           </div>
