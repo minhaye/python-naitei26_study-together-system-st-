@@ -1,310 +1,290 @@
 # Study Together System
 
-A platform for group study: study groups with text channels, live study rooms with video meetings, shared resources, and a learning forum. The repository has two parts: a FastAPI backend (`app/`) with a fully implemented, tested API, and a React/Vite frontend (`frontend/`) that currently provides page-level UI for the product's screens but is **not yet wired to the backend, Supabase, or LiveKit** — see [Current Development Status](#current-development-status) for the precise breakdown.
+A full-stack platform for collaborative learning: study groups with text channels, live video study rooms with a shared whiteboard and presentation view, a discussion forum, personal learning-goal roadmaps with AI assistance, and realtime chat and notifications. It is built for learners who want to organize study groups, share resources, and meet online, and includes a full moderation and trust-and-safety layer for community management.
+
+**Live Demo:** [gfeg-delta.vercel.app](https://gfeg-delta.vercel.app/)
+
+- [Study Together System](#study-together-system)
+  - [Overview](#overview)
+  - [Key Features](#key-features)
+  - [Technology Stack](#technology-stack)
+  - [System Architecture](#system-architecture)
+  - [Project Structure](#project-structure)
+  - [Getting Started](#getting-started)
+    - [Prerequisites](#prerequisites)
+    - [Clone the repository](#clone-the-repository)
+    - [Backend setup](#backend-setup)
+    - [Frontend setup](#frontend-setup)
+    - [Running both together](#running-both-together)
+  - [Environment Variables](#environment-variables)
+    - [Backend (`.env`, see .env.example)](#backend-env-see-envexample)
+    - [Frontend (`frontend/.env`, see frontend/.env.example)](#frontend-frontendenv-see-frontendenvexample)
+  - [Database](#database)
+  - [API Documentation](#api-documentation)
+  - [Main Application Flows](#main-application-flows)
+  - [Roles and Permissions](#roles-and-permissions)
+  - [Testing](#testing)
+    - [Backend](#backend)
+    - [Frontend](#frontend)
+  - [Deployment](#deployment)
+  - [Contributors](#contributors)
+  - [Future Improvements](#future-improvements)
+  - [Documentation](#documentation)
+
 
 ## Overview
 
-### Backend domains
+The system consists of a FastAPI backend (`app/`) exposing a REST API over a PostgreSQL database hosted on Supabase, and a React + TypeScript frontend (`frontend/`) that consumes that API directly and also talks to Supabase (Auth, Storage, Realtime) and LiveKit Cloud from the browser.
 
-The backend implements the following domains as APIs with corresponding tests:
+Chat across group channels, study rooms, and direct messages is unified behind a single `Conversation` abstraction on the backend, with message history served over REST and live updates delivered through Supabase Realtime. Study Rooms add real-time video/audio via LiveKit, a collaborative whiteboard, and synced slide presentations. A discussion forum supports rich-text posts, nested comments, and emoji reactions, backed by a dedicated moderation subsystem (roles, bans, reports, audit log). Personal learning goals ("roadmaps") can be scaffolded automatically using an AI provider (Anthropic Claude or Google Gemini).
 
-- **Auth / Profiles** — Supabase Auth owns sign-up/sign-in; the backend verifies the issued access token and exposes/derives the authenticated user's profile.
-- **Groups** — study groups with owner/moderator/member roles and membership status (active/banned/left).
-- **Channels** — text channels within a group (public or private).
-- **Study Rooms** — live study sessions with host/moderator/participant roles, membership, and moderation actions (mute/unmute/kick/raise-hand/lower-hand).
-- **Conversations / Messages** — a unified chat layer over channels, study rooms, and 1:1 direct messages (see [Chat architecture](#chat-architecture)).
-- **Attachments** — signed, direct-to-Storage file uploads/downloads for messages.
-- **Resources** — folders and files for sharing study material within a group.
-- **Forum** — categories, posts, comments (with replies), and likes on posts/comments.
-- **Notifications** — persisted notifications for group/forum/room events.
-- **Meetings** — LiveKit-based video/audio for Study Rooms (participant token issuance only; see [LiveKit meetings](#livekit-meetings)).
+## Key Features
 
-### Frontend pages
+- **Authentication & Profiles** — Supabase-backed sign-up, sign-in, and password reset; user profiles with avatars and site-wide roles (user / moderator / admin).
+- **Learning Goals (Roadmaps & Tasks)** — create personal roadmaps with phases; optionally generate a roadmap, clarifying questions, and a detailed task list with an AI provider; track tasks with due-date reminders.
+- **Study Groups** — create and manage groups with owner/moderator/member roles, membership status, background customization, and per-group activity streaks.
+- **Group Channels** — public and private text channels scoped to a group.
+- **Study Rooms** — live study sessions with LiveKit-powered video/audio, host/moderator/participant roles, moderation actions (mute, kick, raise/lower hand), a collaborative whiteboard (tldraw), and a synced slide presentation viewer.
+- **Realtime Messaging** — a unified conversation model (channel / room / direct message) with message reactions, image attachments, unread tracking, and Supabase Realtime updates.
+- **Direct Messages** — one-to-one conversations independent of any group.
+- **Resource Sharing** — nested folders and files per group, stored in Supabase Storage via signed upload/download URLs.
+- **Group Notes** — shared, realtime-synced notes scoped to a group.
+- **Discussion Forum** — categories, rich-text posts (tables, images, math formulas), nested comments, emoji reactions, and hashtags with fuzzy search.
+- **Notifications** — an in-app notification feed with unread counts, task reminders, and invitation alerts, updated in realtime.
+- **Invitations** — secure, TTL-bound email or code invitations to a group, study room, or private channel.
+- **Moderation & Trust/Safety** — site-wide moderator/admin roles, typed user bans (posting, messaging, group creation/joining, room joining) with configurable durations, user reports, and an audit log of moderation actions.
 
-`frontend/` (React + TypeScript + Vite) has page-level UI for the product's main screens: Home, Forum (list + post detail + comments), Study Groups (list + detail with channels), Study Room (video-call grid + whiteboard + in-room chat), Login/Register, Account Settings, and a personal "Goals" (Aim) page. All of these currently render from hardcoded or in-memory mock data — see [Current Development Status](#current-development-status) for which parts are real UI vs. static mock content, and what it would take to connect them to the backend above.
+## Technology Stack
 
-## Tech Stack
+| Layer | Technologies |
+|---|---|
+| Frontend | React 19, TypeScript, Vite, React Router 7 |
+| Backend | Python 3.13, FastAPI, SQLAlchemy 2.0+ (async), Pydantic Settings |
+| Database | PostgreSQL, hosted on Supabase; plain SQL migrations |
+| Authentication | Supabase Auth (JWT verified server-side against Supabase's JWKS) |
+| Realtime | Supabase Realtime (Postgres change streams) for chat, notes, notifications, presence |
+| Video / Study Rooms | LiveKit Cloud — `livekit-api` (backend token issuance), `livekit-client` and `@livekit/components-react` (frontend) |
+| Whiteboard | tldraw, synced over LiveKit data channels |
+| Rich Text / Documents | Tiptap editor with KaTeX math rendering; pdf.js for presentation slides |
+| Storage | Supabase Storage (private buckets, signed URLs issued by the backend) |
+| AI Assistance | Anthropic Claude or Google Gemini (selectable via `AI_PROVIDER`) for roadmap/task suggestions |
+| Email | SMTP (any standard provider) for invitation emails, with a console fallback in development |
+| Testing | pytest / pytest-asyncio (backend), Vitest + React Testing Library (frontend) |
+| Deployment | Render (backend), Vercel (frontend) |
 
-### Backend
+## System Architecture
 
-```text
-Python
-FastAPI
-SQLAlchemy (async, SQLAlchemy 2.0+)
-PostgreSQL (via Supabase)
-Supabase Auth
-Supabase Storage
-Supabase Realtime (Postgres Changes on the messages table)
-LiveKit Cloud (via livekit-api)
-pytest / pytest-asyncio
+```mermaid
+flowchart TD
+    Browser["Browser<br/>React 19 + TypeScript SPA<br/>(Vercel)"]
+    Backend["FastAPI Backend<br/>(Render)"]
+    DB[("PostgreSQL<br/>(Supabase)")]
+    Auth["Supabase Auth"]
+    Storage["Supabase Storage"]
+    Realtime["Supabase Realtime"]
+    LiveKit["LiveKit Cloud<br/>(video / audio)"]
+    AIProvider["Anthropic / Gemini API"]
+    SMTP["SMTP Provider"]
+
+    Browser -->|"REST, Bearer JWT"| Backend
+    Browser -->|"sign-in / session"| Auth
+    Browser -->|"Postgres change subscriptions"| Realtime
+    Browser -->|"signed upload/download URLs"| Storage
+    Browser -->|"WebRTC media, using a token issued by Backend"| LiveKit
+
+    Backend -->|"verify JWT via JWKS"| Auth
+    Backend -->|"async SQLAlchemy"| DB
+    Backend -->|"issue signed URLs"| Storage
+    Backend -->|"issue participant tokens"| LiveKit
+    Backend -->|"roadmap / task suggestions"| AIProvider
+    Backend -->|"invitation emails"| SMTP
+    Realtime -.->|"logical replication"| DB
 ```
 
-Driver/runtime notes: `psycopg[binary]` (async mode) for database access, `pyjwt[crypto]` for Supabase JWT verification, `httpx` for calls to the Supabase Storage REST API, `pydantic-settings` for configuration. See [requirements.txt](requirements.txt) for the full, authoritative list.
-
-### Frontend
-
-```text
-React 19
-TypeScript
-Vite
-React Router (react-router-dom)
-lucide-react (icons)
-oxlint (linting)
-```
-
-Styling is inline (`style={{...}}` objects) plus a small global [frontend/src/index.css](frontend/src/index.css) — there is no CSS framework (e.g. Tailwind) or component library in use. There is no state-management library (no Redux/Zustand/Context store beyond local `useState`/`useEffect`/`localStorage`), no HTTP client (no `axios`/`fetch` wrapper), and no Supabase or LiveKit client SDK in [frontend/package.json](frontend/package.json) — see [Current Development Status](#current-development-status). See [frontend/package.json](frontend/package.json) for the full, authoritative dependency list.
-
-## Architecture Overview
-
-### Backend responsibilities
-
-FastAPI is responsible for:
-
-```text
-authentication integration (Supabase access token verification)
-authorization (group/channel/room/conversation-level permission checks)
-business logic (groups, channels, study rooms, forum, resources, notifications)
-database access (SQLAlchemy async ORM against PostgreSQL/Supabase)
-signed Storage operations (attachment upload/download URLs)
-LiveKit participant-token issuance
-```
-
-### Frontend responsibilities (intended, not yet wired)
-
-The diagrams below (authentication flow, chat, attachments, LiveKit meetings) describe the **backend-side design** and the frontend integration it was built for. As of this repository's current state, the `frontend/` app does not call any of it: page components render from hardcoded/mock data, "auth" is a `localStorage.setItem('auth', 'true')` flag set by the login form (no Supabase call, no token), and there is no `fetch`/`axios`/Supabase-client/LiveKit-client code anywhere in `frontend/src`. See [Current Development Status](#current-development-status).
-
-### Authentication flow
-
-```text
-Frontend
-  → Authorization: Bearer <Supabase access token>
-  → FastAPI get_current_user (app/auth/dependencies.py)
-  → JWT verification against Supabase's JWKS
-  → authenticated user UUID (+ email/role claims)
-```
-
-See [Authentication](#authentication) below for how this is used by backend endpoints. The frontend's login/register pages do not perform this flow yet (see above).
-
-### Chat architecture
-
-Chat is modeled around a single `Conversation` abstraction that channels, study rooms, and direct messages all funnel through:
-
-```text
-Channel ───────┐
-Study Room ────┼──> Conversation ───> Messages
-Direct DM ─────┘
-```
-
-Supported `conversation.type` values: `channel`, `room`, `direct`. Authorization is dispatched by type in [app/core/permissions.py](app/core/permissions.py) (`can_access_conversation` / `can_send_to_conversation`):
-
-- `channel` conversations check group membership (and private-channel membership).
-- `room` conversations check study room membership/host status, plus a lifecycle gate (an ended room becomes read-only).
-- `direct` conversations check `conversation_members` (the only membership source for DMs).
-
-The full schema and business rules live in [docs/db/STUDY_PLATFORM_DATABASE_SPEC.md](docs/db/STUDY_PLATFORM_DATABASE_SPEC.md) — this README intentionally does not duplicate them. The Study Room page in `frontend/` shows an in-room chat panel, but it's local component state seeded with mock messages, not a client of this API.
-
-### Realtime
-
-```text
-initial message history  → FastAPI (GET /conversations/{id}/messages, cursor-paginated)
-new/updated/deleted messages → Supabase Realtime (Postgres Changes on the messages table)
-```
-
-Typing indicators and presence are not implemented.
-
-### Attachments
-
-```text
-Frontend
-  → POST /conversations/{conversation_id}/attachments/upload-url  (FastAPI, authorized)
-  → uploads the file directly to Supabase Storage using the returned signed URL
-  → POST /conversations/{conversation_id}/messages with attachment_path set
-```
-
-FastAPI validates that a client-supplied `attachment_path` was actually issued to that user/conversation before accepting it on a message, and issues short-lived signed download URLs via `GET /messages/{message_id}/attachment-url`. No frontend page currently calls this flow (no file-upload UI exists in `frontend/src`).
-
-### LiveKit meetings
-
-Implemented as an MVP: FastAPI issues LiveKit participant tokens; it does not proxy audio/video.
-
-```http
-POST /study-rooms/{room_id}/meeting/token
-```
-
-```text
-Frontend
-  → FastAPI authentication + Study Room authorization (can_join_room_meeting)
-  → LiveKit participant token (room-scoped, TTL-limited)
-  → frontend connects directly to LiveKit Cloud using that token
-```
-
-FastAPI never creates/closes the LiveKit room explicitly (LiveKit Cloud manages that lifecycle) and never sees media. Recording, transcription, attendance tracking, webhooks, and whiteboard are **not** implemented on the backend. The frontend's Study Room page renders a full video-call UI (participant grid, mic/camera/screen-share/raise-hand controls, a whiteboard tab) entirely from local mock state — it does not request a LiveKit token from the backend and has no LiveKit client SDK integration, so no real audio/video/whiteboard connection happens.
+The frontend never talks to Postgres, Storage, or LiveKit media directly without a credential the backend issued: Supabase session tokens come from Supabase Auth, Storage URLs and LiveKit tokens are minted by FastAPI after an authorization check, and Realtime subscriptions are scoped by Supabase's Row Level Security policies.
 
 ## Project Structure
 
 ```text
-app/
-├── core/            # settings, permission helpers (app/core/permissions.py)
-├── db/               # SQLAlchemy Base, session factory, shared enums
-├── auth/             # Supabase token verification, get_current_user dependency
-├── profiles/         # user profile entity/service/router
-├── groups/           # study groups + membership
-├── channels/         # text channels + membership
-├── conversations/    # Conversation abstraction (channel/room/direct) + direct DM endpoints
-├── messages/         # message CRUD, list/paginate per conversation
-├── attachments/       # signed upload/download URL issuance for Supabase Storage
-├── study_rooms/      # study rooms, membership, moderation actions
-├── meetings/         # LiveKit participant-token service
-├── resources/        # resource folders/files
-├── forum/            # categories, posts, comments, likes
-└── notifications/    # notifications
-tests/                # unit/API tests (ASGITransport, no live network) + tests/integration
-docs/
-└── db/
-    ├── STUDY_PLATFORM_DATABASE_SPEC.md
-    └── migrations/    # numbered SQL migrations + README
-scripts/
-├── open_swagger.py             # dev helper: runs the server and opens /docs
-└── realtime_integration_check.py  # manual Supabase Realtime check, not run by pytest
-dev.py                # runs backend (uvicorn) + frontend (vite) together for local dev
-
-frontend/              # React + TypeScript + Vite app (see Tech Stack / Current Development Status)
-├── src/
-│   ├── main.tsx        # app entry point
-│   ├── index.css       # global styles
-│   ├── routes/          # AppRoutes (react-router-dom route table + ProtectedRoute)
-│   ├── components/
-│   │   ├── layout/       # Header, Footer, Layout
-│   │   └── ui/            # Avatar, Button, Dropdown, Hover, Modal, SearchInput
-│   ├── hooks/            # useAuth (localStorage-based, see caveats above)
-│   └── pages/
-│       ├── HomePage.tsx, LoginPage.tsx, RegisterPage.tsx, Aim.tsx, AccountSettingsPage.tsx
-│       ├── StudyGroup/    # StudyGroups (list), StudyGroupDetail, StudyRoom (call + whiteboard UI)
-│       └── forum/         # ForumPage, ForumPostDetail, components/, hooks/, lib/forum.api.ts (mock data), types/
-├── package.json
-└── vite.config.ts
+.
+├── app/                     # FastAPI backend
+│   ├── auth/                # Supabase token verification, get_current_user dependency
+│   ├── profiles/            # user profiles, avatars, site-wide roles
+│   ├── groups/               # study groups, membership, streaks
+│   ├── channels/             # text channels + membership
+│   ├── conversations/        # unified channel/room/direct conversation abstraction
+│   ├── messages/              # message CRUD, pagination, reactions
+│   ├── attachments/           # signed upload/download URLs for chat attachments
+│   ├── study_rooms/           # study rooms, membership, whiteboard, presentation state
+│   ├── meetings/               # LiveKit participant-token issuance and room admin ops
+│   ├── resources/              # group resource folders/files (Supabase Storage)
+│   ├── notes/                   # shared group notes
+│   ├── roadmaps/                # learning-goal roadmaps + AI suggestion service
+│   ├── tasks/                    # study tasks and reminders
+│   ├── forum/                     # categories, posts, comments, tags, reactions
+│   ├── moderation/                 # roles, bans, reports, moderation audit log
+│   ├── invitations/                 # email/code invitations to groups/rooms/channels
+│   ├── notifications/                # notification feed and reminder scheduler
+│   ├── core/                          # settings, permission helpers, email service
+│   └── db/                             # SQLAlchemy engine/session, shared enums
+├── tests/                    # pytest suite (unit/API tests + tests/integration)
+├── docs/
+│   ├── db/
+│   │   ├── STUDY_PLATFORM_DATABASE_SPEC.md   # full schema and business rules
+│   │   └── migrations/                       # numbered SQL migrations + status README
+│   └── invitations.md        # invitation system design notes
+├── scripts/                  # dev helpers: open_swagger, realtime check, seed data
+├── dev.py                    # runs backend (uvicorn) + frontend (vite) together
+├── run.py                    # backend entry point
+├── render.yaml                # Render deployment config (backend)
+└── frontend/                  # React + TypeScript + Vite app
+    ├── src/
+    │   ├── main.tsx            # app entry point, providers
+    │   ├── routes/              # route table, ProtectedRoute / ModeratorRoute guards
+    │   ├── contexts/             # Auth, unread messages, notifications
+    │   ├── lib/                   # Supabase client, API client, per-domain API modules
+    │   ├── hooks/                  # data-fetching and realtime-sync hooks
+    │   ├── components/              # layout, UI kit, chat, invitations, moderation
+    │   ├── pages/                    # Home/Forum, Study Groups, Study Room, Aim, Settings...
+    │   └── test/                      # Vitest setup
+    └── vercel.json              # Vercel SPA rewrite config
 ```
 
-Each `app/<domain>/` package follows the same layout: `entities/` (SQLAlchemy models), `dto/` (Pydantic request/response schemas), `services/` (business logic), `routers/` (FastAPI routes).
+Each `app/<domain>/` package follows the same internal layout: `entities/` (SQLAlchemy models), `dto/` (Pydantic schemas), `services/` (business logic), `routers/` (FastAPI routes).
 
-## Prerequisites
+## Getting Started
 
-Backend:
+### Prerequisites
 
-- Python 3.13 (no strict version pin declared in the repo; this is the version used in development)
+- Python 3.13
+- Node.js 20+ and npm
 - A Supabase project (PostgreSQL database, Auth, and Storage)
-- A LiveKit Cloud project (only required for Study Room meeting functionality)
+- A LiveKit Cloud project (required for Study Room video/audio)
+- Optional: an Anthropic or Google Gemini API key (for AI roadmap suggestions), and SMTP credentials (for real invitation emails — otherwise emails are logged to the console)
 
-Frontend:
+### Clone the repository
 
-- Node.js + npm (no version pin declared in the repo; `frontend/package.json` targets React 19 / Vite 8 / TypeScript ~6.0, which require a reasonably current Node.js)
-
-## Environment Setup
-
-### Backend
-
-Windows (PowerShell):
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+```bash
+git clone https://github.com/awesome-academy/python-naitei26_study-together-system.git
+cd python-naitei26_study-together-system
 ```
 
-Unix/macOS:
+### Backend setup
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate        # Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+cp .env.example .env             # fill in real values, see Environment Variables below
 ```
 
-### Frontend
+Apply database migrations manually against your Supabase project (see [Database](#database)), then start the server:
+
+```bash
+uvicorn app.main:app --reload
+# or: python run.py
+```
+
+The API is served at `http://localhost:8000`.
+
+### Frontend setup
 
 ```bash
 cd frontend
 npm install
-```
-
-## Environment Variables
-
-Copy [.env.example](.env.example) to `.env` and fill in real values. **Never commit `.env`.** These are consumed by the backend only — the frontend does not currently read any environment variables (no `import.meta.env`/Supabase-client/LiveKit-client usage exists in `frontend/src`; see [Current Development Status](#current-development-status)), so there is no `frontend/.env`.
-
-```text
-Database
-  DATABASE_URL=
-
-Supabase
-  SUPABASE_URL=
-  SUPABASE_PUBLISHABLE_KEY=
-  SUPABASE_SERVICE_ROLE_KEY=      # server-side only; never expose to the frontend
-  ATTACHMENT_DOWNLOAD_URL_EXPIRES_IN=300
-
-LiveKit
-  LIVEKIT_URL=
-  LIVEKIT_API_KEY=
-  LIVEKIT_API_SECRET=
-  LIVEKIT_TOKEN_TTL_SECONDS=600   # optional, defaults to 600 if unset
-```
-
-`SUPABASE_SERVICE_ROLE_KEY` is required for the attachment upload-url/download-url endpoints (Supabase Storage admin API); without it those endpoints return a 500.
-
-## Running the Backend
-
-```bash
-uvicorn app.main:app --reload
-```
-
-or, equivalently:
-
-```bash
-python run.py
-```
-
-The API is served at `http://localhost:8000` by default.
-
-## Running the Frontend
-
-```bash
-cd frontend
+cp .env.example .env             # fill in real values, see Environment Variables below
 npm run dev
 ```
 
-The Vite dev server is served at `http://localhost:5173` by default (Vite's default port; not overridden in [frontend/vite.config.ts](frontend/vite.config.ts)). As noted above, it currently runs standalone against mock/hardcoded data — pointing it at the backend from above requires wiring that does not exist yet.
+The Vite dev server is served at `http://localhost:5173`.
 
-## Running Both Together
+### Running both together
+
+From the repository root:
 
 ```bash
 python dev.py
 ```
 
-This starts the backend at `http://localhost:8000` and the frontend at `http://localhost:5173`, streaming both processes' output with `[backend]`/`[frontend]` prefixes. Requires `npm` on `PATH` and frontend dependencies already installed (`npm install` in `frontend/`).
+This starts the backend and frontend concurrently, prefixing each process's log output.
+
+## Environment Variables
+
+### Backend (`.env`, see [.env.example](.env.example))
+
+```env
+# Database
+DATABASE_URL=
+
+# Supabase
+SUPABASE_URL=
+SUPABASE_PUBLISHABLE_KEY=
+SUPABASE_SECRET_KEY=              # preferred elevated key for Storage admin operations
+SUPABASE_SERVICE_ROLE_KEY=        # legacy fallback if SUPABASE_SECRET_KEY is unset
+ATTACHMENT_DOWNLOAD_URL_EXPIRES_IN=300
+
+# LiveKit
+LIVEKIT_URL=
+LIVEKIT_API_KEY=
+LIVEKIT_API_SECRET=
+
+# CORS
+CORS_ALLOWED_ORIGINS=http://localhost:5173
+
+# Invitations
+INVITATION_CODE_TTL_SECONDS=300
+INVITATION_EMAIL_TTL_SECONDS=604800
+FRONTEND_BASE_URL=http://localhost:5173
+
+# Email (optional — logged to console if SMTP_HOST is unset)
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USERNAME=
+SMTP_PASSWORD=
+SMTP_USE_TLS=true
+EMAIL_FROM_ADDRESS=
+
+# AI roadmap suggestions (optional — disabled if the selected provider's key is unset)
+AI_PROVIDER=anthropic             # "anthropic" or "gemini"
+ANTHROPIC_API_KEY=
+GEMINI_API_KEY=
+```
+
+`SUPABASE_SECRET_KEY` (or `SUPABASE_SERVICE_ROLE_KEY`) is required for attachment and resource upload/download URL endpoints, since these call Supabase Storage's admin API.
+
+### Frontend (`frontend/.env`, see [frontend/.env.example](frontend/.env.example))
+
+```env
+VITE_API_BASE_URL=          # e.g. http://localhost:8000
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+```
+
+LiveKit connection details are not configured on the frontend directly — the backend issues a short-lived, room-scoped participant token per join request.
+
+## Database
+
+The database is PostgreSQL hosted on Supabase. Migrations are plain, hand-written SQL files under [docs/db/migrations/](docs/db/migrations/), applied manually against the project (via the Supabase SQL editor or `psql`) — nothing is auto-applied by the application or by CI.
+
+Larger or riskier migrations follow a `preflight → migration → verify` convention, with an optional `_rollback.sql` kept as a reviewed undo path. Each migration's live/pending status is tracked in [docs/db/migrations/README.md](docs/db/migrations/README.md). Major milestones include the introduction of a unified `Conversation` model, group resources and profile-avatar Storage buckets, message and forum reactions, a site-wide moderation system (roles, bans, reports), group activity streaks, synced study-room presentation state, and fuzzy hashtag search.
+
+The full schema, relationships, and business rules are documented in [docs/db/STUDY_PLATFORM_DATABASE_SPEC.md](docs/db/STUDY_PLATFORM_DATABASE_SPEC.md). Sample/demo data can be loaded with the scripts under [scripts/](scripts/) (`seed_forum.py`, `seed_rich_data.py`, `seed_qa_users.py`), run directly against a configured `.env`.
 
 ## API Documentation
 
-FastAPI's interactive docs are enabled at their default paths:
+FastAPI's interactive documentation is available at:
 
 ```text
-/docs
-/redoc
+/docs        # Swagger UI
+/redoc       # ReDoc
 /openapi.json
 ```
 
-A helper script starts the server and opens Swagger automatically:
-
 ```bash
-python -m scripts.open_swagger
+python -m scripts.open_swagger   # starts the server and opens Swagger UI
 ```
 
-## Authentication
-
-```http
-Authorization: Bearer <supabase_access_token>
-```
-
-Supabase Auth owns user sign-up/sign-in. FastAPI's `get_current_user` dependency (`app/auth/dependencies.py`) verifies the bearer token against Supabase's JWKS and derives the authenticated user's UUID from the token's `sub` claim. Endpoints authorize and attribute actions (message sender, room host, moderator, etc.) using this derived identity — **client-supplied identity fields in request bodies (e.g. `host_id`, `moderator_id`) are never trusted.**
-
-## Major API Areas
+Endpoints are grouped by domain:
 
 | Area | Prefix |
 |---|---|
@@ -312,39 +292,42 @@ Supabase Auth owns user sign-up/sign-in. FastAPI's `get_current_user` dependency
 | Profiles | `/profiles` |
 | Groups | `/groups` |
 | Channels | `/channels` |
-| Conversations / Messages | `/conversations`, `/messages` |
-| Study Rooms | `/study-rooms` |
+| Conversations | `/conversations` |
+| Messages | `/messages` |
 | Attachments | `/conversations/{id}/attachments`, `/messages/{id}/attachment-url` |
+| Study Rooms | `/study-rooms` |
 | Resources | `/resources` |
+| Notes | `/notes` |
+| Roadmaps (Goals + AI suggestions) | `/roadmaps` |
+| Tasks | `/tasks` |
 | Forum | `/forum` |
+| Moderation | `/moderation` |
+| Invitations | `/invitations` |
 | Notifications | `/notifications` |
 
-Notable endpoints:
+See `/docs` for the complete, always-current list of endpoints and schemas.
 
-```http
-POST /conversations/direct
-POST /study-rooms/{room_id}/meeting/token
-```
+## Main Application Flows
 
-See `/docs` for the complete, always-current endpoint list and schemas.
+- **Authentication** — the frontend signs in through Supabase Auth; the resulting access token is attached as a `Bearer` header on every backend request and verified server-side against Supabase's JWKS.
+- **Learning goals** — a user describes a goal, optionally answers a few AI-generated clarifying questions, and receives an AI-generated roadmap with phases and a detailed task list, which they can then edit and track manually.
+- **Study groups** — a user creates a group, invites others by email or a short-lived code, and manages channels, resources, and members within it.
+- **Study rooms** — a group member starts a room; participants join a LiveKit video/audio session, collaborate on a shared whiteboard or presentation, and chat in a room-scoped conversation; hosts/moderators can mute, kick, or manage raised hands.
+- **Realtime messaging** — channel, room, and direct-message conversations share one messaging model; new messages, reactions, and unread counts propagate live via Supabase Realtime.
+- **Forum & moderation** — users post and comment with a rich-text editor and react with emoji; moderators review reports, issue typed bans, and see an audit trail of moderation actions.
 
-## Database and Migrations
+## Roles and Permissions
 
-Migrations are plain SQL files under [docs/db/migrations/](docs/db/migrations/), tracked in Git and run manually against Supabase — nothing is auto-applied by the app or CI. Larger migrations follow a `preflight → migration → verify` convention, with a `_rollback.sql` kept only as a reviewed, ready-to-use undo path (not part of the normal run sequence).
-
-Milestones (001–007, all applied live as of the current migrations README):
-
-```text
-001: enable Realtime + confirm RLS on messages/channels/channel_members/group_members
-002: fix a channel-access RLS bug (superseded/reapplied by 004 §7)
-003: create the private message-attachments Storage bucket
-004: expand chat to the Conversation abstraction (channel/room/direct), alongside legacy messages.channel_id
-005: contract phase — drop legacy messages.channel_id after the backend refactor landed
-006: enforce direct-conversation pair uniqueness (one DM per user pair)
-007: fix a Study Room moderation RLS policy (tautological predicate)
-```
-
-Full details, run order, and current status: [docs/db/migrations/README.md](docs/db/migrations/README.md). Complete schema and business rules: [docs/db/STUDY_PLATFORM_DATABASE_SPEC.md](docs/db/STUDY_PLATFORM_DATABASE_SPEC.md).
+| Scope | Role | Responsibilities |
+|---|---|---|
+| Site-wide | User | Default role: participate in groups, forum, and rooms they belong to. |
+| Site-wide | Moderator | Review forum reports, moderate posts/comments, issue user bans. |
+| Site-wide | Admin | Full moderation authority, including managing other moderators. |
+| Group | Member | Participate in the group's channels, resources, and rooms. |
+| Group | Moderator | Manage channels, members, and study rooms within the group. |
+| Group | Owner | Full control of the group, including deleting it and managing bans. |
+| Study Room | Participant | Join, chat, and view the shared whiteboard/presentation. |
+| Study Room | Host / Moderator | Start/end the room, moderate participants (mute, kick, raise/lower hand), edit the whiteboard/presentation. Authority derives from the caller's current Group role, not room ownership. |
 
 ## Testing
 
@@ -354,41 +337,49 @@ Full details, run order, and current status: [docs/db/migrations/README.md](docs
 pytest tests/ -q
 ```
 
-Test categories:
-
-- `tests/test_*.py` — unit/API tests against an in-process ASGI app (no live network or database).
-- `tests/integration/` — end-to-end tests against a real Supabase project. They require pre-existing Supabase Auth test users supplied via environment variables (`SUPABASE_TEST_USER_A_EMAIL`/`PASSWORD`, etc.); any test that's missing those variables is skipped automatically.
-
-[scripts/realtime_integration_check.py](scripts/realtime_integration_check.py) is a standalone, manually-run script (not part of the pytest suite) that opens real Supabase Realtime WebSocket connections to verify group-chat Realtime authorization; run it directly with real credentials when validating that change.
+- `tests/test_*.py` — unit/API tests running against an in-process ASGI app, no live network or database (26 test modules).
+- `tests/integration/` — end-to-end tests against a real Supabase project; they sign in three pre-existing Supabase Auth users via `SUPABASE_TEST_USER_A_EMAIL`/`PASSWORD`, `SUPABASE_TEST_USER_B_EMAIL`/`PASSWORD`, and `SUPABASE_TEST_OUTSIDER_EMAIL`/`PASSWORD`; any test missing these is skipped automatically.
+- [scripts/realtime_integration_check.py](scripts/realtime_integration_check.py) is a standalone, manually-run script that opens real Supabase Realtime WebSocket connections to verify chat authorization; it is not part of the pytest suite.
 
 ### Frontend
 
-There is no automated test suite for the frontend (no test runner is configured in [frontend/package.json](frontend/package.json), and there are no `*.test.*`/`*.spec.*` files under `frontend/src`). The available `npm` scripts are:
-
 ```bash
 cd frontend
-npm run lint      # oxlint
-npm run build     # tsc -b && vite build (type-checks + production build)
+npm test        # vitest run
+npm run lint     # oxlint
+npm run build    # tsc -b && vite build
 ```
 
-## Current Development Status
+The frontend has a Vitest + React Testing Library suite (29 test files) covering auth context, realtime hooks, meeting/whiteboard components, chat, group settings, and invitations.
 
-**Backend:** all domains listed under [Backend domains](#backend-domains) above are implemented as FastAPI endpoints with corresponding unit/API tests (see [Testing](#testing)), and migrations 001–007 are applied live (see [Database and Migrations](#database-and-migrations)). Chat/meeting features are backend-complete but still require end-to-end frontend validation once the frontend is wired up.
+## Deployment
 
-**Frontend:** `frontend/` is a page-level UI prototype, not yet integrated with the backend. Concretely, as of this repository's current state:
+The backend is deployed to **Render** as a Python web service (see [render.yaml](render.yaml)): `pip install -r requirements.txt` to build, `uvicorn app.main:app --host 0.0.0.0 --port $PORT` to start, with all secrets configured as Render environment variables. A `GET /health` endpoint keeps the app reachable and lets the frontend detect and gracefully handle Render's free-tier cold starts.
 
-- Every page (`HomePage`, `ForumPage`/`ForumPostDetail`, `StudyGroups`/`StudyGroupDetail`/`StudyRoom`, `LoginPage`/`RegisterPage`, `AccountSettingsPage`, `Aim`) renders from hardcoded JSX or in-memory mock data (e.g. `frontend/src/pages/forum/lib/forum.api.ts` implements a `forumApi` with the same function/DTO shapes the backend uses, but backed by local arrays, not HTTP calls).
-- There is no `fetch`/`axios` call, no Supabase client, and no LiveKit client SDK anywhere in `frontend/src` — nothing in the frontend talks to the FastAPI backend, Supabase, or LiveKit Cloud.
-- "Login"/"logout" is a `localStorage.setItem('auth', 'true')` / `removeItem('auth')` flag read by `useAuth()` and `ProtectedRoute` — there is no real authentication, no Supabase session, and no token is ever sent anywhere.
-- The Study Room page renders a full video-call UI (participant grid, mic/camera/screen-share/raise-hand, whiteboard) and an in-room chat panel, entirely from local component state with mock participants/messages — no LiveKit connection and no Conversations/Messages API calls occur.
-- There is no automated frontend test suite (see [Testing](#testing)).
+The frontend is deployed to **Vercel** as a static Vite build, with a single SPA rewrite rule in [frontend/vercel.json](frontend/vercel.json) so client-side routes resolve correctly. The live deployment is available at [gfeg-delta.vercel.app](https://gfeg-delta.vercel.app/).
 
-**Resources update (2026-08-19):** the bullet points above no longer hold for Resources specifically. `frontend/src/pages/StudyGroup/StudyGroupDetail.tsx` (via `frontend/src/hooks/useGroupResources.ts` + `frontend/src/lib/resource.api.ts`) is wired to the real `app/resources` API and Supabase Storage: list, upload, Open/Preview, explicit Download, and delete all use persisted backend/Storage data, no mock resource list remains. Files live in the private `group-resources` Storage bucket via FastAPI-issued signed upload/download URLs (migration `014_create_group_resources_bucket.sql`, applied live and verified). Stale legacy seed metadata (`mock-resource-*` rows with no real Storage object) was removed by migration `015_cleanup_stale_mock_resources.sql`, also applied live and verified — see [docs/db/migrations/README.md](docs/db/migrations/README.md).
+There is currently no automated CI/CD pipeline in the repository; deployments are triggered by each platform's Git integration.
 
-In short: the backend is a complete, tested API surface; the frontend is a UI shell over the intended screens that has not yet been connected to it, except where noted above (Resources). Wiring the rest of the frontend to the backend (real auth via Supabase, real data via the FastAPI endpoints, LiveKit for meetings, Realtime for chat) is the next major milestone.
+## Contributors
+
+| Contributor         | Primary Contributions                                                                                                                                                                                    |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Nguyễn Tuấn Anh** | Contributed to the project's initial concept and direction; developed Q&A functionality, learning-goal features, and key parts of the discussion forum.                                                  |
+| **Thái Mỹ Anh**     | Contributed to frontend UI/UX design and implementation; developed discussion forum features and the notification system.                                                                                |
+| **Nguyễn Đức Hiếu** | Contributed to frontend UI/UX design and implementation; developed learning-goal and roadmap-related functionality.                                                                                      |
+| **Trịnh Văn Minh**  | Designed and implemented the study group, group channel, and study room modules, including LiveKit integration; built the realtime messaging and moderation systems; and managed application deployment. |
+
+
+## Future Improvements
+
+- Finish and re-verify the remaining pending database migrations (personal-workspace Realtime sync, roadmap/task tables) tracked in [docs/db/migrations/README.md](docs/db/migrations/README.md).
+- Enforce study room and channel member capacity limits, which currently exist as schema fields but are not checked anywhere.
+- Allow a member who has left a public group to rejoin directly, instead of only via a new invitation.
+- Add automated CI (linting, type-checking, and test execution on push/PR) — currently all checks are run locally.
+- The collaborative whiteboard is currently restricted to local/development environments due to the whiteboard library's licensing terms and is disabled in production.
 
 ## Documentation
 
 - [docs/db/STUDY_PLATFORM_DATABASE_SPEC.md](docs/db/STUDY_PLATFORM_DATABASE_SPEC.md) — full schema, relationships, and business rules.
 - [docs/db/migrations/README.md](docs/db/migrations/README.md) — migration run order and live status.
-- Project design doc: https://docs.google.com/document/d/1hkcR2caS_9mWPl6JrovgKbv5g54odd6Dptg_TgCeEmw/edit?tab=t.0
+- [docs/invitations.md](docs/invitations.md) — invitation system design and lifecycle.
