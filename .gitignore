@@ -23,9 +23,21 @@ env/
 .pytest_cache/
 .ruff_cache/
 
+# Testing / coverage
+.coverage
+.coverage.*
+htmlcov/
+coverage/
+
 # Frontend / Node.js
 node_modules/
 dist/
+
+# Stray root-level npm artifact: there is no package.json at the repo root
+# (the real frontend lives in frontend/, with its own lockfile/gitignore).
+# Prevents accidentally re-committing an empty lockfile from running npm
+# commands at the repo root instead of inside frontend/.
+/package-lock.json
 
 # Logs
 *.log
@@ -34,12 +46,20 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Temporary / scratch files
+*.tmp
+*.temp
+*.bak
+*.orig
+
 # Claude
 .claude/
 
 # IDE
 .vscode/
 .idea/
+*.swp
+*~
 
 # OS
 .DS_Store
@@ -50,3 +70,10 @@ my_local_files/
 
 # QA seed credentials (scripts/seed_qa_users.py) -- local-only, never commit
 .local/
+
+# Local test-account credentials -- must never hold real values (see
+# docs/github_project_tasks.md, "Remove plaintext test credentials from
+# repository"). Untracked below; do not recreate this file with real
+# credentials -- use the SUPABASE_TEST_USER_*/PASSWORD env vars instead
+# (see tests/integration/conftest.py).
+docs/acc test login
