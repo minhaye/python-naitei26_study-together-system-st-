@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from './useAuth';
 import { useStudyRoomMembersRealtime } from './useStudyRoomMembersRealtime';
 import { ApiError } from '../lib/apiClient';
@@ -9,6 +9,7 @@ import {
   getStudyRoom,
   joinStudyRoom,
   leaveStudyRoom,
+  leaveStudyRoomOnUnload,
   listStudyRoomMembers,
   listStudyRoomModeration,
   logStudyRoomModeration,
@@ -170,6 +171,38 @@ export function useStudyRoom(roomId: string | undefined) {
   const isCurrentUserMember = !!currentMember && !currentMember.left_at;
   const isGroupManager = !!currentUserId && groupManagerIds.has(currentUserId);
 
+  // Best-effort membership cleanup for tab close/reload/navigation-away, so a browser
+  // departure doesn't leave `study_room_members.left_at` stale/NULL indefinitely (the
+  // explicit "Rời phòng" button already calls `leave()` directly -- this only covers the
+  // paths that skip it). `left_at` here means "explicitly left this room's membership", not
+  // "currently connected to the LiveKit call" (see StudyRoomsService.leave / can_access_room)
+  // -- the backend `leave` endpoint is idempotent, so firing this redundantly (e.g. right
+  // after an explicit leave, or on every dev-mode double-mount) is harmless, just wasted.
+  //
+  // Two triggers, covering the two ways this page goes away:
+  // - `pagehide`: tab close, reload, or a full browser navigation. `beforeunload` is
+  //   deliberately not used -- it isn't reliably fired on mobile and defeats the back/forward
+  //   cache, whereas `pagehide` fires in both the unload and bfcache-eligible cases.
+  // - the effect's own cleanup: an in-SPA route change away from this room (e.g. clicking a
+  //   nav link instead of "Rời phòng") unmounts this hook without ever firing `pagehide`.
+  // A ref (not `isCurrentUserMember` in the cleanup's closure) is required for the second
+  // case: effect cleanups close over the render they were created in, so without it the
+  // cleanup could act on a stale membership flag from whenever the effect last re-ran.
+  const isCurrentUserMemberRef = useRef(isCurrentUserMember);
+  isCurrentUserMemberRef.current = isCurrentUserMember;
+
+  useEffect(() => {
+    if (!roomId) return;
+    const handlePageHide = () => {
+      if (isCurrentUserMemberRef.current) leaveStudyRoomOnUnload(roomId);
+    };
+    window.addEventListener('pagehide', handlePageHide);
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide);
+      if (isCurrentUserMemberRef.current) leaveStudyRoomOnUnload(roomId);
+    };
+  }, [roomId]);
+
   // Derived, real-data-backed indicators from the moderation audit log (latest action per user wins).
   // These are NOT LiveKit/media state — see studyRoom.types.ts ModerationAction.
   const handRaisedUserIds = useMemo(
@@ -295,5 +328,6 @@ export function useStudyRoom(roomId: string | undefined) {
     moderate,
     changeMemberRole,
     refetchMembers: loadMembers,
+    refetchRoom: loadRoom,
   };
 }

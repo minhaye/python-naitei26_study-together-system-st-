@@ -1,3 +1,4 @@
+import logging
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,6 +39,8 @@ from app.study_rooms.dto.study_room_dto import (
 )
 from app.study_rooms.entities.study_room_entity import StudyRoom
 from app.study_rooms.services.study_room_service import StudyRoomsService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/study-rooms", tags=["Study Rooms"])
 service = StudyRoomsService()
@@ -293,13 +296,24 @@ async def end_room(
     try:
         updated = await service.end(session, room)
         await session.commit()
-        return updated
     except Exception as e:
         await session.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Could not end study room: {str(e)}"
         )
+
+    # The ended status is already durably committed above -- LiveKit is a separate live
+    # system with no transactional relationship to the DB, so closing its meeting is a
+    # best-effort side effect afterward: an infra failure here must never undo (or be
+    # reported as a failure of) a room-end the DB has already recorded. close_room is
+    # idempotent for "already gone" -- see its docstring.
+    try:
+        await livekit_service.close_room(room.id)
+    except Exception:
+        logger.exception("Failed to close LiveKit room for ended study room %s", room.id)
+
+    return updated
 
 
 @router.delete("/{room_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -333,6 +347,14 @@ async def delete_room(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Could not delete study room: {str(e)}"
         )
+
+    # Same best-effort, post-commit ordering as end_room above: the soft delete is already
+    # durable, so a LiveKit close_room failure here is logged, never surfaced as a failure of
+    # the delete itself.
+    try:
+        await livekit_service.close_room(room.id)
+    except Exception:
+        logger.exception("Failed to close LiveKit room for deleted study room %s", room.id)
 
 
 # --- Memberships ---
@@ -502,13 +524,61 @@ async def log_moderation(
     try:
         action = await service.log_moderation_action(session, data)
         await session.commit()
-        return action
     except Exception as e:
         await session.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Could not log moderation action: {str(e)}"
         )
+
+    # The audit record (and, for KICK, the membership's left_at) is already durably
+    # committed above -- LiveKit is a separate live system with no transactional
+    # relationship to the DB, so the real-time enforcement side effect happens after, on a
+    # best-effort basis: an infra failure here must never undo (or be reported as a failure
+    # of) a moderation action the DB has already recorded. All three LiveKitService methods
+    # below are idempotent for "already disconnected" / "no such track" -- see their
+    # docstrings. UNMUTE's LiveKit call in particular is gated by LiveKit's own
+    # "Admins can remotely unmute tracks" project setting (off by default) -- its return
+    # value is checked below (not just whether it raised) so a silently-rejected remote
+    # unmute is diagnosable, not indistinguishable from a real success.
+    if data.action == ModerationAction.KICK:
+        try:
+            await livekit_service.remove_participant(room_id, data.target_user_id)
+        except Exception:
+            logger.exception(
+                "Failed to remove kicked participant %s from LiveKit room %s", data.target_user_id, room_id
+            )
+    elif data.action == ModerationAction.MUTE:
+        try:
+            await livekit_service.mute_microphone(room_id, data.target_user_id)
+        except Exception:
+            logger.exception(
+                "Failed to mute participant %s in LiveKit room %s", data.target_user_id, room_id
+            )
+    elif data.action == ModerationAction.UNMUTE:
+        try:
+            # unmute_microphone's return, not just "did it raise", is the truthful signal --
+            # see its docstring: LiveKit can accept this RPC while leaving the track muted
+            # (typically the "Admins can remotely unmute tracks" project setting is off). The
+            # already-committed audit record is deliberately left as-is either way (it's a
+            # factual log of the requested action, not a claim about live LiveKit state) --
+            # this warning exists purely so the gap is diagnosable in production instead of
+            # silently indistinguishable from a real success.
+            confirmed = await livekit_service.unmute_microphone(room_id, data.target_user_id)
+            if not confirmed:
+                logger.warning(
+                    "LiveKit did not confirm microphone unmute for participant %s in room %s -- "
+                    "likely 'Admins can remotely unmute tracks' is disabled for this LiveKit "
+                    "project; the moderation record was saved, but the participant's track "
+                    "remains server-muted until they unmute themselves.",
+                    data.target_user_id, room_id,
+                )
+        except Exception:
+            logger.exception(
+                "Failed to unmute participant %s in LiveKit room %s", data.target_user_id, room_id
+            )
+
+    return action
 
 
 @router.get("/{room_id}/moderation", response_model=list[RoomModerationActionResponse])

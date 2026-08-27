@@ -38,6 +38,19 @@ export function leaveStudyRoom(roomId: string): Promise<StudyRoomMember> {
   return apiClient.post<StudyRoomMember>(`/study-rooms/${roomId}/leave`);
 }
 
+/**
+ * Fire-and-forget variant of `leaveStudyRoom` for page-unload cleanup (see
+ * `useStudyRoom`'s `pagehide`/unmount handling) — closing the tab, reloading, or navigating
+ * away doesn't guarantee an ordinary `await`ed request completes, so this uses `fetch`'s
+ * `keepalive` option to give the request a chance to finish after the page starts
+ * unloading. The backend leave endpoint is idempotent (safe to call even if the caller
+ * already left), and the caller can't observe the outcome anyway since the page is on its
+ * way out — errors are deliberately swallowed.
+ */
+export function leaveStudyRoomOnUnload(roomId: string): void {
+  apiClient.post<StudyRoomMember>(`/study-rooms/${roomId}/leave`, undefined, { keepalive: true }).catch(() => {});
+}
+
 export function startStudyRoom(roomId: string): Promise<StudyRoom> {
   return apiClient.post<StudyRoom>(`/study-rooms/${roomId}/start`);
 }
