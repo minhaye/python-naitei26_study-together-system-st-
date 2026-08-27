@@ -341,7 +341,7 @@ export function AimPage() {
   return (
     <main style={{ height: 'calc(100vh - 64px)', overflowY: 'auto', padding: 32, boxSizing: 'border-box', background: '#F8FAFC', color: '#0F172A' }}>
       <div style={{ display: 'grid', gap: 24 }}>
-        <TaskManagementSection />
+        <TaskManagementSection roadmaps={roadmaps} />
 
         {/* Roadmap section */}
         <section style={{ background: 'white', border: '1px solid #E2E8F0', borderRadius: 16, padding: 28 }}>
