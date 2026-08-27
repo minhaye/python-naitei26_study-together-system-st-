@@ -79,7 +79,7 @@ export const ForumFilterBar: React.FC<ForumFilterBarProps> = ({
               fontWeight: '600',
             }}
           >
-            <span>🏷️ #{selectedTag}</span>
+            <span>#{selectedTag}</span>
             {onClearTag && (
               <X
                 size={14}

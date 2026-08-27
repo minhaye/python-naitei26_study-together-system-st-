@@ -27,7 +27,7 @@ export const ForumPage: React.FC = () => {
   const { isLoggedIn, currentUser, requireAuth, getBan, loading: authLoading } = useAuth();
   const postBan = getBan('post');
   const forumState = useForumState();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const {
     selectedCategoryId,
@@ -43,18 +43,16 @@ export const ForumPage: React.FC = () => {
     setScrollTop,
   } = forumState;
 
-  // Đọc ?hashtag= từ URL khi ForumPage mount lần đầu (navigate từ Header search bar)
-  // Dùng ref để chỉ chạy đúng 1 lần, không override khi user đã tự clear tag
-  const appliedHashtagRef = useRef(false);
+  // Đọc ?hashtag= từ URL
+  const hashtagParam = searchParams.get('hashtag');
   useEffect(() => {
-    if (appliedHashtagRef.current) return;
-    appliedHashtagRef.current = true;
-    const hashtagParam = searchParams.get('hashtag');
     if (hashtagParam) {
-      setSelectedTag(hashtagParam.toLowerCase().replace(/^#/, ''));
+      const cleanTag = hashtagParam.toLowerCase().replace(/^#/, '');
+      if (selectedTag !== cleanTag) {
+        setSelectedTag(cleanTag);
+      }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [hashtagParam, selectedTag, setSelectedTag]);
 
   const [categories, setCategories] = useState<ForumCategoryResponse[]>([]);
 
@@ -158,7 +156,14 @@ export const ForumPage: React.FC = () => {
           <ForumFilterBar
             categoryName={resolvedCategoryName}
             selectedTag={selectedTag}
-            onClearTag={() => setSelectedTag(null)}
+            onClearTag={() => {
+              setSelectedTag(null);
+              if (searchParams.has('hashtag')) {
+                const newParams = new URLSearchParams(searchParams);
+                newParams.delete('hashtag');
+                setSearchParams(newParams, { replace: true });
+              }
+            }}
             selectedFilter={selectedFilter}
             onSelectFilter={setSelectedFilter}
             onOpenCreateModal={() => requireAuth(() => setShowCreateModal(true))}
