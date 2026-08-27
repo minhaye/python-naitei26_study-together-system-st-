@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
     Hash,
@@ -40,12 +40,12 @@ import { JoinByCodeModal } from '../../components/invitations/JoinByCodeModal';
 import { GroupSettingsModal } from '../../components/groups/GroupSettingsModal';
 import { GroupMembersPanel } from '../../components/groups/GroupMembersPanel';
 import { MessageUserTrigger } from '../../components/messages/MessageUserTrigger';
-import { createChannel, deleteChannel, getChannel, listChannelsByGroup } from '../../lib/channel.api';
+import { createChannel, deleteChannel, getChannel, listChannelMembers, listChannelsByGroup, removeChannelMember } from '../../lib/channel.api';
 import { createStudyRoom, deleteStudyRoom, getStudyRoom, listStudyRoomsByGroup } from '../../lib/studyRoom.api';
 import { listConversationMessages, sendConversationMessage } from '../../lib/message.api';
 import { chatCache } from '../../lib/chatCache';
 import type { Group, GroupMember } from '../../lib/group.types';
-import type { Channel } from '../../lib/channel.types';
+import type { Channel, ChannelMember } from '../../lib/channel.types';
 import type { StudyRoom } from '../../lib/studyRoom.types';
 import type { Message, MessageReactionSummary } from '../../lib/message.types';
 import { getAvatarInitials, getAvatarColor } from '../../utils/avatarUtils';
@@ -57,6 +57,50 @@ import { getDisplayName } from '../../utils/userDisplay';
  * regardless of which of the two arrives first. */
 function appendMessageDeduped(prev: Message[], message: Message): Message[] {
   return prev.some((m) => m.id === message.id) ? prev : [...prev, message];
+}
+
+/** Composes the right-sidebar member list for the active Channel. A public channel's access
+ * derives entirely from Group membership, so it keeps showing every active Group member
+ * unchanged. A private channel's accessible-user set differs: explicit `channel_members` PLUS
+ * Group owner/moderators, who can access a private channel via manager authority alone
+ * (channel_router._require_channel_member_access) without ever getting a channel_members row
+ * -- GET /channels/{id}/members does not include them (see channel.api.ts's
+ * listChannelMembers doc comment). Composed frontend-side from two already-authorized lists
+ * rather than having the backend fabricate channel_members rows for managers -- this is
+ * presentation only, it grants no new access: every user included here already
+ * independently passed backend authorization to be counted as a participant of this channel.
+ * Deduped by user_id; when a channel member is also a tracked active Group member, the
+ * existing GroupMember object is reused as-is (so "Điều hành viên"/"Host" labels and
+ * owner-only promote/demote/remove controls keep working unchanged) rather than only
+ * surfacing a bare UserSummary. */
+export function composeDisplayedMembers(
+  isPrivateChannel: boolean,
+  activeMembers: GroupMember[],
+  channelMembers: ChannelMember[],
+  groupId: string
+): GroupMember[] {
+  if (!isPrivateChannel) return activeMembers;
+  const byUserId = new Map<string, GroupMember>();
+  for (const m of activeMembers) {
+    if (m.role === 'owner' || m.role === 'moderator') byUserId.set(m.user_id, m);
+  }
+  for (const cm of channelMembers) {
+    if (byUserId.has(cm.user_id)) continue;
+    const asGroupMember = activeMembers.find((m) => m.user_id === cm.user_id);
+    byUserId.set(
+      cm.user_id,
+      asGroupMember ?? {
+        id: `channel-member-${cm.id}`,
+        group_id: groupId,
+        user_id: cm.user_id,
+        role: 'member',
+        status: 'active',
+        joined_at: cm.joined_at,
+        user: cm.user,
+      }
+    );
+  }
+  return Array.from(byUserId.values());
 }
 
 export function StudyGroupDetail() {
@@ -86,6 +130,17 @@ export function StudyGroupDetail() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [studyRooms, setStudyRooms] = useState<StudyRoom[]>([]);
   const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
+  // Private-channel-only roster (see `displayedMembers` below) -- fetched separately from
+  // groupMembers, only while the active channel is private. Left empty/unused for a public
+  // channel, whose sidebar is driven by groupMembers directly (unchanged behavior).
+  const [channelMembers, setChannelMembers] = useState<ChannelMember[]>([]);
+  const [isChannelMembersLoading, setIsChannelMembersLoading] = useState(false);
+  const [channelMembersError, setChannelMembersError] = useState<string | null>(null);
+  // "Xóa khỏi kênh" mutation state -- keyed by user_id (not a GroupMember.id) since a
+  // channel_members row has no membership id of its own; mirrors memberActionPendingId/
+  // memberActionError below, which is the equivalent tracker for "Xóa khỏi nhóm".
+  const [channelActionPendingUserId, setChannelActionPendingUserId] = useState<string | null>(null);
+  const [channelActionError, setChannelActionError] = useState<string | null>(null);
   
   // Independent loading states for Lazy Loading
   const [isGroupLoading, setIsGroupLoading] = useState(true);
@@ -384,6 +439,30 @@ export function StudyGroupDetail() {
     }
   }
 
+  // "Xóa khỏi kênh" -- removes a member's explicit channel_members row for the active
+  // private Channel (DELETE /channels/{id}/members/{user_id}; backend requires the caller to
+  // be the channel's group owner/moderator -- see channel_router.remove_member). Only ever
+  // invoked for a member GroupMembersPanel has confirmed has such a row (see its
+  // `explicitChannelMemberUserIds` prop), never for a Group manager present only via
+  // fallback access. Updates `channelMembers` directly on success -- `displayedMembers`
+  // (composeDisplayedMembers) recomputes from it, so the sidebar/count reflect the removal
+  // immediately without a full refetch.
+  async function handleKickFromChannel(member: GroupMember) {
+    if (!activeChannelObj || channelActionPendingUserId) return;
+    const display = memberDisplay(member);
+    if (!window.confirm(`Bạn có chắc muốn xóa "${display.name}" khỏi kênh riêng tư này?`)) return;
+    setChannelActionPendingUserId(member.user_id);
+    setChannelActionError(null);
+    try {
+      await removeChannelMember(activeChannelObj.id, member.user_id);
+      setChannelMembers((prev) => prev.filter((cm) => cm.user_id !== member.user_id));
+    } catch (err) {
+      setChannelActionError(err instanceof ApiError ? err.message : 'Không thể xóa thành viên khỏi kênh.');
+    } finally {
+      setChannelActionPendingUserId(null);
+    }
+  }
+
   async function handleCreateRoom() {
     if (!group || !currentUserId || !createRoomName.trim() || isCreatingRoom) return;
     setIsCreatingRoom(true);
@@ -495,6 +574,70 @@ export function StudyGroupDetail() {
   }, [activeChannel]);
 
   const activeChannelObj = channels.find((c) => c.id === activeChannel) ?? null;
+
+  // Right-sidebar roster for a PRIVATE channel: GET /channels/{id}/members only returns
+  // explicit channel_members rows (see channel.api.ts's listChannelMembers), not Group
+  // owners/moderators who can access the channel purely via their manager authority --
+  // re-fetched below whenever the active channel changes. Guarded by activeChannelRef (same
+  // pattern as the messages-loading effect above/below) so a slow response for a channel the
+  // user has since navigated away from never overwrites the roster of the channel now on screen.
+  useEffect(() => {
+    if (!activeChannelObj?.is_private) {
+      setChannelMembers([]);
+      setIsChannelMembersLoading(false);
+      setChannelMembersError(null);
+      return;
+    }
+    const channelId = activeChannelObj.id;
+    let cancelled = false;
+    setIsChannelMembersLoading(true);
+    setChannelMembersError(null);
+    listChannelMembers(channelId)
+      .then((data) => {
+        if (cancelled || activeChannelRef.current !== channelId) return;
+        setChannelMembers(data);
+      })
+      .catch((err) => {
+        if (cancelled || activeChannelRef.current !== channelId) return;
+        setChannelMembers([]);
+        setChannelMembersError(err instanceof ApiError ? err.message : 'Không thể tải danh sách thành viên kênh riêng tư.');
+      })
+      .finally(() => {
+        if (cancelled || activeChannelRef.current !== channelId) return;
+        setIsChannelMembersLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeChannelObj?.id, activeChannelObj?.is_private]);
+
+  // Right-sidebar member list: a public channel's access derives entirely from Group
+  // membership, so it keeps showing every active Group member (unchanged behavior). A
+  // private channel's accessible-user set is different -- explicit channel_members PLUS
+  // Group owner/moderators, who can access a private channel via manager authority alone
+  // (channel_router._require_channel_member_access) without ever getting a channel_members
+  // row. Composed frontend-side from the two already-authorized lists above rather than
+  // having the backend fabricate channel_members rows for managers (see channel.api.ts's
+  // listChannelMembers doc comment) -- this is presentation only, it grants no new access:
+  // every user included here already independently passed backend authorization to be
+  // countable as a participant of this channel. Deduped by user_id; when a channel member is
+  // also a tracked active Group member, the existing GroupMember object is reused as-is (so
+  // "Điều hành viên"/"Host" labels and owner-only promote/demote/remove controls keep working
+  // unchanged) rather than only surfacing a bare UserSummary.
+  const displayedMembers = useMemo(
+    () => composeDisplayedMembers(!!activeChannelObj?.is_private, activeMembers, channelMembers, group?.id ?? ''),
+    [activeChannelObj?.is_private, activeMembers, channelMembers, group?.id]
+  );
+
+  // Which `displayedMembers` rows have an explicit channel_members row for the active
+  // Channel -- i.e. which of them "Xóa khỏi kênh" (DELETE /channels/{id}/members/{user_id})
+  // can actually act on. A Group owner/moderator shown only via the manager-access fallback
+  // in composeDisplayedMembers is deliberately NOT in this set (see GroupMembersPanel's prop
+  // doc) -- there is no channel_members row to delete for them.
+  const explicitChannelMemberUserIds = useMemo(
+    () => new Set(channelMembers.map((cm) => cm.user_id)),
+    [channelMembers]
+  );
 
   useEffect(() => {
     const conversationId = activeChannelObj?.conversation_id ?? null;
@@ -1505,8 +1648,12 @@ export function StudyGroupDetail() {
                 </div>
             )}
 
-            {/* Right Sidebar - Members (real backend group members) */}
-            {isMembersLoading ? (
+            {/* Right Sidebar - Members. Public channel: every active Group member (unchanged).
+                Private channel: the composed private-channel roster (see `displayedMembers`
+                above) -- shows a skeleton (rather than a stale/incorrect flash of the previous
+                channel's list) while that roster is loading, including while switching between
+                two private channels. */}
+            {isMembersLoading || (activeChannelObj?.is_private && isChannelMembersLoading) ? (
                 <div style={{ width: 260, padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
                     <div className="skeleton-pulse" style={{ height: 20, width: 100, borderRadius: 4 }}></div>
                     <div className="skeleton-pulse" style={{ height: 48, borderRadius: 8 }}></div>
@@ -1515,16 +1662,20 @@ export function StudyGroupDetail() {
                 </div>
             ) : (
                 <GroupMembersPanel
-                    members={activeMembers}
+                    members={displayedMembers}
                     currentUserId={currentUserId}
                     currentUser={currentUser}
                     isOwner={isOwner}
                     isGroupManager={isGroupManager}
+                    isPrivateChannel={!!activeChannelObj?.is_private}
+                    explicitChannelMemberUserIds={explicitChannelMemberUserIds}
                     pendingMemberId={memberActionPendingId}
-                    error={memberActionError}
+                    channelActionPendingUserId={channelActionPendingUserId}
+                    error={channelMembersError ?? memberActionError ?? channelActionError}
                     onPromote={handlePromoteMember}
                     onDemote={handleDemoteMember}
                     onRemove={handleRemoveMember}
+                    onKickFromChannel={handleKickFromChannel}
                     onInviteClick={() => setIsInviteModalOpen(true)}
                 />
             )}

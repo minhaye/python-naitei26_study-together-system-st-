@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
 import { ForumSidebar } from './components/ForumSidebar';
 import { ForumFilterBar } from './components/ForumFilterBar';
@@ -27,6 +27,7 @@ export const ForumPage: React.FC = () => {
   const { isLoggedIn, currentUser, requireAuth, getBan, loading: authLoading } = useAuth();
   const postBan = getBan('post');
   const forumState = useForumState();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const {
     selectedCategoryId,
@@ -41,6 +42,17 @@ export const ForumPage: React.FC = () => {
     scrollTop,
     setScrollTop,
   } = forumState;
+
+  // Đọc ?hashtag= từ URL
+  const hashtagParam = searchParams.get('hashtag');
+  useEffect(() => {
+    if (hashtagParam) {
+      const cleanTag = hashtagParam.toLowerCase().replace(/^#/, '');
+      if (selectedTag !== cleanTag) {
+        setSelectedTag(cleanTag);
+      }
+    }
+  }, [hashtagParam, selectedTag, setSelectedTag]);
 
   const [categories, setCategories] = useState<ForumCategoryResponse[]>([]);
 
@@ -144,7 +156,14 @@ export const ForumPage: React.FC = () => {
           <ForumFilterBar
             categoryName={resolvedCategoryName}
             selectedTag={selectedTag}
-            onClearTag={() => setSelectedTag(null)}
+            onClearTag={() => {
+              setSelectedTag(null);
+              if (searchParams.has('hashtag')) {
+                const newParams = new URLSearchParams(searchParams);
+                newParams.delete('hashtag');
+                setSearchParams(newParams, { replace: true });
+              }
+            }}
             selectedFilter={selectedFilter}
             onSelectFilter={setSelectedFilter}
             onOpenCreateModal={() => requireAuth(() => setShowCreateModal(true))}

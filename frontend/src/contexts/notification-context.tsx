@@ -47,7 +47,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCounts, setUnreadCounts] = useState<UnreadCounts>(DEFAULT_UNREAD);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [activeCategory, setActiveCategory] = useState<NotificationCategory>('forum');
+  const [activeCategory, setActiveCategory] = useState<NotificationCategory>('all');
 
   const fetchUnreadCounts = useCallback(async () => {
     if (!isLoggedIn) return;

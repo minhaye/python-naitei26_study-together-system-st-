@@ -226,7 +226,17 @@ export function StudyRooms() {
         }
     }
 
-    const myGroups = groups?.filter((g) => g.isMember) ?? [];
+    const myGroups = (groups?.filter((g) => g.isMember) ?? []).sort((a, b) => {
+        const getPriority = (role: GroupMemberRole | null) => {
+            if (role === 'owner') return 2;
+            if (role === 'moderator') return 1;
+            return 0;
+        };
+        const priorityDiff = getPriority(b.role) - getPriority(a.role);
+        if (priorityDiff !== 0) return priorityDiff;
+        // Secondary sort: by active members count or name could be added here if needed
+        return b.activeMembersCount - a.activeMembersCount;
+    });
     const discoverGroups = groups?.filter((g) => !g.isMember) ?? [];
 
     const myGroupsPagination = usePagination(myGroups, GROUPS_PAGE_SIZE);

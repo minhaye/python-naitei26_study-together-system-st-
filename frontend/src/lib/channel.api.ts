@@ -1,5 +1,5 @@
 import { apiClient } from './apiClient';
-import type { Channel, ChannelCreate } from './channel.types';
+import type { Channel, ChannelCreate, ChannelMember } from './channel.types';
 
 export function listChannelsByGroup(groupId: string): Promise<Channel[]> {
   return apiClient.get<Channel[]>(`/channels/?group_id=${groupId}`);
@@ -27,4 +27,25 @@ export function createChannel(data: ChannelCreate): Promise<Channel> {
  * identity (deleted_by) is always derived from the bearer token, never sent by the client. */
 export function deleteChannel(channelId: string): Promise<void> {
   return apiClient.delete<void>(`/channels/${channelId}`);
+}
+
+/** Public channel rosters are open; a private channel's roster requires the caller to
+ * already be a channel member OR hold group-manager (owner/moderator) authority over the
+ * channel's group -- see channel_router._require_channel_member_access. Note this only
+ * returns explicit `channel_members` rows: a group manager who can access a private channel
+ * via their manager authority (not an explicit row) is NOT included in this list -- callers
+ * that need to display "everyone who can see this channel" must compose that themselves
+ * (see StudyGroupDetail.tsx's `displayedMembers`). */
+export function listChannelMembers(channelId: string): Promise<ChannelMember[]> {
+  return apiClient.get<ChannelMember[]>(`/channels/${channelId}/members`);
+}
+
+/** "Xóa khỏi kênh" -- self-removal ("leave") is always allowed server-side; removing a
+ * DIFFERENT member requires the caller to hold group-manager (owner/moderator) authority
+ * over the channel's group -- see channel_router.remove_member. Only ever valid for a user
+ * with an explicit `channel_members` row: a Group manager present in a private channel's
+ * displayed roster purely via manager-access fallback (no row) has nothing here to delete --
+ * see GroupMembersPanel's `explicitChannelMemberUserIds` prop. */
+export function removeChannelMember(channelId: string, userId: string): Promise<void> {
+  return apiClient.delete<void>(`/channels/${channelId}/members/${userId}`);
 }

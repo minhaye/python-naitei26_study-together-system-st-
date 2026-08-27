@@ -4,7 +4,7 @@ import { CalendarDays, Check, LoaderCircle, Plus, Sparkles, Trash2, Zap } from '
 import { Modal } from '../components/ui/Modal';
 import { ApiError } from '../lib/apiClient';
 import { createTasks, deleteTask, listTasks, toggleTaskComplete, updateTask, type StudyTask, type TaskPriority } from '../lib/task.api';
-import { listRoadmaps, suggestTasks, type Roadmap } from '../lib/roadmap.api';
+import { suggestTasks, type Roadmap } from '../lib/roadmap.api';
 
 const priorities: Array<{ value: TaskPriority; label: string; color: string }> = [
   { value: 1, label: 'Thấp', color: '#94A3B8' },
@@ -104,7 +104,7 @@ function friendlyError(cause: unknown): string {
   return cause instanceof Error ? cause.message : 'Đã xảy ra lỗi không xác định.';
 }
 
-export function TaskManagementSection() {
+export function TaskManagementSection({ roadmaps }: { roadmaps: Roadmap[] }) {
   const today = new Date();
   const todayKey = dateKey(today);
   const [month, setMonth] = useState(firstDayOfMonth(today));
@@ -125,7 +125,6 @@ export function TaskManagementSection() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // AI suggestion state
-  const [roadmaps, setRoadmaps] = useState<Roadmap[]>([]);
   const [selectedRoadmapId, setSelectedRoadmapId] = useState<string>('');
   const [aiGoal, setAiGoal] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
@@ -144,11 +143,6 @@ export function TaskManagementSection() {
     }
   };
   useEffect(() => { void loadTasks(); }, [month]);
-
-  // Load roadmaps for AI dropdown
-  useEffect(() => {
-    listRoadmaps().then(setRoadmaps).catch(() => {/* silently ignore */});
-  }, []);
 
   const tasksByDate = useMemo(() => tasks.reduce<Record<string, StudyTask[]>>((result, task) => {
     (result[task.due_date] ??= []).push(task); return result;
